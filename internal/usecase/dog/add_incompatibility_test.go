@@ -10,11 +10,40 @@ import (
 	"dogpaw/internal/domain"
 )
 
+type mockIncompatibilityRepository struct {
+	getIncompatibilityByID func(ctx context.Context, id int) (*domain.Incompatibility, error)
+}
+
+func (m *mockIncompatibilityRepository) GetIncompatibilityByID(ctx context.Context, id int) (*domain.Incompatibility, error) {
+	if m.getIncompatibilityByID != nil {
+		return m.getIncompatibilityByID(ctx, id)
+	}
+	return nil, nil
+}
+
 func validAddInput() AddDogIncompatibilityInput {
 	return AddDogIncompatibilityInput{
-		DogID:           42,
-		Incompatibility: string(domain.IncompatibilityReactivoMachos),
+		DogID:             42,
+		IncompatibilityID: 1,
 	}
+}
+
+func newAddUseCase(dogRepo domain.DogRepository, incompatRepo domain.IncompatibilityRepository) *AddDogIncompatibilityUseCase {
+	return NewAddDogIncompatibilityUseCase(dogRepo, incompatRepo)
+}
+
+func newTestDogWithIncompatibilities(t *testing.T, incompats ...*domain.Incompatibility) *domain.Dog {
+	t.Helper()
+	d, err := domain.NewDog(42, "Buddy", "Labrador", "ES12345", 24, domain.SexMale, 25.0, 1)
+	if err != nil {
+		t.Fatalf("newTestDogWithIncompatibilities: %v", err)
+	}
+	for _, in := range incompats {
+		if _, err := d.AddIncompatibility(in); err != nil {
+			t.Fatalf("newTestDogWithIncompatibilities: %v", err)
+		}
+	}
+	return d
 }
 
 func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
@@ -24,16 +53,17 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 			input         AddDogIncompatibilityInput
 			expectedField string
 		}{
-			{"zero_dog_id", AddDogIncompatibilityInput{Incompatibility: string(domain.IncompatibilityReactivoMachos)}, "dog_id"},
-			{"negative_dog_id", AddDogIncompatibilityInput{DogID: -1, Incompatibility: string(domain.IncompatibilityReactivoMachos)}, "dog_id"},
-			{"empty_incompatibility", AddDogIncompatibilityInput{DogID: 1}, "incompatibility"},
-			{"unknown_incompatibility", AddDogIncompatibilityInput{DogID: 1, Incompatibility: "DOES_NOT_EXIST"}, "incompatibility"},
+			{"zero_dog_id", AddDogIncompatibilityInput{IncompatibilityID: 1}, "dog_id"},
+			{"negative_dog_id", AddDogIncompatibilityInput{DogID: -1, IncompatibilityID: 1}, "dog_id"},
+			{"zero_incompatibility_id", AddDogIncompatibilityInput{DogID: 1}, "incompatibility_id"},
+			{"negative_incompatibility_id", AddDogIncompatibilityInput{DogID: 1, IncompatibilityID: -5}, "incompatibility_id"},
 		}
 
 		for _, s := range scenarios {
 			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewAddDogIncompatibilityUseCase(mock)
+				dogMock := &mockDogRepository{}
+				incompatMock := &mockIncompatibilityRepository{}
+				uc := newAddUseCase(dogMock, incompatMock)
 
 				_, err := uc.Execute(context.Background(), s.input)
 
@@ -46,31 +76,37 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 	})
 
 	t.Run("validation_does_not_call_repo", func(t *testing.T) {
-		called := false
-		mock := &mockDogRepository{
+		dogCalled := false
+		incompatCalled := false
+		dogMock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
-				called = true
+				dogCalled = true
 				return nil, nil
 			},
 		}
-		uc := NewAddDogIncompatibilityUseCase(mock)
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
+				incompatCalled = true
+				return nil, nil
+			},
+		}
+		uc := newAddUseCase(dogMock, incompatMock)
 
-		_, err := uc.Execute(context.Background(), AddDogIncompatibilityInput{DogID: 0, Incompatibility: string(domain.IncompatibilityReactivoMachos)})
+		_, err := uc.Execute(context.Background(), AddDogIncompatibilityInput{DogID: 0, IncompatibilityID: 1})
 
 		assert.Error(t, err)
-		assert.False(t, called, "repo should not be called when validation fails")
+		assert.False(t, dogCalled, "dog repo should not be called when validation fails")
+		assert.False(t, incompatCalled, "incompatibility repo should not be called when validation fails")
 	})
 
 	t.Run("happy_path_adds_when_not_present", func(t *testing.T) {
-		existingDog := &domain.Dog{
-			ID: 42,
-			Incompatibilities: []domain.Incompatibility{
-				domain.IncompatibilityNoToleraCachorros,
-			},
-		}
+		existingDog := newTestDogWithIncompatibilities(t,
+			newIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia),
+		)
+		var fetchedIncompatID int
 		updateCalled := false
 		var updatedDog *domain.Dog
-		mock := &mockDogRepository{
+		dogMock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
 				return existingDog, nil
 			},
@@ -80,7 +116,13 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewAddDogIncompatibilityUseCase(mock)
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
+				fetchedIncompatID = id
+				return validIncompatibility(), nil
+			},
+		}
+		uc := newAddUseCase(dogMock, incompatMock)
 
 		out, err := uc.Execute(context.Background(), validAddInput())
 
@@ -88,22 +130,15 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 		assert.Equal(t, 42, out.ID)
 		assert.True(t, out.Added)
 		assert.True(t, updateCalled, "update must be called when a change is made")
-		assert.Equal(t, []domain.Incompatibility{
-			domain.IncompatibilityNoToleraCachorros,
-			domain.IncompatibilityReactivoMachos,
-		}, out.Incompatibilities)
+		assert.Equal(t, 1, fetchedIncompatID, "should fetch the right IncompatibilityID")
+		assert.Len(t, out.Incompatibilities, 2)
 		assert.Same(t, existingDog, updatedDog)
 	})
 
 	t.Run("idempotent_no_op_when_already_present", func(t *testing.T) {
-		existingDog := &domain.Dog{
-			ID: 42,
-			Incompatibilities: []domain.Incompatibility{
-				domain.IncompatibilityReactivoMachos,
-			},
-		}
+		existingDog := newTestDogWithIncompatibilities(t, validIncompatibility())
 		updateCalled := false
-		mock := &mockDogRepository{
+		dogMock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
 				return existingDog, nil
 			},
@@ -112,21 +147,24 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewAddDogIncompatibilityUseCase(mock)
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
+				return validIncompatibility(), nil
+			},
+		}
+		uc := newAddUseCase(dogMock, incompatMock)
 
 		out, err := uc.Execute(context.Background(), validAddInput())
 
 		assert.NoError(t, err)
 		assert.False(t, out.Added, "Added must be false when the value was already present")
 		assert.False(t, updateCalled, "update must NOT be called when no state change is needed")
-		assert.Equal(t, []domain.Incompatibility{
-			domain.IncompatibilityReactivoMachos,
-		}, out.Incompatibilities, "the slice must not be mutated on a no-op")
+		assert.Len(t, out.Incompatibilities, 1)
 	})
 
 	t.Run("idempotent_double_call_produces_same_state", func(t *testing.T) {
-		existingDog := &domain.Dog{ID: 42, Incompatibilities: nil}
-		mock := &mockDogRepository{
+		existingDog, _ := domain.NewDog(42, "Buddy", "Labrador", "ES12345", 24, domain.SexMale, 25.0, 1)
+		dogMock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
 				return existingDog, nil
 			},
@@ -134,7 +172,12 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewAddDogIncompatibilityUseCase(mock)
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
+				return validIncompatibility(), nil
+			},
+		}
+		uc := newAddUseCase(dogMock, incompatMock)
 
 		out1, err := uc.Execute(context.Background(), validAddInput())
 		assert.NoError(t, err)
@@ -147,14 +190,15 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 		assert.Len(t, out2.Incompatibilities, 1)
 	})
 
-	t.Run("get_by_id_returns_error", func(t *testing.T) {
-		repoErr := errors.New("database timeout")
-		mock := &mockDogRepository{
-			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
+	t.Run("get_incompatibility_returns_error", func(t *testing.T) {
+		repoErr := errors.New("incompatibility db timeout")
+		dogMock := &mockDogRepository{}
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
 				return nil, repoErr
 			},
 		}
-		uc := NewAddDogIncompatibilityUseCase(mock)
+		uc := newAddUseCase(dogMock, incompatMock)
 
 		_, err := uc.Execute(context.Background(), validAddInput())
 
@@ -162,31 +206,79 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 		assert.True(t, errors.Is(err, repoErr))
 	})
 
-	t.Run("get_by_id_returns_nil_dog", func(t *testing.T) {
-		mock := &mockDogRepository{
-			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
+	t.Run("get_incompatibility_returns_nil", func(t *testing.T) {
+		dogMock := &mockDogRepository{}
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
 				return nil, nil
 			},
 		}
-		uc := NewAddDogIncompatibilityUseCase(mock)
+		uc := newAddUseCase(dogMock, incompatMock)
 
 		_, err := uc.Execute(context.Background(), validAddInput())
 
 		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "incompatibility")
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("get_dog_returns_error", func(t *testing.T) {
+		repoErr := errors.New("dog db timeout")
+		dogMock := &mockDogRepository{
+			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
+				return nil, repoErr
+			},
+		}
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
+				return validIncompatibility(), nil
+			},
+		}
+		uc := newAddUseCase(dogMock, incompatMock)
+
+		_, err := uc.Execute(context.Background(), validAddInput())
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, repoErr))
+	})
+
+	t.Run("get_dog_returns_nil", func(t *testing.T) {
+		dogMock := &mockDogRepository{
+			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
+				return nil, nil
+			},
+		}
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
+				return validIncompatibility(), nil
+			},
+		}
+		uc := newAddUseCase(dogMock, incompatMock)
+
+		_, err := uc.Execute(context.Background(), validAddInput())
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "dog")
 		assert.Contains(t, err.Error(), "not found")
 	})
 
 	t.Run("update_returns_error", func(t *testing.T) {
 		repoErr := errors.New("concurrent modification")
-		mock := &mockDogRepository{
+		dogMock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
-				return &domain.Dog{ID: id, Incompatibilities: nil}, nil
+				emptyDog, _ := domain.NewDog(id, "Buddy", "Lab", "ES1", 24, domain.SexMale, 10.0, 1)
+				return emptyDog, nil
 			},
 			update: func(ctx context.Context, dog *domain.Dog) error {
 				return repoErr
 			},
 		}
-		uc := NewAddDogIncompatibilityUseCase(mock)
+		incompatMock := &mockIncompatibilityRepository{
+			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
+				return validIncompatibility(), nil
+			},
+		}
+		uc := newAddUseCase(dogMock, incompatMock)
 
 		_, err := uc.Execute(context.Background(), validAddInput())
 

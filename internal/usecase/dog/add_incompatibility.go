@@ -8,8 +8,8 @@ import (
 )
 
 type AddDogIncompatibilityInput struct {
-	DogID           int
-	Incompatibility string
+	DogID             int
+	IncompatibilityID int
 }
 
 type AddDogIncompatibilityOutput struct {
@@ -19,11 +19,15 @@ type AddDogIncompatibilityOutput struct {
 }
 
 type AddDogIncompatibilityUseCase struct {
-	repo domain.DogRepository
+	dogRepo      domain.DogRepository
+	incompatRepo domain.IncompatibilityRepository
 }
 
-func NewAddDogIncompatibilityUseCase(repo domain.DogRepository) *AddDogIncompatibilityUseCase {
-	return &AddDogIncompatibilityUseCase{repo: repo}
+func NewAddDogIncompatibilityUseCase(
+	dogRepo domain.DogRepository,
+	incompatRepo domain.IncompatibilityRepository,
+) *AddDogIncompatibilityUseCase {
+	return &AddDogIncompatibilityUseCase{dogRepo: dogRepo, incompatRepo: incompatRepo}
 }
 
 func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, in AddDogIncompatibilityInput) (AddDogIncompatibilityOutput, error) {
@@ -31,7 +35,15 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, in AddDogIn
 		return AddDogIncompatibilityOutput{}, err
 	}
 
-	d, err := uc.repo.GetByID(ctx, in.DogID)
+	incompat, err := uc.incompatRepo.GetIncompatibilityByID(ctx, in.IncompatibilityID)
+	if err != nil {
+		return AddDogIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", in.IncompatibilityID, err)
+	}
+	if incompat == nil {
+		return AddDogIncompatibilityOutput{}, fmt.Errorf("incompatibility %d not found", in.IncompatibilityID)
+	}
+
+	d, err := uc.dogRepo.GetByID(ctx, in.DogID)
 	if err != nil {
 		return AddDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", in.DogID, err)
 	}
@@ -39,22 +51,23 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, in AddDogIn
 		return AddDogIncompatibilityOutput{}, fmt.Errorf("dog %d not found", in.DogID)
 	}
 
-	target := domain.Incompatibility(in.Incompatibility)
-	added := !containsIncompatibility(d.Incompatibilities, target)
+	added, err := d.AddIncompatibility(incompat)
+	if err != nil {
+		return AddDogIncompatibilityOutput{}, err
+	}
 	if added {
-		d.Incompatibilities = append(d.Incompatibilities, target)
-		if err := uc.repo.Update(ctx, d); err != nil {
+		if err := uc.dogRepo.Update(ctx, d); err != nil {
 			return AddDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", in.DogID, err)
 		}
 	}
 
 	return AddDogIncompatibilityOutput{
-		ID:                d.ID,
-		Incompatibilities: d.Incompatibilities,
+		ID:                d.ID(),
+		Incompatibilities: d.Incompatibilities(),
 		Added:             added,
 	}, nil
 }
 
 func (in AddDogIncompatibilityInput) validate() error {
-	return validateIncompatibilityInput(in.DogID, in.Incompatibility)
+	return validateIncompatibilityInput(in.DogID, in.IncompatibilityID)
 }

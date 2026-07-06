@@ -8,8 +8,8 @@ import (
 )
 
 type RemoveDogIncompatibilityInput struct {
-	DogID           int
-	Incompatibility string
+	DogID             int
+	IncompatibilityID int
 }
 
 type RemoveDogIncompatibilityOutput struct {
@@ -39,22 +39,23 @@ func (uc *RemoveDogIncompatibilityUseCase) Execute(ctx context.Context, in Remov
 		return RemoveDogIncompatibilityOutput{}, fmt.Errorf("dog %d not found", in.DogID)
 	}
 
-	target := domain.Incompatibility(in.Incompatibility)
-	removed := containsIncompatibility(d.Incompatibilities, target)
+	removed, err := d.RemoveIncompatibility(in.IncompatibilityID)
+	if err != nil {
+		return RemoveDogIncompatibilityOutput{}, err
+	}
 	if removed {
-		d.Incompatibilities = removeIncompatibility(d.Incompatibilities, target)
 		if err := uc.repo.Update(ctx, d); err != nil {
 			return RemoveDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", in.DogID, err)
 		}
 	}
 
 	return RemoveDogIncompatibilityOutput{
-		ID:                d.ID,
-		Incompatibilities: d.Incompatibilities,
+		ID:                d.ID(),
+		Incompatibilities: d.Incompatibilities(),
 		Removed:           removed,
 	}, nil
 }
 
 func (in RemoveDogIncompatibilityInput) validate() error {
-	return validateIncompatibilityInput(in.DogID, in.Incompatibility)
+	return validateIncompatibilityInput(in.DogID, in.IncompatibilityID)
 }

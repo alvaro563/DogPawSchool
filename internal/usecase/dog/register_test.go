@@ -10,54 +10,11 @@ import (
 	"dogpaw/internal/domain"
 )
 
-type mockDogRepository struct {
-	create      func(ctx context.Context, dog *domain.Dog) error
-	update      func(ctx context.Context, dog *domain.Dog) error
-	getByID     func(ctx context.Context, id int) (*domain.Dog, error)
-	listByOwner func(ctx context.Context, userID int) ([]*domain.Dog, error)
-	delete      func(ctx context.Context, id int) error
-}
-
-func (m *mockDogRepository) Create(ctx context.Context, dog *domain.Dog) error {
-	if m.create != nil {
-		return m.create(ctx, dog)
-	}
-	return nil
-}
-
-func (m *mockDogRepository) Update(ctx context.Context, dog *domain.Dog) error {
-	if m.update != nil {
-		return m.update(ctx, dog)
-	}
-	return nil
-}
-
-func (m *mockDogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, error) {
-	if m.getByID != nil {
-		return m.getByID(ctx, id)
-	}
-	return nil, nil
-}
-
-func (m *mockDogRepository) ListByOwner(ctx context.Context, userID int) ([]*domain.Dog, error) {
-	if m.listByOwner != nil {
-		return m.listByOwner(ctx, userID)
-	}
-	return nil, nil
-}
-
-func (m *mockDogRepository) Delete(ctx context.Context, id int) error {
-	if m.delete != nil {
-		return m.delete(ctx, id)
-	}
-	return nil
-}
-
 func validRegisterInput() RegisterDogInput {
 	return RegisterDogInput{
 		Name:        "Buddy",
 		Breed:       "Labrador",
-		AgeinMonths: 24,
+		AgeInMonths: 24,
 		Sex:         domain.SexMale,
 		WeightKg:    25.0,
 		Passport:    "ES12345",
@@ -72,14 +29,14 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 			input         RegisterDogInput
 			expectedField string
 		}{
-			{"empty_name", RegisterDogInput{Breed: "x", AgeinMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "name"},
-			{"empty_breed", RegisterDogInput{Name: "x", AgeinMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "breed"},
-			{"zero_age", RegisterDogInput{Name: "x", Breed: "x", Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "agein_months"},
-			{"empty_sex", RegisterDogInput{Name: "x", Breed: "x", AgeinMonths: 1, WeightKg: 1, Passport: "x", UserID: 1}, "sex"},
-			{"zero_weight", RegisterDogInput{Name: "x", Breed: "x", AgeinMonths: 1, Sex: domain.SexMale, Passport: "x", UserID: 1}, "weight_kg"},
-			{"empty_passport", RegisterDogInput{Name: "x", Breed: "x", AgeinMonths: 1, Sex: domain.SexMale, WeightKg: 1, UserID: 1}, "passport"},
-			{"zero_user_id", RegisterDogInput{Name: "x", Breed: "x", AgeinMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x"}, "user_id"},
-			{"negative_user_id", RegisterDogInput{Name: "x", Breed: "x", AgeinMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: -5}, "user_id"},
+			{"empty_name", RegisterDogInput{Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "name"},
+			{"empty_breed", RegisterDogInput{Name: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "breed"},
+			{"zero_age", RegisterDogInput{Name: "x", Breed: "x", Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "age_in_months"},
+			{"empty_sex", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, WeightKg: 1, Passport: "x", UserID: 1}, "sex"},
+			{"zero_weight", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, Passport: "x", UserID: 1}, "weight_kg"},
+			{"empty_passport", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, UserID: 1}, "passport"},
+			{"zero_user_id", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x"}, "user_id"},
+			{"negative_user_id", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: -5}, "user_id"},
 		}
 
 		for _, s := range scenarios {
@@ -118,7 +75,9 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 		mock := &mockDogRepository{
 			create: func(ctx context.Context, dog *domain.Dog) error {
 				capturedDog = dog
-				dog.ID = 42
+				dog.Activate()
+				d, _ := domain.NewDog(42, dog.Name(), dog.Breed(), dog.Passport(), dog.AgeInMonths(), dog.Sex(), dog.WeightKg(), dog.UserID())
+				*dog = *d
 				return nil
 			},
 		}
@@ -129,20 +88,20 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 42, out.ID)
 		assert.NotNil(t, capturedDog)
-		assert.Equal(t, "Buddy", capturedDog.Name)
-		assert.Equal(t, "Labrador", capturedDog.Breed)
-		assert.Equal(t, 24, capturedDog.AgeinMonths)
-		assert.Equal(t, domain.SexMale, capturedDog.Sex)
-		assert.Equal(t, 25.0, capturedDog.WeightKg)
-		assert.Equal(t, "ES12345", capturedDog.Passport)
-		assert.Equal(t, 1, capturedDog.UserID)
-		assert.True(t, capturedDog.IsActive)
-		assert.False(t, capturedDog.Neutered)
-		assert.False(t, capturedDog.Heat)
-		assert.Empty(t, capturedDog.PhotoURL)
-		assert.Empty(t, capturedDog.MedicalNotes)
-		assert.Empty(t, capturedDog.EducatorNotes)
-		assert.Nil(t, capturedDog.Incompatibilities)
+		assert.Equal(t, "Buddy", capturedDog.Name())
+		assert.Equal(t, "Labrador", capturedDog.Breed())
+		assert.Equal(t, 24, capturedDog.AgeInMonths())
+		assert.Equal(t, domain.SexMale, capturedDog.Sex())
+		assert.Equal(t, 25.0, capturedDog.WeightKg())
+		assert.Equal(t, "ES12345", capturedDog.Passport())
+		assert.Equal(t, 1, capturedDog.UserID())
+		assert.True(t, capturedDog.IsActive())
+		assert.False(t, capturedDog.Neutered())
+		assert.False(t, capturedDog.Heat())
+		assert.Empty(t, capturedDog.PhotoURL())
+		assert.Empty(t, capturedDog.MedicalNotes())
+		assert.Empty(t, capturedDog.EducatorNotes())
+		assert.Empty(t, capturedDog.Incompatibilities())
 	})
 
 	t.Run("repo_error_propagated", func(t *testing.T) {

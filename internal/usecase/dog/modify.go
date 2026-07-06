@@ -43,19 +43,23 @@ func (uc *ModifyDogUseCase) Execute(ctx context.Context, in ModifyDogInput) (Mod
 		return ModifyDogOutput{}, fmt.Errorf("dog %d not found", in.ID)
 	}
 
-	d.Neutered = in.Neutered
-	d.Heat = in.Heat
-	d.WeightKg = in.WeightKg
-	d.PhotoURL = in.PhotoURL
-	d.MedicalNotes = in.MedicalNotes
-	d.EducatorNotes = in.EducatorNotes
-	d.IsActive = in.IsActive
+	if err := d.UpdateProfile(domain.UpdateDogInput{
+		Neutered:      in.Neutered,
+		Heat:          in.Heat,
+		WeightKg:      in.WeightKg,
+		PhotoURL:      in.PhotoURL,
+		MedicalNotes:  in.MedicalNotes,
+		EducatorNotes: in.EducatorNotes,
+		IsActive:      in.IsActive,
+	}); err != nil {
+		return ModifyDogOutput{}, err
+	}
 
 	if err := uc.repo.Update(ctx, d); err != nil {
 		return ModifyDogOutput{}, fmt.Errorf("update dog %d: %w", in.ID, err)
 	}
 
-	return ModifyDogOutput{ID: d.ID}, nil
+	return ModifyDogOutput{ID: d.ID()}, nil
 }
 
 func (in ModifyDogInput) validate() error {

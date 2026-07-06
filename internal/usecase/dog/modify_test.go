@@ -23,6 +23,15 @@ func validModifyInput() ModifyDogInput {
 	}
 }
 
+func newTestDogForModify(t *testing.T) *domain.Dog {
+	t.Helper()
+	d, err := domain.NewDog(42, "Buddy", "Labrador", "ES12345", 24, domain.SexMale, 20.0, 1)
+	if err != nil {
+		t.Fatalf("newTestDogForModify: %v", err)
+	}
+	return d
+}
+
 func TestModifyDogUseCase_Execute(t *testing.T) {
 	t.Run("validation", func(t *testing.T) {
 		scenarios := []struct {
@@ -68,12 +77,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 	})
 
 	t.Run("happy_path_updates_fields_and_preserves_others", func(t *testing.T) {
-		existingDog := &domain.Dog{
-			ID:     42,
-			Name:   "Buddy",
-			Breed:  "Labrador",
-			UserID: 1,
-		}
+		existingDog := newTestDogForModify(t)
 		var updatedDog *domain.Dog
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
@@ -93,16 +97,16 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		assert.Equal(t, 42, out.ID)
 		assert.NotNil(t, updatedDog)
 		assert.Same(t, existingDog, updatedDog, "the use case should mutate the same entity it fetched")
-		assert.Equal(t, true, updatedDog.Neutered)
-		assert.Equal(t, false, updatedDog.Heat)
-		assert.Equal(t, 25.0, updatedDog.WeightKg)
-		assert.Equal(t, "http://example.com/photo.jpg", updatedDog.PhotoURL)
-		assert.Equal(t, "Healthy", updatedDog.MedicalNotes)
-		assert.Equal(t, "Well behaved", updatedDog.EducatorNotes)
-		assert.Equal(t, true, updatedDog.IsActive)
-		assert.Equal(t, "Buddy", updatedDog.Name, "Name should be preserved")
-		assert.Equal(t, "Labrador", updatedDog.Breed, "Breed should be preserved")
-		assert.Equal(t, 1, updatedDog.UserID, "UserID should be preserved")
+		assert.True(t, updatedDog.Neutered())
+		assert.False(t, updatedDog.Heat())
+		assert.Equal(t, 25.0, updatedDog.WeightKg())
+		assert.Equal(t, "http://example.com/photo.jpg", updatedDog.PhotoURL())
+		assert.Equal(t, "Healthy", updatedDog.MedicalNotes())
+		assert.Equal(t, "Well behaved", updatedDog.EducatorNotes())
+		assert.True(t, updatedDog.IsActive())
+		assert.Equal(t, "Buddy", updatedDog.Name(), "Name should be preserved")
+		assert.Equal(t, "Labrador", updatedDog.Breed(), "Breed should be preserved")
+		assert.Equal(t, 1, updatedDog.UserID(), "UserID should be preserved")
 	})
 
 	t.Run("get_by_id_returns_error", func(t *testing.T) {
@@ -138,7 +142,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		repoErr := errors.New("concurrent modification")
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
-				return &domain.Dog{ID: id, Name: "Buddy"}, nil
+				return newTestDogForModify(t), nil
 			},
 			update: func(ctx context.Context, dog *domain.Dog) error {
 				return repoErr

@@ -1,12 +1,8 @@
 package domain
 
-import "context"
-
-type Incompatibility string
-
-const (
-	IncompatibilityReactivoMachos    Incompatibility = "REACTIVO_MACHOS"
-	IncompatibilityNoToleraCachorros Incompatibility = "NO_TOLERA_CACHORROS"
+import (
+	"context"
+	"fmt"
 )
 
 type Sex string
@@ -15,6 +11,14 @@ const (
 	SexMale   Sex = "MALE"
 	SexFemale Sex = "FEMALE"
 )
+
+func (s Sex) IsValid() bool {
+	switch s {
+	case SexMale, SexFemale:
+		return true
+	}
+	return false
+}
 
 type AgeBracket string
 
@@ -45,32 +49,101 @@ const (
 )
 
 type Dog struct {
-	ID                int
-	Name              string
-	Breed             string
-	AgeinMonths       int
-	Sex               Sex
-	Neutered          bool
-	Heat              bool
-	WeightKg          float64
-	PhotoURL          string
-	MedicalNotes      string
-	EducatorNotes     string
-	Passport          string
-	Incompatibilities []Incompatibility
-	UserID            int
-	IsActive          bool
+	id                int
+	name              string
+	breed             string
+	ageInMonths       int
+	sex               Sex
+	neutered          bool
+	heat              bool
+	weightKg          float64
+	photoURL          string
+	medicalNotes      string
+	educatorNotes     string
+	passport          string
+	incompatibilities []Incompatibility
+	userID            int
+	isActive          bool
+}
+
+type UpdateDogInput struct {
+	Neutered      bool
+	Heat          bool
+	WeightKg      float64
+	PhotoURL      string
+	MedicalNotes  string
+	EducatorNotes string
+	IsActive      bool
+}
+
+func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weightKg float64, userID int) (*Dog, error) {
+	if id < 0 {
+		return nil, fmt.Errorf("dog: id must not be negative")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("dog: name must not be empty")
+	}
+	if breed == "" {
+		return nil, fmt.Errorf("dog: breed must not be empty")
+	}
+	if passport == "" {
+		return nil, fmt.Errorf("dog: passport must not be empty")
+	}
+	if ageInMonths < 0 {
+		return nil, fmt.Errorf("dog: ageInMonths must not be negative")
+	}
+	if weightKg < 0 {
+		return nil, fmt.Errorf("dog: weightKg must not be negative")
+	}
+	if !sex.IsValid() {
+		return nil, fmt.Errorf("dog: invalid sex %q", sex)
+	}
+	if userID <= 0 {
+		return nil, fmt.Errorf("dog: userID must be greater than 0")
+	}
+	return &Dog{
+		id:          id,
+		name:        name,
+		breed:       breed,
+		ageInMonths: ageInMonths,
+		sex:         sex,
+		weightKg:    weightKg,
+		passport:    passport,
+		userID:      userID,
+		isActive:    true,
+	}, nil
+}
+
+func (d *Dog) ID() int               { return d.id }
+func (d *Dog) Name() string          { return d.name }
+func (d *Dog) Breed() string         { return d.breed }
+func (d *Dog) AgeInMonths() int      { return d.ageInMonths }
+func (d *Dog) Sex() Sex              { return d.sex }
+func (d *Dog) Neutered() bool        { return d.neutered }
+func (d *Dog) Heat() bool            { return d.heat }
+func (d *Dog) WeightKg() float64     { return d.weightKg }
+func (d *Dog) PhotoURL() string      { return d.photoURL }
+func (d *Dog) MedicalNotes() string  { return d.medicalNotes }
+func (d *Dog) EducatorNotes() string { return d.educatorNotes }
+func (d *Dog) Passport() string      { return d.passport }
+func (d *Dog) UserID() int           { return d.userID }
+func (d *Dog) IsActive() bool        { return d.isActive }
+
+func (d *Dog) Incompatibilities() []Incompatibility {
+	out := make([]Incompatibility, len(d.incompatibilities))
+	copy(out, d.incompatibilities)
+	return out
 }
 
 func (d *Dog) AgeBracket() AgeBracket {
 	switch {
-	case d.AgeinMonths < 0:
+	case d.ageInMonths < 0:
 		return AgeBracketUnknown
-	case d.AgeinMonths <= AgeInfantMaxMonths:
+	case d.ageInMonths <= AgeInfantMaxMonths:
 		return AgeBracketChildren
-	case d.AgeinMonths <= AgeAdolescentMaxMonths:
+	case d.ageInMonths <= AgeAdolescentMaxMonths:
 		return AgeBracketTeenager
-	case d.AgeinMonths <= AgeYoungAdultMaxMonths:
+	case d.ageInMonths <= AgeYoungAdultMaxMonths:
 		return AgeBracketSemiAdult
 	default:
 		return AgeBracketAdult
@@ -79,11 +152,11 @@ func (d *Dog) AgeBracket() AgeBracket {
 
 func (d *Dog) SizeBracket() SizeBracket {
 	switch {
-	case d.WeightKg <= 0:
+	case d.weightKg <= 0:
 		return SizeBracketUnknown
-	case d.WeightKg <= WeightMiniMaxKg:
+	case d.weightKg <= WeightMiniMaxKg:
 		return SizeBracketMini
-	case d.WeightKg <= WeightMediumMaxKg:
+	case d.weightKg <= WeightMediumMaxKg:
 		return SizeBracketMedium
 	default:
 		return SizeBracketLarge
@@ -91,8 +164,47 @@ func (d *Dog) SizeBracket() SizeBracket {
 }
 
 func (d *Dog) IsIntactMale() bool {
-	return d.Sex == SexMale && !d.Neutered
+	return d.sex == SexMale && !d.neutered
 }
+
+func (d *Dog) AddIncompatibility(incompat *Incompatibility) (bool, error) {
+	if incompat == nil {
+		return false, fmt.Errorf("dog: incompat cannot be nil")
+	}
+	if containsIncompatibility(d.incompatibilities, incompat.ID()) {
+		return false, nil
+	}
+	d.incompatibilities = append(d.incompatibilities, *incompat)
+	return true, nil
+}
+
+func (d *Dog) RemoveIncompatibility(id int) (bool, error) {
+	if id <= 0 {
+		return false, fmt.Errorf("dog: id must be greater than 0")
+	}
+	if !containsIncompatibility(d.incompatibilities, id) {
+		return false, nil
+	}
+	d.incompatibilities = removeIncompatibility(d.incompatibilities, id)
+	return true, nil
+}
+
+func (d *Dog) UpdateProfile(input UpdateDogInput) error {
+	if input.WeightKg < 0 {
+		return fmt.Errorf("dog: weightKg must not be negative")
+	}
+	d.neutered = input.Neutered
+	d.heat = input.Heat
+	d.weightKg = input.WeightKg
+	d.photoURL = input.PhotoURL
+	d.medicalNotes = input.MedicalNotes
+	d.educatorNotes = input.EducatorNotes
+	d.isActive = input.IsActive
+	return nil
+}
+
+func (d *Dog) Activate()   { d.isActive = true }
+func (d *Dog) Deactivate() { d.isActive = false }
 
 type DogRepository interface {
 	Create(ctx context.Context, dog *Dog) error

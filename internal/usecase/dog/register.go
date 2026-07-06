@@ -10,7 +10,7 @@ import (
 type RegisterDogInput struct {
 	Name        string
 	Breed       string
-	AgeinMonths int
+	AgeInMonths int
 	Sex         domain.Sex
 	WeightKg    float64
 	Passport    string
@@ -34,22 +34,16 @@ func (uc *RegisterDogUseCase) Execute(ctx context.Context, in RegisterDogInput) 
 		return RegisterDogOutput{}, err
 	}
 
-	d := &domain.Dog{
-		Name:        in.Name,
-		Breed:       in.Breed,
-		AgeinMonths: in.AgeinMonths,
-		Sex:         in.Sex,
-		WeightKg:    in.WeightKg,
-		Passport:    in.Passport,
-		UserID:      in.UserID,
-		IsActive:    true,
+	d, err := domain.NewDog(0, in.Name, in.Breed, in.Passport, in.AgeInMonths, in.Sex, in.WeightKg, in.UserID)
+	if err != nil {
+		return RegisterDogOutput{}, err
 	}
 
 	if err := uc.repo.Create(ctx, d); err != nil {
 		return RegisterDogOutput{}, fmt.Errorf("register dog: %w", err)
 	}
 
-	return RegisterDogOutput{ID: d.ID}, nil
+	return RegisterDogOutput{ID: d.ID()}, nil
 }
 
 func (in RegisterDogInput) validate() error {
@@ -59,8 +53,8 @@ func (in RegisterDogInput) validate() error {
 	if in.Breed == "" {
 		return &ValidationError{Field: "breed"}
 	}
-	if in.AgeinMonths <= 0 {
-		return &ValidationError{Field: "agein_months"}
+	if in.AgeInMonths <= 0 {
+		return &ValidationError{Field: "age_in_months"}
 	}
 	if in.Sex == "" {
 		return &ValidationError{Field: "sex"}
