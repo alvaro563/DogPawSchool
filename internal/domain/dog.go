@@ -39,6 +39,22 @@ const (
 	SizeBracketUnknown SizeBracket = "UNKNOWN"
 )
 
+func (a AgeBracket) IsValid() bool {
+	switch a {
+	case AgeBracketChildren, AgeBracketTeenager, AgeBracketSemiAdult, AgeBracketAdult, AgeBracketUnknown:
+		return true
+	}
+	return false
+}
+
+func (s SizeBracket) IsValid() bool {
+	switch s {
+	case SizeBracketMini, SizeBracketMedium, SizeBracketLarge, SizeBracketUnknown:
+		return true
+	}
+	return false
+}
+
 const (
 	AgeInfantMaxMonths     = 6
 	AgeAdolescentMaxMonths = 18
@@ -167,6 +183,25 @@ func (d *Dog) IsIntactMale() bool {
 	return d.sex == SexMale && !d.neutered
 }
 
+func containsIncompatibility(list []Incompatibility, id int) bool {
+	for _, v := range list {
+		if v.ID() == id {
+			return true
+		}
+	}
+	return false
+}
+
+func removeIncompatibility(list []Incompatibility, id int) []Incompatibility {
+	out := make([]Incompatibility, 0, len(list))
+	for _, v := range list {
+		if v.ID() != id {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func (d *Dog) AddIncompatibility(incompat *Incompatibility) (bool, error) {
 	if incompat == nil {
 		return false, fmt.Errorf("dog: incompat cannot be nil")
@@ -210,6 +245,15 @@ type DogRepository interface {
 	Create(ctx context.Context, dog *Dog) error
 	Update(ctx context.Context, dog *Dog) error
 	GetByID(ctx context.Context, id int) (*Dog, error)
-	ListByOwner(ctx context.Context, userID int) ([]*Dog, error)
+	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Dog, error)
+	ListAll(ctx context.Context, activeOnly bool, limit, offset int) ([]*Dog, error)
+	ListByIncompatibility(ctx context.Context, incompatibilityID, limit, offset int) ([]*Dog, error)
+	ListByBreed(ctx context.Context, breed string, limit, offset int) ([]*Dog, error)
+	ListBySex(ctx context.Context, sex Sex, limit, offset int) ([]*Dog, error)
+	ListByNeutered(ctx context.Context, neutered bool, limit, offset int) ([]*Dog, error)
+	ListByHeat(ctx context.Context, heat bool, limit, offset int) ([]*Dog, error)
+	ListByIsActive(ctx context.Context, isActive bool, limit, offset int) ([]*Dog, error)
+	ListByAgeBracket(ctx context.Context, bracket AgeBracket, limit, offset int) ([]*Dog, error)
+	ListBySizeBracket(ctx context.Context, bracket SizeBracket, limit, offset int) ([]*Dog, error)
 	Delete(ctx context.Context, id int) error
 }

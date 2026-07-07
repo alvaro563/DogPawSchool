@@ -12,11 +12,12 @@ const (
 	TypeSocialization ActivityType = "SOCIALIZATION_GROUP"
 	TypeRoute         ActivityType = "ROUTE"
 	TypeIndividual    ActivityType = "INDIVIDUAL_CLASS"
+	TypeExtra         ActivityType = "EXTRA"
 )
 
 func (t ActivityType) IsValid() bool {
 	switch t {
-	case TypeSocialization, TypeRoute, TypeIndividual:
+	case TypeSocialization, TypeRoute, TypeIndividual, TypeExtra:
 		return true
 	}
 	return false
@@ -88,6 +89,7 @@ func (a *Activity) IsUpcoming(now time.Time) bool {
 func (a *Activity) IsIndividualClass() bool    { return a.activityType == TypeIndividual }
 func (a *Activity) IsSocializationGroup() bool { return a.activityType == TypeSocialization }
 func (a *Activity) IsRoute() bool              { return a.activityType == TypeRoute }
+func (a *Activity) IsExtra() bool              { return a.activityType == TypeExtra }
 
 type ActivityRepository interface {
 	Create(ctx context.Context, activity *Activity) error

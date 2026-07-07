@@ -1,0 +1,30 @@
+# Ejecutables compilados de Go (los que creas con go build)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+out/
+
+# Herramientas de test y coberturas
+*.out
+*.prof
+*.test
+
+# Configuraciones locales y secretos (¡NUNCA subas estos!)
+.env
+.env.*
+config.local.yaml
+
+# Carpetas de editores (VS Code, GoLand...)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Logs del sistema
+*.log

@@ -36,29 +36,7 @@ type Reservation struct {
 }
 
 func NewReservation(id, activityID, dogID, passID int, createdAt time.Time) (*Reservation, error) {
-	if id < 0 {
-		return nil, fmt.Errorf("reservation: id must not be negative")
-	}
-	if activityID <= 0 {
-		return nil, fmt.Errorf("reservation: activityID must be greater than 0")
-	}
-	if dogID <= 0 {
-		return nil, fmt.Errorf("reservation: dogID must be greater than 0")
-	}
-	if passID <= 0 {
-		return nil, fmt.Errorf("reservation: passID must be greater than 0")
-	}
-	if createdAt.IsZero() {
-		return nil, fmt.Errorf("reservation: createdAt must be a valid time")
-	}
-	return &Reservation{
-		id:         id,
-		activityID: activityID,
-		dogID:      dogID,
-		passID:     passID,
-		status:     StatusConfirmed,
-		createdAt:  createdAt,
-	}, nil
+	return NewReservationWithStatus(id, activityID, dogID, passID, StatusConfirmed, createdAt)
 }
 
 func NewReservationWithStatus(id, activityID, dogID, passID int, status ReservationStatus, createdAt time.Time) (*Reservation, error) {
