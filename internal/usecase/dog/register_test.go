@@ -57,9 +57,9 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 	t.Run("validation_does_not_call_repo", func(t *testing.T) {
 		called := false
 		mock := &mockDogRepository{
-			create: func(ctx context.Context, dog *domain.Dog) error {
+			create: func(ctx context.Context, dog *domain.Dog) (int, error) {
 				called = true
-				return nil
+				return 0, nil
 			},
 		}
 		uc := NewRegisterDogUseCase(mock)
@@ -73,12 +73,10 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedDog *domain.Dog
 		mock := &mockDogRepository{
-			create: func(ctx context.Context, dog *domain.Dog) error {
+			create: func(ctx context.Context, dog *domain.Dog) (int, error) {
 				capturedDog = dog
 				dog.Activate()
-				d, _ := domain.NewDog(42, dog.Name(), dog.Breed(), dog.Passport(), dog.AgeInMonths(), dog.Sex(), dog.WeightKg(), dog.UserID())
-				*dog = *d
-				return nil
+				return 42, nil
 			},
 		}
 		uc := NewRegisterDogUseCase(mock)
@@ -107,8 +105,8 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 	t.Run("repo_error_propagated", func(t *testing.T) {
 		repoErr := errors.New("database connection lost")
 		mock := &mockDogRepository{
-			create: func(ctx context.Context, dog *domain.Dog) error {
-				return repoErr
+			create: func(ctx context.Context, dog *domain.Dog) (int, error) {
+				return 0, repoErr
 			},
 		}
 		uc := NewRegisterDogUseCase(mock)

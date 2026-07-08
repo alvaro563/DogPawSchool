@@ -12,7 +12,7 @@ const (
 	maxPageLimit     = 100
 )
 
-func normalizePagination(limit, offset int) (int, int) {
+func NormalizePagination(limit, offset int) (int, int) {
 	if limit <= 0 {
 		limit = defaultPageLimit
 	}
@@ -47,7 +47,7 @@ func (uc *ListByOwnerUseCase) Execute(ctx context.Context, in ListByOwnerInput) 
 	if err := in.validate(); err != nil {
 		return ListByOwnerOutput{}, err
 	}
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListByOwner(ctx, in.OwnerID, limit, offset)
 	if err != nil {
 		return ListByOwnerOutput{}, fmt.Errorf("list dogs by owner: %w", err)
@@ -80,7 +80,7 @@ func NewListAllDogsUseCase(repo domain.DogRepository) *ListAllDogsUseCase {
 }
 
 func (uc *ListAllDogsUseCase) Execute(ctx context.Context, in ListAllDogsInput) (ListAllDogsOutput, error) {
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListAll(ctx, false, limit, offset)
 	if err != nil {
 		return ListAllDogsOutput{}, fmt.Errorf("list all dogs: %w", err)
@@ -106,7 +106,7 @@ func NewListActiveDogsUseCase(repo domain.DogRepository) *ListActiveDogsUseCase 
 }
 
 func (uc *ListActiveDogsUseCase) Execute(ctx context.Context, in ListActiveDogsInput) (ListActiveDogsOutput, error) {
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListAll(ctx, true, limit, offset)
 	if err != nil {
 		return ListActiveDogsOutput{}, fmt.Errorf("list active dogs: %w", err)
@@ -136,7 +136,7 @@ func (uc *ListByIncompatibilityUseCase) Execute(ctx context.Context, in ListByIn
 	if err := in.validate(); err != nil {
 		return ListByIncompatibilityOutput{}, err
 	}
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListByIncompatibility(ctx, in.IncompatibilityID, limit, offset)
 	if err != nil {
 		return ListByIncompatibilityOutput{}, fmt.Errorf("list by incompatibility: %w", err)
@@ -175,7 +175,7 @@ func (uc *ListByBreedUseCase) Execute(ctx context.Context, in ListByBreedInput) 
 	if err := in.validate(); err != nil {
 		return ListByBreedOutput{}, err
 	}
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListByBreed(ctx, in.Breed, limit, offset)
 	if err != nil {
 		return ListByBreedOutput{}, fmt.Errorf("list by breed: %w", err)
@@ -214,7 +214,7 @@ func (uc *ListBySexUseCase) Execute(ctx context.Context, in ListBySexInput) (Lis
 	if err := in.validate(); err != nil {
 		return ListBySexOutput{}, err
 	}
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListBySex(ctx, in.Sex, limit, offset)
 	if err != nil {
 		return ListBySexOutput{}, fmt.Errorf("list by sex: %w", err)
@@ -250,7 +250,7 @@ func NewListByNeuteredUseCase(repo domain.DogRepository) *ListByNeuteredUseCase 
 }
 
 func (uc *ListByNeuteredUseCase) Execute(ctx context.Context, in ListByNeuteredInput) (ListByNeuteredOutput, error) {
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListByNeutered(ctx, in.Neutered, limit, offset)
 	if err != nil {
 		return ListByNeuteredOutput{}, fmt.Errorf("list by neutered: %w", err)
@@ -279,14 +279,13 @@ func NewListByHeatUseCase(repo domain.DogRepository) *ListByHeatUseCase {
 }
 
 func (uc *ListByHeatUseCase) Execute(ctx context.Context, in ListByHeatInput) (ListByHeatOutput, error) {
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListByHeat(ctx, in.Heat, limit, offset)
 	if err != nil {
 		return ListByHeatOutput{}, fmt.Errorf("list by heat: %w", err)
 	}
 	return ListByHeatOutput{Dogs: dogs}, nil
 }
-
 
 // ============== ListByAgeBracket ==============
 
@@ -312,7 +311,7 @@ func (uc *ListByAgeBracketUseCase) Execute(ctx context.Context, in ListByAgeBrac
 	if err := in.validate(); err != nil {
 		return ListByAgeBracketOutput{}, err
 	}
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListByAgeBracket(ctx, in.AgeBracket, limit, offset)
 	if err != nil {
 		return ListByAgeBracketOutput{}, fmt.Errorf("list by age bracket: %w", err)
@@ -351,7 +350,7 @@ func (uc *ListBySizeBracketUseCase) Execute(ctx context.Context, in ListBySizeBr
 	if err := in.validate(); err != nil {
 		return ListBySizeBracketOutput{}, err
 	}
-	limit, offset := normalizePagination(in.Limit, in.Offset)
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
 	dogs, err := uc.repo.ListBySizeBracket(ctx, in.SizeBracket, limit, offset)
 	if err != nil {
 		return ListBySizeBracketOutput{}, fmt.Errorf("list by size bracket: %w", err)

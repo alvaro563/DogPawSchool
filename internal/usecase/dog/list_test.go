@@ -357,23 +357,23 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 
 func TestNormalizePagination(t *testing.T) {
 	t.Run("defaults_when_zero", func(t *testing.T) {
-		limit, offset := normalizePagination(0, 0)
+		limit, offset := NormalizePagination(0, 0)
 		assert.Equal(t, 50, limit)
 		assert.Equal(t, 0, offset)
 	})
 
 	t.Run("negative_offset_clamps_to_zero", func(t *testing.T) {
-		_, offset := normalizePagination(10, -5)
+		_, offset := NormalizePagination(10, -5)
 		assert.Equal(t, 0, offset)
 	})
 
 	t.Run("limit_caps_at_max", func(t *testing.T) {
-		limit, _ := normalizePagination(10000, 0)
+		limit, _ := NormalizePagination(10000, 0)
 		assert.Equal(t, 100, limit)
 	})
 
 	t.Run("valid_values_pass_through", func(t *testing.T) {
-		limit, offset := normalizePagination(25, 50)
+		limit, offset := NormalizePagination(25, 50)
 		assert.Equal(t, 25, limit)
 		assert.Equal(t, 50, offset)
 	})

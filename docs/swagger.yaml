@@ -1,0 +1,196 @@
+definitions:
+  handler.dogDTO:
+    properties:
+      age_in_months:
+        example: 24
+        type: integer
+      breed:
+        example: Labrador
+        type: string
+      educator_notes:
+        example: ""
+        type: string
+      heat:
+        example: false
+        type: boolean
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      medical_notes:
+        example: ""
+        type: string
+      name:
+        example: Luna
+        type: string
+      neutered:
+        example: false
+        type: boolean
+      passport:
+        example: ES-12345
+        type: string
+      photo_url:
+        example: ""
+        type: string
+      sex:
+        example: FEMALE
+        type: string
+      user_id:
+        example: 1
+        type: integer
+      weight_kg:
+        example: 22.5
+        type: number
+    type: object
+  handler.errorResponse:
+    properties:
+      details:
+        example: Field 'breed' is required
+        type: string
+      error:
+        example: validation
+        type: string
+      field:
+        example: breed
+        type: string
+    type: object
+  handler.listDogsResponse:
+    properties:
+      count:
+        example: 1
+        type: integer
+      dogs:
+        items:
+          $ref: '#/definitions/handler.dogDTO'
+        type: array
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+    type: object
+  handler.registerDogRequest:
+    properties:
+      age_in_months:
+        example: 24
+        type: integer
+      breed:
+        example: Labrador
+        maxLength: 120
+        minLength: 1
+        type: string
+      name:
+        example: Luna
+        maxLength: 120
+        minLength: 1
+        type: string
+      passport:
+        example: ES-12345
+        maxLength: 64
+        minLength: 1
+        type: string
+      sex:
+        enum:
+        - MALE
+        - FEMALE
+        example: FEMALE
+        type: string
+      user_id:
+        example: 1
+        type: integer
+      weight_kg:
+        example: 22.5
+        type: number
+    required:
+    - age_in_months
+    - breed
+    - name
+    - passport
+    - sex
+    - user_id
+    - weight_kg
+    type: object
+  handler.registerDogResponse:
+    properties:
+      id:
+        example: 42
+        type: integer
+    type: object
+info:
+  contact: {}
+paths:
+  /api/v1/dogs:
+    get:
+      description: Returns a paginated list of dogs belonging to the specified owner.
+        Limit defaults to 50 and is capped at 100. Offset defaults to 0.
+      parameters:
+      - description: ID of the owner user
+        in: query
+        name: owner_id
+        required: true
+        type: integer
+      - description: Maximum number of dogs to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of dogs to skip for pagination (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of dogs with pagination metadata
+          schema:
+            $ref: '#/definitions/handler.listDogsResponse'
+        "400":
+          description: Invalid owner_id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List dogs owned by a user
+      tags:
+      - dogs
+    post:
+      consumes:
+      - application/json
+      description: Creates a new dog record owned by a user. The new resource URL
+        is returned in the Location header.
+      parameters:
+      - description: Dog to register
+        in: body
+        name: dog
+        required: true
+        schema:
+          $ref: '#/definitions/handler.registerDogRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Dog created successfully
+          schema:
+            $ref: '#/definitions/handler.registerDogResponse'
+        "400":
+          description: Invalid request body, missing fields, validation error, or
+            invalid user_id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Passport already exists
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Register a new dog
+      tags:
+      - dogs
+swagger: "2.0"

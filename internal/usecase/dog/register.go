@@ -39,11 +39,12 @@ func (uc *RegisterDogUseCase) Execute(ctx context.Context, in RegisterDogInput) 
 		return RegisterDogOutput{}, err
 	}
 
-	if err := uc.repo.Create(ctx, d); err != nil {
+	id, err := uc.repo.Create(ctx, d)
+	if err != nil {
 		return RegisterDogOutput{}, fmt.Errorf("register dog: %w", err)
 	}
 
-	return RegisterDogOutput{ID: d.ID()}, nil
+	return RegisterDogOutput{ID: id}, nil
 }
 
 func (in RegisterDogInput) validate() error {

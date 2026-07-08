@@ -7,7 +7,7 @@ import (
 )
 
 type mockDogRepository struct {
-	create                func(ctx context.Context, dog *domain.Dog) error
+	create                func(ctx context.Context, dog *domain.Dog) (int, error)
 	update                func(ctx context.Context, dog *domain.Dog) error
 	getByID               func(ctx context.Context, id int) (*domain.Dog, error)
 	listByOwner           func(ctx context.Context, userID, limit, offset int) ([]*domain.Dog, error)
@@ -23,11 +23,11 @@ type mockDogRepository struct {
 	delete                func(ctx context.Context, id int) error
 }
 
-func (m *mockDogRepository) Create(ctx context.Context, dog *domain.Dog) error {
+func (m *mockDogRepository) Create(ctx context.Context, dog *domain.Dog) (int, error) {
 	if m.create != nil {
 		return m.create(ctx, dog)
 	}
-	return nil
+	return 0, nil
 }
 
 func (m *mockDogRepository) Update(ctx context.Context, dog *domain.Dog) error {

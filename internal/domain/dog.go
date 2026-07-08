@@ -242,7 +242,7 @@ func (d *Dog) Activate()   { d.isActive = true }
 func (d *Dog) Deactivate() { d.isActive = false }
 
 type DogRepository interface {
-	Create(ctx context.Context, dog *Dog) error
+	Create(ctx context.Context, dog *Dog) (int, error)
 	Update(ctx context.Context, dog *Dog) error
 	GetByID(ctx context.Context, id int) (*Dog, error)
 	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Dog, error)

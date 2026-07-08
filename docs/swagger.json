@@ -1,0 +1,275 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "contact": {}
+    },
+    "paths": {
+        "/api/v1/dogs": {
+            "get": {
+                "description": "Returns a paginated list of dogs belonging to the specified owner. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs owned by a user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the owner user",
+                        "name": "owner_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of dogs with pagination metadata",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid owner_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new dog record owned by a user. The new resource URL is returned in the Location header.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Register a new dog",
+                "parameters": [
+                    {
+                        "description": "Dog to register",
+                        "name": "dog",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerDogRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Dog created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerDogResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body, missing fields, validation error, or invalid user_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Passport already exists",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "handler.dogDTO": {
+            "type": "object",
+            "properties": {
+                "age_in_months": {
+                    "type": "integer",
+                    "example": 24
+                },
+                "breed": {
+                    "type": "string",
+                    "example": "Labrador"
+                },
+                "educator_notes": {
+                    "type": "string",
+                    "example": ""
+                },
+                "heat": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "medical_notes": {
+                    "type": "string",
+                    "example": ""
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Luna"
+                },
+                "neutered": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "passport": {
+                    "type": "string",
+                    "example": "ES-12345"
+                },
+                "photo_url": {
+                    "type": "string",
+                    "example": ""
+                },
+                "sex": {
+                    "type": "string",
+                    "example": "FEMALE"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "weight_kg": {
+                    "type": "number",
+                    "example": 22.5
+                }
+            }
+        },
+        "handler.errorResponse": {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "string",
+                    "example": "Field 'breed' is required"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "validation"
+                },
+                "field": {
+                    "type": "string",
+                    "example": "breed"
+                }
+            }
+        },
+        "handler.listDogsResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "dogs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.dogDTO"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
+        "handler.registerDogRequest": {
+            "type": "object",
+            "required": [
+                "age_in_months",
+                "breed",
+                "name",
+                "passport",
+                "sex",
+                "user_id",
+                "weight_kg"
+            ],
+            "properties": {
+                "age_in_months": {
+                    "type": "integer",
+                    "example": 24
+                },
+                "breed": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "example": "Labrador"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "example": "Luna"
+                },
+                "passport": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "example": "ES-12345"
+                },
+                "sex": {
+                    "type": "string",
+                    "enum": [
+                        "MALE",
+                        "FEMALE"
+                    ],
+                    "example": "FEMALE"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "weight_kg": {
+                    "type": "number",
+                    "example": 22.5
+                }
+            }
+        },
+        "handler.registerDogResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        }
+    }
+}
