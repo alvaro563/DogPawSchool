@@ -69,7 +69,52 @@ func (r *DogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, error
 		}
 		return nil, err
 	}
+
+	incompats, err := r.loadIncompatibilities(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("load dog incompatibilities: %w", err)
+	}
+	for _, in := range incompats {
+		if _, err := dog.AddIncompatibility(in); err != nil {
+			return nil, fmt.Errorf("attach incompatibility %d: %w", in.ID(), err)
+		}
+	}
 	return dog, nil
+}
+
+// loadIncompatibilities returns all incompatibilities currently attached to
+// the given dog, in insertion order (oldest first).
+func (r *DogRepository) loadIncompatibilities(ctx context.Context, dogID int) ([]*domain.Incompatibility, error) {
+	const q = `
+		SELECT i.id, i.name, i.level_type
+		FROM incompatibilities i
+		JOIN dog_incompatibilities di ON di.incompatibility_id = i.id
+		WHERE di.dog_id = $1
+		ORDER BY di.created_at ASC
+	`
+	rows, err := r.db.QueryContext(ctx, q, dogID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]*domain.Incompatibility, 0)
+	for rows.Next() {
+		var (
+			id    int
+			name  string
+			level string
+		)
+		if err := rows.Scan(&id, &name, &level); err != nil {
+			return nil, err
+		}
+		in, err := domain.NewIncompatibility(id, name, domain.IncompatibilityLevel(level))
+		if err != nil {
+			return nil, fmt.Errorf("reconstruct incompatibility %d: %w", id, err)
+		}
+		out = append(out, in)
+	}
+	return out, rows.Err()
 }
 
 func (r *DogRepository) ListByOwner(ctx context.Context, userID, limit, offset int) ([]*domain.Dog, error) {
@@ -103,8 +148,65 @@ func (r *DogRepository) ListByOwner(ctx context.Context, userID, limit, offset i
 	return dogs, nil
 }
 
-func (r *DogRepository) Update(ctx context.Context, dog *domain.Dog) error {
-	return errors.New("postgres: not implemented")
+// Update persists a Dog aggregate: the dog row plus all its incompatibilities.
+// Uses a transaction so the aggregate is always consistent:
+//  1. UPDATE the dog row
+//  2. DELETE all existing dog_incompatibilities rows for this dog
+//  3. INSERT the current dog_incompatibilities rows
+//
+// This is the "aggregate root persistence" pattern: the Dog is the aggregate
+// root and its Incompatibility[] slice is part of the aggregate. A single
+// Update call must persist the whole aggregate atomically.
+func (r *DogRepository) Update(ctx context.Context, d *domain.Dog) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	// Rollback is a no-op after Commit, so this is always safe.
+	defer func() { _ = tx.Rollback() }()
+
+	const updateQ = `
+		UPDATE dogs SET
+			name = $1, breed = $2, age_in_months = $3, sex = $4,
+			weight_kg = $5, neutered = $6, heat = $7,
+			photo_url = $8, medical_notes = $9, educator_notes = $10,
+			passport = $11, is_active = $12
+		WHERE id = $13
+	`
+	res, err := tx.ExecContext(ctx, updateQ,
+		d.Name(), d.Breed(), d.AgeInMonths(), d.Sex(),
+		d.WeightKg(), d.Neutered(), d.Heat(),
+		nullString(d.PhotoURL()), nullString(d.MedicalNotes()), nullString(d.EducatorNotes()),
+		d.Passport(), d.IsActive(), d.ID(),
+	)
+	if err != nil {
+		return mapUpdateError(err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update dog: rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM dog_incompatibilities WHERE dog_id = $1`, d.ID()); err != nil {
+		return fmt.Errorf("delete dog incompatibilities: %w", err)
+	}
+
+	for _, in := range d.Incompatibilities() {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO dog_incompatibilities (dog_id, incompatibility_id) VALUES ($1, $2)`,
+			d.ID(), in.ID()); err != nil {
+			return fmt.Errorf("insert dog incompatibility %d: %w", in.ID(), err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
 }
 
 func (r *DogRepository) ListAll(ctx context.Context, activeOnly bool, limit, offset int) ([]*domain.Dog, error) {
@@ -173,14 +275,14 @@ func scanDog(s rowScanner) (*domain.Dog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct dog: %w", err)
 	}
-	if err := d.UpdateProfile(domain.UpdateDogInput{
-		Neutered:      neutered,
-		Heat:          heat,
-		WeightKg:      weightKg,
-		PhotoURL:      photoURL.String,
-		MedicalNotes:  medical.String,
-		EducatorNotes: educator.String,
-		IsActive:      isActive,
+	if err := d.ApplyPatch(domain.DogPatch{
+		Neutered:      &neutered,
+		Heat:          &heat,
+		WeightKg:      &weightKg,
+		PhotoURL:      &photoURL.String,
+		MedicalNotes:  &medical.String,
+		EducatorNotes: &educator.String,
+		IsActive:      &isActive,
 	}); err != nil {
 		return nil, fmt.Errorf("reconstruct dog profile: %w", err)
 	}
@@ -198,6 +300,19 @@ func mapCreateError(err error) error {
 		}
 	}
 	return fmt.Errorf("create dog: %w", err)
+}
+
+func mapUpdateError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case pgErrUniqueViolation:
+			return ErrDuplicatePassport
+		case pgErrForeignKeyViolation:
+			return ErrInvalidUser
+		}
+	}
+	return fmt.Errorf("update dog: %w", err)
 }
 
 func nullString(s string) sql.NullString {

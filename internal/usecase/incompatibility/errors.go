@@ -1,4 +1,4 @@
-package dog
+package incompatibility
 
 import (
 	"errors"
@@ -18,5 +18,8 @@ func IsValidationError(err error) bool {
 	return errors.As(err, &verr)
 }
 
-// ErrNotFound is returned by use cases when a requested resource does not exist.
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound      = errors.New("not found")
+	ErrDuplicateName = errors.New("incompatibility name already exists")
+	ErrInUse         = errors.New("incompatibility is in use by at least one dog")
+)

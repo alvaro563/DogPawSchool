@@ -14,6 +14,7 @@ import (
 	"dogpaw/internal/handler"
 	"dogpaw/internal/repository/postgres"
 	doguc "dogpaw/internal/usecase/dog"
+	incompatuc "dogpaw/internal/usecase/incompatibility"
 
 	_ "dogpaw/docs"
 )
@@ -32,14 +33,37 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	repo := postgres.NewDogRepository(db)
+	incompatRepo := postgres.NewIncompatibilityRepository(db)
 	registerUC := doguc.NewRegisterDogUseCase(repo)
 	listByOwnerUC := doguc.NewListByOwnerUseCase(repo)
-	dogH := handler.NewDogHandler(registerUC, listByOwnerUC)
+	modifyUC := doguc.NewModifyDogUseCase(repo)
+	addIncompatUC := doguc.NewAddDogIncompatibilityUseCase(repo, incompatRepo)
+	removeIncompatUC := doguc.NewRemoveDogIncompatibilityUseCase(repo)
+
+	registerIncompatUC := incompatuc.NewRegisterIncompatibilityUseCase(incompatRepo)
+	listIncompatUC := incompatuc.NewListIncompatibilitiesUseCase(incompatRepo)
+	getIncompatUC := incompatuc.NewGetIncompatibilityUseCase(incompatRepo)
+	modifyIncompatUC := incompatuc.NewModifyIncompatibilityUseCase(incompatRepo)
+	deleteIncompatUC := incompatuc.NewDeleteIncompatibilityUseCase(incompatRepo)
+	incompatH := handler.NewIncompatibilityHandler(
+		registerIncompatUC, listIncompatUC, getIncompatUC, modifyIncompatUC, deleteIncompatUC,
+	)
+
+	dogH := handler.NewDogHandler(registerUC, listByOwnerUC, modifyUC, addIncompatUC, removeIncompatUC)
 
 	v1 := r.Group("/api/v1")
 	{
 		v1.POST("/dogs", dogH.Register)
 		v1.GET("/dogs", dogH.List)
+		v1.PATCH("/dogs/:id", dogH.Modify)
+		v1.POST("/dogs/:id/incompatibilities", dogH.AddIncompatibility)
+		v1.DELETE("/dogs/:id/incompatibilities/:incompatibility_id", dogH.RemoveIncompatibility)
+
+		v1.POST("/incompatibilities", incompatH.Register)
+		v1.GET("/incompatibilities", incompatH.List)
+		v1.GET("/incompatibilities/:id", incompatH.GetByID)
+		v1.PATCH("/incompatibilities/:id", incompatH.Modify)
+		v1.DELETE("/incompatibilities/:id", incompatH.Delete)
 	}
 
 	return r

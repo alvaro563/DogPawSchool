@@ -1,4 +1,25 @@
 definitions:
+  handler.addIncompatibilityRequest:
+    properties:
+      incompatibility_id:
+        example: 3
+        type: integer
+    required:
+    - incompatibility_id
+    type: object
+  handler.addIncompatibilityResponse:
+    properties:
+      added:
+        example: true
+        type: boolean
+      dog_id:
+        example: 42
+        type: integer
+      incompatibilities:
+        items:
+          $ref: '#/definitions/handler.incompatibilityDTO'
+        type: array
+    type: object
   handler.dogDTO:
     properties:
       age_in_months:
@@ -56,6 +77,30 @@ definitions:
         example: breed
         type: string
     type: object
+  handler.incompatibilityDTO:
+    properties:
+      id:
+        example: 3
+        type: integer
+      level:
+        example: ABSOLUTA
+        type: string
+      name:
+        example: Reactivo a machos enteros
+        type: string
+    type: object
+  handler.incompatibilityResponse:
+    properties:
+      id:
+        example: 3
+        type: integer
+      level:
+        example: BAJA
+        type: string
+      name:
+        example: Miedo a petardos
+        type: string
+    type: object
   handler.listDogsResponse:
     properties:
       count:
@@ -71,6 +116,70 @@ definitions:
       offset:
         example: 0
         type: integer
+    type: object
+  handler.listIncompatibilitiesResponse:
+    properties:
+      count:
+        example: 3
+        type: integer
+      incompatibilities:
+        items:
+          $ref: '#/definitions/handler.incompatibilityDTO'
+        type: array
+    type: object
+  handler.modifyDogRequest:
+    properties:
+      age_in_months:
+        example: 24
+        type: integer
+      breed:
+        example: Labrador
+        type: string
+      educator_notes:
+        example: ""
+        type: string
+      heat:
+        example: false
+        type: boolean
+      is_active:
+        example: true
+        type: boolean
+      medical_notes:
+        example: ""
+        type: string
+      name:
+        example: Buddie
+        type: string
+      neutered:
+        example: true
+        type: boolean
+      passport:
+        example: ES-12345
+        type: string
+      photo_url:
+        example: ""
+        type: string
+      sex:
+        example: FEMALE
+        type: string
+      weight_kg:
+        example: 22.5
+        type: number
+    type: object
+  handler.modifyDogResponse:
+    properties:
+      id:
+        example: 42
+        type: integer
+    type: object
+  handler.modifyIncompatibilityRequest:
+    properties:
+      level:
+        example: ABSOLUTA
+        type: string
+      name:
+        example: Miedo a petardos y cohetes
+        type: string
     type: object
   handler.registerDogRequest:
     properties:
@@ -118,6 +227,43 @@ definitions:
       id:
         example: 42
         type: integer
+    type: object
+  handler.registerIncompatibilityRequest:
+    properties:
+      level:
+        enum:
+        - ABSOLUTA
+        - MEDIA
+        - BAJA
+        example: MEDIA
+        type: string
+      name:
+        example: Reacciona mal al transportin
+        maxLength: 120
+        minLength: 1
+        type: string
+    required:
+    - level
+    - name
+    type: object
+  handler.registerIncompatibilityResponse:
+    properties:
+      id:
+        example: 5
+        type: integer
+    type: object
+  handler.removeIncompatibilityResponse:
+    properties:
+      dog_id:
+        example: 42
+        type: integer
+      incompatibilities:
+        items:
+          $ref: '#/definitions/handler.incompatibilityDTO'
+        type: array
+      removed:
+        example: true
+        type: boolean
     type: object
 info:
   contact: {}
@@ -193,4 +339,306 @@ paths:
       summary: Register a new dog
       tags:
       - dogs
+  /api/v1/dogs/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: Applies a partial update to an existing dog. Only the fields present
+        in the request body are modified; omitted fields are preserved. An empty body
+        is a no-op and returns 200 without touching the database. Designed for fixing
+        typos (e.g. "Labarador" -> "Labrador") or correcting registration mistakes.
+      parameters:
+      - description: Dog ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to patch (only the fields you want to change)
+        in: body
+        name: dog
+        required: true
+        schema:
+          $ref: '#/definitions/handler.modifyDogRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dog patched (or no-op if body was empty)
+          schema:
+            $ref: '#/definitions/handler.modifyDogResponse'
+        "400":
+          description: Invalid id, invalid request body, or validation error (e.g.
+            empty name, negative weight, invalid sex)
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Dog not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Passport already exists
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Patch a dog (partial update)
+      tags:
+      - dogs
+  /api/v1/dogs/{id}/incompatibilities:
+    post:
+      consumes:
+      - application/json
+      description: 'Idempotently attaches an existing incompatibility (looked up by
+        id) to a dog. If the dog already has that incompatibility, returns 200 with
+        `added: false` and the current list (no DB write). Otherwise persists the
+        change and returns 201 with `added: true` and the updated list. Both the dog
+        and the incompatibility must exist.'
+      parameters:
+      - description: Dog ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Incompatibility to attach
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.addIncompatibilityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Incompatibility was already attached (added=false, idempotent
+            no-op)
+          schema:
+            $ref: '#/definitions/handler.addIncompatibilityResponse'
+        "201":
+          description: Incompatibility newly attached (added=true)
+          schema:
+            $ref: '#/definitions/handler.addIncompatibilityResponse'
+        "400":
+          description: Invalid id, invalid body, or validation error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Dog or incompatibility not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Add an incompatibility to a dog
+      tags:
+      - dogs
+  /api/v1/dogs/{id}/incompatibilities/{incompatibility_id}:
+    delete:
+      description: Idempotently detaches an existing incompatibility (looked up by
+        id) from a dog. If the dog does not have that incompatibility, returns 200
+        with the current list (no DB write). Otherwise persists the change and returns
+        200 with the updated list. Both dog and incompatibility must exist; 404 otherwise.
+      parameters:
+      - description: Dog ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Incompatibility ID
+        in: path
+        name: incompatibility_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Incompatibility removed (or no-op if not present), with the
+            current list
+          schema:
+            $ref: '#/definitions/handler.removeIncompatibilityResponse'
+        "400":
+          description: Invalid id or incompatibility_id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Dog not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Remove an incompatibility from a dog
+      tags:
+      - dogs
+  /api/v1/incompatibilities:
+    get:
+      description: Returns all incompatibilities, optionally filtered by level.
+      parameters:
+      - description: Filter by level (ABSOLUTA, MEDIA, BAJA)
+        in: query
+        name: level
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of incompatibilities
+          schema:
+            $ref: '#/definitions/handler.listIncompatibilitiesResponse'
+        "400":
+          description: Invalid level filter
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List incompatibilities
+      tags:
+      - incompatibilities
+    post:
+      consumes:
+      - application/json
+      description: Creates a new incompatibility category. The name must be unique
+        (case-insensitive).
+      parameters:
+      - description: Incompatibility to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.registerIncompatibilityRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Incompatibility created
+          schema:
+            $ref: '#/definitions/handler.registerIncompatibilityResponse'
+        "400":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Name already exists
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Register a new incompatibility
+      tags:
+      - incompatibilities
+  /api/v1/incompatibilities/{id}:
+    delete:
+      description: Deletes an incompatibility. Fails with 409 if it is still referenced
+        by any dog.
+      parameters:
+      - description: Incompatibility ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "400":
+          description: Invalid id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Incompatibility not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Incompatibility is in use by at least one dog
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Delete an incompatibility
+      tags:
+      - incompatibilities
+    get:
+      description: Returns a single incompatibility by its ID.
+      parameters:
+      - description: Incompatibility ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Incompatibility found
+          schema:
+            $ref: '#/definitions/handler.incompatibilityResponse'
+        "400":
+          description: Invalid id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Incompatibility not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Get incompatibility by ID
+      tags:
+      - incompatibilities
+    patch:
+      consumes:
+      - application/json
+      description: Partially updates an incompatibility (name and/or level). An empty
+        body is a no-op.
+      parameters:
+      - description: Incompatibility ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to patch
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.modifyIncompatibilityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated incompatibility
+          schema:
+            $ref: '#/definitions/handler.incompatibilityResponse'
+        "400":
+          description: Invalid id, body, or validation error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Incompatibility not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Name already exists
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Patch an incompatibility
+      tags:
+      - incompatibilities
 swagger: "2.0"

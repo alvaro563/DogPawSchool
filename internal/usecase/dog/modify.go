@@ -2,20 +2,15 @@ package dog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"dogpaw/internal/domain"
 )
 
 type ModifyDogInput struct {
-	ID            int
-	Neutered      bool
-	Heat          bool
-	WeightKg      float64
-	PhotoURL      string
-	MedicalNotes  string
-	EducatorNotes string
-	IsActive      bool
+	ID    int
+	Patch domain.DogPatch
 }
 
 type ModifyDogOutput struct {
@@ -31,8 +26,8 @@ func NewModifyDogUseCase(repo domain.DogRepository) *ModifyDogUseCase {
 }
 
 func (uc *ModifyDogUseCase) Execute(ctx context.Context, in ModifyDogInput) (ModifyDogOutput, error) {
-	if err := in.validate(); err != nil {
-		return ModifyDogOutput{}, err
+	if in.ID <= 0 {
+		return ModifyDogOutput{}, &ValidationError{Field: "id"}
 	}
 
 	d, err := uc.repo.GetByID(ctx, in.ID)
@@ -40,19 +35,19 @@ func (uc *ModifyDogUseCase) Execute(ctx context.Context, in ModifyDogInput) (Mod
 		return ModifyDogOutput{}, fmt.Errorf("get dog %d: %w", in.ID, err)
 	}
 	if d == nil {
-		return ModifyDogOutput{}, fmt.Errorf("dog %d not found", in.ID)
+		return ModifyDogOutput{}, ErrNotFound
 	}
 
-	if err := d.UpdateProfile(domain.UpdateDogInput{
-		Neutered:      in.Neutered,
-		Heat:          in.Heat,
-		WeightKg:      in.WeightKg,
-		PhotoURL:      in.PhotoURL,
-		MedicalNotes:  in.MedicalNotes,
-		EducatorNotes: in.EducatorNotes,
-		IsActive:      in.IsActive,
-	}); err != nil {
+	if err := d.ApplyPatch(in.Patch); err != nil {
+		var dverr *domain.DogValidationError
+		if errors.As(err, &dverr) {
+			return ModifyDogOutput{}, &ValidationError{Field: dverr.Field}
+		}
 		return ModifyDogOutput{}, err
+	}
+
+	if isEmptyPatch(in.Patch) {
+		return ModifyDogOutput{ID: d.ID()}, nil
 	}
 
 	if err := uc.repo.Update(ctx, d); err != nil {
@@ -62,12 +57,9 @@ func (uc *ModifyDogUseCase) Execute(ctx context.Context, in ModifyDogInput) (Mod
 	return ModifyDogOutput{ID: d.ID()}, nil
 }
 
-func (in ModifyDogInput) validate() error {
-	if in.ID <= 0 {
-		return &ValidationError{Field: "id"}
-	}
-	if in.WeightKg <= 0 {
-		return &ValidationError{Field: "weight_kg"}
-	}
-	return nil
+func isEmptyPatch(p domain.DogPatch) bool {
+	return p.Name == nil && p.Breed == nil && p.AgeInMonths == nil &&
+		p.Sex == nil && p.Passport == nil && p.WeightKg == nil &&
+		p.Neutered == nil && p.Heat == nil && p.PhotoURL == nil &&
+		p.MedicalNotes == nil && p.EducatorNotes == nil && p.IsActive == nil
 }

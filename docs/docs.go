@@ -117,9 +117,472 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/v1/dogs/{id}": {
+            "patch": {
+                "description": "Applies a partial update to an existing dog. Only the fields present in the request body are modified; omitted fields are preserved. An empty body is a no-op and returns 200 without touching the database. Designed for fixing typos (e.g. \"Labarador\" -\u003e \"Labrador\") or correcting registration mistakes.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Patch a dog (partial update)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to patch (only the fields you want to change)",
+                        "name": "dog",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.modifyDogRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dog patched (or no-op if body was empty)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.modifyDogResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, invalid request body, or validation error (e.g. empty name, negative weight, invalid sex)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Dog not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Passport already exists",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/{id}/incompatibilities": {
+            "post": {
+                "description": "Idempotently attaches an existing incompatibility (looked up by id) to a dog. If the dog already has that incompatibility, returns 200 with ` + "`" + `added: false` + "`" + ` and the current list (no DB write). Otherwise persists the change and returns 201 with ` + "`" + `added: true` + "`" + ` and the updated list. Both the dog and the incompatibility must exist.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Add an incompatibility to a dog",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Incompatibility to attach",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.addIncompatibilityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Incompatibility was already attached (added=false, idempotent no-op)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.addIncompatibilityResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Incompatibility newly attached (added=true)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.addIncompatibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, invalid body, or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Dog or incompatibility not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/{id}/incompatibilities/{incompatibility_id}": {
+            "delete": {
+                "description": "Idempotently detaches an existing incompatibility (looked up by id) from a dog. If the dog does not have that incompatibility, returns 200 with the current list (no DB write). Otherwise persists the change and returns 200 with the updated list. Both dog and incompatibility must exist; 404 otherwise.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Remove an incompatibility from a dog",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Incompatibility ID",
+                        "name": "incompatibility_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Incompatibility removed (or no-op if not present), with the current list",
+                        "schema": {
+                            "$ref": "#/definitions/handler.removeIncompatibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id or incompatibility_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Dog not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/incompatibilities": {
+            "get": {
+                "description": "Returns all incompatibilities, optionally filtered by level.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incompatibilities"
+                ],
+                "summary": "List incompatibilities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by level (ABSOLUTA, MEDIA, BAJA)",
+                        "name": "level",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of incompatibilities",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listIncompatibilitiesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid level filter",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new incompatibility category. The name must be unique (case-insensitive).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incompatibilities"
+                ],
+                "summary": "Register a new incompatibility",
+                "parameters": [
+                    {
+                        "description": "Incompatibility to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerIncompatibilityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Incompatibility created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerIncompatibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Name already exists",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/incompatibilities/{id}": {
+            "get": {
+                "description": "Returns a single incompatibility by its ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incompatibilities"
+                ],
+                "summary": "Get incompatibility by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Incompatibility ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Incompatibility found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.incompatibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Incompatibility not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes an incompatibility. Fails with 409 if it is still referenced by any dog.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incompatibilities"
+                ],
+                "summary": "Delete an incompatibility",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Incompatibility ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Incompatibility not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Incompatibility is in use by at least one dog",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partially updates an incompatibility (name and/or level). An empty body is a no-op.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "incompatibilities"
+                ],
+                "summary": "Patch an incompatibility",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Incompatibility ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to patch",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.modifyIncompatibilityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated incompatibility",
+                        "schema": {
+                            "$ref": "#/definitions/handler.incompatibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, body, or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Incompatibility not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Name already exists",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "handler.addIncompatibilityRequest": {
+            "type": "object",
+            "required": [
+                "incompatibility_id"
+            ],
+            "properties": {
+                "incompatibility_id": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "handler.addIncompatibilityResponse": {
+            "type": "object",
+            "properties": {
+                "added": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "dog_id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "incompatibilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.incompatibilityDTO"
+                    }
+                }
+            }
+        },
         "handler.dogDTO": {
             "type": "object",
             "properties": {
@@ -198,6 +661,40 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.incompatibilityDTO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "level": {
+                    "type": "string",
+                    "example": "ABSOLUTA"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Reactivo a machos enteros"
+                }
+            }
+        },
+        "handler.incompatibilityResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "level": {
+                    "type": "string",
+                    "example": "BAJA"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Miedo a petardos"
+                }
+            }
+        },
         "handler.listDogsResponse": {
             "type": "object",
             "properties": {
@@ -218,6 +715,96 @@ const docTemplate = `{
                 "offset": {
                     "type": "integer",
                     "example": 0
+                }
+            }
+        },
+        "handler.listIncompatibilitiesResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "incompatibilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.incompatibilityDTO"
+                    }
+                }
+            }
+        },
+        "handler.modifyDogRequest": {
+            "type": "object",
+            "properties": {
+                "age_in_months": {
+                    "type": "integer",
+                    "example": 24
+                },
+                "breed": {
+                    "type": "string",
+                    "example": "Labrador"
+                },
+                "educator_notes": {
+                    "type": "string",
+                    "example": ""
+                },
+                "heat": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "medical_notes": {
+                    "type": "string",
+                    "example": ""
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Buddie"
+                },
+                "neutered": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "passport": {
+                    "type": "string",
+                    "example": "ES-12345"
+                },
+                "photo_url": {
+                    "type": "string",
+                    "example": ""
+                },
+                "sex": {
+                    "type": "string",
+                    "example": "FEMALE"
+                },
+                "weight_kg": {
+                    "type": "number",
+                    "example": 22.5
+                }
+            }
+        },
+        "handler.modifyDogResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "handler.modifyIncompatibilityRequest": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string",
+                    "example": "ABSOLUTA"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Miedo a petardos y cohetes"
                 }
             }
         },
@@ -279,6 +866,58 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 42
+                }
+            }
+        },
+        "handler.registerIncompatibilityRequest": {
+            "type": "object",
+            "required": [
+                "level",
+                "name"
+            ],
+            "properties": {
+                "level": {
+                    "type": "string",
+                    "enum": [
+                        "ABSOLUTA",
+                        "MEDIA",
+                        "BAJA"
+                    ],
+                    "example": "MEDIA"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "example": "Reacciona mal al transportin"
+                }
+            }
+        },
+        "handler.registerIncompatibilityResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
+        },
+        "handler.removeIncompatibilityResponse": {
+            "type": "object",
+            "properties": {
+                "dog_id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "incompatibilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.incompatibilityDTO"
+                    }
+                },
+                "removed": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         }

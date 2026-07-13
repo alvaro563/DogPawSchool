@@ -151,8 +151,6 @@ func (in ListByIncompatibilityInput) validate() error {
 	return nil
 }
 
-// ============== ListByBreed ==============
-
 type ListByBreedInput struct {
 	Breed  string
 	Limit  int
@@ -189,8 +187,6 @@ func (in ListByBreedInput) validate() error {
 	}
 	return nil
 }
-
-// ============== ListBySex ==============
 
 type ListBySexInput struct {
 	Sex    domain.Sex
@@ -229,8 +225,6 @@ func (in ListBySexInput) validate() error {
 	return nil
 }
 
-// ============== ListByNeutered ==============
-
 type ListByNeuteredInput struct {
 	Neutered bool
 	Limit    int
@@ -258,8 +252,6 @@ func (uc *ListByNeuteredUseCase) Execute(ctx context.Context, in ListByNeuteredI
 	return ListByNeuteredOutput{Dogs: dogs}, nil
 }
 
-// ============== ListByHeat ==============
-
 type ListByHeatInput struct {
 	Heat   bool
 	Limit  int
@@ -286,8 +278,6 @@ func (uc *ListByHeatUseCase) Execute(ctx context.Context, in ListByHeatInput) (L
 	}
 	return ListByHeatOutput{Dogs: dogs}, nil
 }
-
-// ============== ListByAgeBracket ==============
 
 type ListByAgeBracketInput struct {
 	AgeBracket domain.AgeBracket
@@ -325,8 +315,6 @@ func (in ListByAgeBracketInput) validate() error {
 	}
 	return nil
 }
-
-// ============== ListBySizeBracket ==============
 
 type ListBySizeBracketInput struct {
 	SizeBracket domain.SizeBracket

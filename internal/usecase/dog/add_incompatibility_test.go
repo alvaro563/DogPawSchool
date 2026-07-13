@@ -12,6 +12,10 @@ import (
 
 type mockIncompatibilityRepository struct {
 	getIncompatibilityByID func(ctx context.Context, id int) (*domain.Incompatibility, error)
+	create                 func(ctx context.Context, incomp *domain.Incompatibility) (int, error)
+	list                   func(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error)
+	update                 func(ctx context.Context, incomp *domain.Incompatibility) error
+	delete                 func(ctx context.Context, id int) error
 }
 
 func (m *mockIncompatibilityRepository) GetIncompatibilityByID(ctx context.Context, id int) (*domain.Incompatibility, error) {
@@ -19,6 +23,34 @@ func (m *mockIncompatibilityRepository) GetIncompatibilityByID(ctx context.Conte
 		return m.getIncompatibilityByID(ctx, id)
 	}
 	return nil, nil
+}
+
+func (m *mockIncompatibilityRepository) Create(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
+	if m.create != nil {
+		return m.create(ctx, incomp)
+	}
+	return 0, nil
+}
+
+func (m *mockIncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
+	if m.list != nil {
+		return m.list(ctx, level)
+	}
+	return nil, nil
+}
+
+func (m *mockIncompatibilityRepository) Update(ctx context.Context, incomp *domain.Incompatibility) error {
+	if m.update != nil {
+		return m.update(ctx, incomp)
+	}
+	return nil
+}
+
+func (m *mockIncompatibilityRepository) Delete(ctx context.Context, id int) error {
+	if m.delete != nil {
+		return m.delete(ctx, id)
+	}
+	return nil
 }
 
 func validAddInput() AddDogIncompatibilityInput {
@@ -218,8 +250,7 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 		_, err := uc.Execute(context.Background(), validAddInput())
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "incompatibility")
-		assert.Contains(t, err.Error(), "not found")
+		assert.True(t, errors.Is(err, ErrNotFound), "expected ErrNotFound, got %T", err)
 	})
 
 	t.Run("get_dog_returns_error", func(t *testing.T) {
@@ -258,8 +289,7 @@ func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
 		_, err := uc.Execute(context.Background(), validAddInput())
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "dog")
-		assert.Contains(t, err.Error(), "not found")
+		assert.True(t, errors.Is(err, ErrNotFound), "expected ErrNotFound, got %T", err)
 	})
 
 	t.Run("update_returns_error", func(t *testing.T) {

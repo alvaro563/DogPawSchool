@@ -40,7 +40,7 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, in AddDogIn
 		return AddDogIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", in.IncompatibilityID, err)
 	}
 	if incompat == nil {
-		return AddDogIncompatibilityOutput{}, fmt.Errorf("incompatibility %d not found", in.IncompatibilityID)
+		return AddDogIncompatibilityOutput{}, ErrNotFound
 	}
 
 	d, err := uc.dogRepo.GetByID(ctx, in.DogID)
@@ -48,7 +48,7 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, in AddDogIn
 		return AddDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", in.DogID, err)
 	}
 	if d == nil {
-		return AddDogIncompatibilityOutput{}, fmt.Errorf("dog %d not found", in.DogID)
+		return AddDogIncompatibilityOutput{}, ErrNotFound
 	}
 
 	added, err := d.AddIncompatibility(incompat)

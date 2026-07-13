@@ -177,7 +177,7 @@ func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
 		_, err := uc.Execute(context.Background(), validRemoveInput())
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not found")
+		assert.True(t, errors.Is(err, ErrNotFound), "expected ErrNotFound, got %T", err)
 	})
 
 	t.Run("update_returns_error", func(t *testing.T) {

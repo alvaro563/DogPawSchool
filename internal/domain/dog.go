@@ -82,14 +82,27 @@ type Dog struct {
 	isActive          bool
 }
 
-type UpdateDogInput struct {
-	Neutered      bool
-	Heat          bool
-	WeightKg      float64
-	PhotoURL      string
-	MedicalNotes  string
-	EducatorNotes string
-	IsActive      bool
+type DogPatch struct {
+	Name          *string
+	Breed         *string
+	AgeInMonths   *int
+	Sex           *Sex
+	Passport      *string
+	WeightKg      *float64
+	Neutered      *bool
+	Heat          *bool
+	PhotoURL      *string
+	MedicalNotes  *string
+	EducatorNotes *string
+	IsActive      *bool
+}
+
+type DogValidationError struct {
+	Field string
+}
+
+func (e *DogValidationError) Error() string {
+	return fmt.Sprintf("dog: invalid value for %s", e.Field)
 }
 
 func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weightKg float64, userID int) (*Dog, error) {
@@ -224,17 +237,61 @@ func (d *Dog) RemoveIncompatibility(id int) (bool, error) {
 	return true, nil
 }
 
-func (d *Dog) UpdateProfile(input UpdateDogInput) error {
-	if input.WeightKg < 0 {
-		return fmt.Errorf("dog: weightKg must not be negative")
+func (d *Dog) ApplyPatch(p DogPatch) error {
+	if p.Name != nil {
+		if *p.Name == "" {
+			return &DogValidationError{Field: "name"}
+		}
+		d.name = *p.Name
 	}
-	d.neutered = input.Neutered
-	d.heat = input.Heat
-	d.weightKg = input.WeightKg
-	d.photoURL = input.PhotoURL
-	d.medicalNotes = input.MedicalNotes
-	d.educatorNotes = input.EducatorNotes
-	d.isActive = input.IsActive
+	if p.Breed != nil {
+		if *p.Breed == "" {
+			return &DogValidationError{Field: "breed"}
+		}
+		d.breed = *p.Breed
+	}
+	if p.Passport != nil {
+		if *p.Passport == "" {
+			return &DogValidationError{Field: "passport"}
+		}
+		d.passport = *p.Passport
+	}
+	if p.AgeInMonths != nil {
+		if *p.AgeInMonths < 0 {
+			return &DogValidationError{Field: "age_in_months"}
+		}
+		d.ageInMonths = *p.AgeInMonths
+	}
+	if p.WeightKg != nil {
+		if *p.WeightKg < 0 {
+			return &DogValidationError{Field: "weight_kg"}
+		}
+		d.weightKg = *p.WeightKg
+	}
+	if p.Sex != nil {
+		if !p.Sex.IsValid() {
+			return &DogValidationError{Field: "sex"}
+		}
+		d.sex = *p.Sex
+	}
+	if p.Neutered != nil {
+		d.neutered = *p.Neutered
+	}
+	if p.Heat != nil {
+		d.heat = *p.Heat
+	}
+	if p.PhotoURL != nil {
+		d.photoURL = *p.PhotoURL
+	}
+	if p.MedicalNotes != nil {
+		d.medicalNotes = *p.MedicalNotes
+	}
+	if p.EducatorNotes != nil {
+		d.educatorNotes = *p.EducatorNotes
+	}
+	if p.IsActive != nil {
+		d.isActive = *p.IsActive
+	}
 	return nil
 }
 

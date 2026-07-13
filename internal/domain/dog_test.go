@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,8 @@ func newTestDog(t *testing.T, ageInMonths int, sex domain.Sex, weightKg float64,
 		t.Fatalf("newTestDog: %v", err)
 	}
 	if neutered {
-		_ = d.UpdateProfile(domain.UpdateDogInput{Neutered: true})
+		neuteredVal := true
+		_ = d.ApplyPatch(domain.DogPatch{Neutered: &neuteredVal})
 	}
 	return d
 }
@@ -208,32 +210,81 @@ func TestDog_RemoveIncompatibility(t *testing.T) {
 	})
 }
 
-func TestDog_UpdateProfile(t *testing.T) {
-	t.Run("happy_path", func(t *testing.T) {
+func TestDog_ApplyPatch(t *testing.T) {
+	t.Run("empty_patch_is_noop", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexMale, 20.0, false)
-		err := d.UpdateProfile(domain.UpdateDogInput{
-			Neutered:      true,
-			Heat:          true,
-			WeightKg:      30.0,
-			PhotoURL:      "url",
-			MedicalNotes:  "notes",
-			EducatorNotes: "edu",
-			IsActive:      false,
-		})
+		originalName := d.Name()
+		err := d.ApplyPatch(domain.DogPatch{})
 		assert.NoError(t, err)
-		assert.True(t, d.Neutered())
-		assert.True(t, d.Heat())
-		assert.Equal(t, 30.0, d.WeightKg())
-		assert.Equal(t, "url", d.PhotoURL())
-		assert.Equal(t, "notes", d.MedicalNotes())
-		assert.Equal(t, "edu", d.EducatorNotes())
-		assert.False(t, d.IsActive())
+		assert.Equal(t, originalName, d.Name())
+		assert.False(t, d.Neutered())
 	})
 
-	t.Run("negative_weight_returns_error", func(t *testing.T) {
+	t.Run("partial_update_preserves_other_fields", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexMale, 20.0, false)
-		err := d.UpdateProfile(domain.UpdateDogInput{WeightKg: -1})
-		assert.Error(t, err)
+		newName := "Buddie"
+		err := d.ApplyPatch(domain.DogPatch{Name: &newName})
+		assert.NoError(t, err)
+		assert.Equal(t, "Buddie", d.Name())
+		assert.Equal(t, "TestBreed", d.Breed(), "breed preserved")
+		assert.Equal(t, 20.0, d.WeightKg(), "weight preserved")
+		assert.Equal(t, domain.SexMale, d.Sex(), "sex preserved")
+	})
+
+	t.Run("multiple_fields_updated", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 20.0, false)
+		newName := "Luna"
+		newBreed := "Husky"
+		newWeight := 25.0
+		neutered := true
+		err := d.ApplyPatch(domain.DogPatch{
+			Name:     &newName,
+			Breed:    &newBreed,
+			WeightKg: &newWeight,
+			Neutered: &neutered,
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, "Luna", d.Name())
+		assert.Equal(t, "Husky", d.Breed())
+		assert.Equal(t, 25.0, d.WeightKg())
+		assert.True(t, d.Neutered())
+	})
+
+	t.Run("bool_field_distinguishes_false_from_unset", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 20.0, true)
+		neutered := false
+		err := d.ApplyPatch(domain.DogPatch{Neutered: &neutered})
+		assert.NoError(t, err)
+		assert.False(t, d.Neutered(), "explicit false must be applied")
+	})
+
+	t.Run("validation_errors", func(t *testing.T) {
+		empty := ""
+		negAge := -1
+		negWeight := -1.0
+		invalidSex := domain.Sex("OTHER")
+		tests := []struct {
+			name      string
+			patch     domain.DogPatch
+			wantField string
+		}{
+			{"empty_name", domain.DogPatch{Name: &empty}, "name"},
+			{"empty_breed", domain.DogPatch{Breed: &empty}, "breed"},
+			{"empty_passport", domain.DogPatch{Passport: &empty}, "passport"},
+			{"negative_age", domain.DogPatch{AgeInMonths: &negAge}, "age_in_months"},
+			{"negative_weight", domain.DogPatch{WeightKg: &negWeight}, "weight_kg"},
+			{"invalid_sex", domain.DogPatch{Sex: &invalidSex}, "sex"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				d := newTestDog(t, 24, domain.SexMale, 20.0, false)
+				err := d.ApplyPatch(tt.patch)
+				assert.Error(t, err)
+				var dverr *domain.DogValidationError
+				assert.True(t, errors.As(err, &dverr), "expected DogValidationError, got %T", err)
+				assert.Equal(t, tt.wantField, dverr.Field)
+			})
+		}
 	})
 }
 

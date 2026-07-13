@@ -36,7 +36,7 @@ func (uc *RemoveDogIncompatibilityUseCase) Execute(ctx context.Context, in Remov
 		return RemoveDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", in.DogID, err)
 	}
 	if d == nil {
-		return RemoveDogIncompatibilityOutput{}, fmt.Errorf("dog %d not found", in.DogID)
+		return RemoveDogIncompatibilityOutput{}, ErrNotFound
 	}
 
 	removed, err := d.RemoveIncompatibility(in.IncompatibilityID)
