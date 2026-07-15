@@ -35,10 +35,21 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	repo := postgres.NewDogRepository(db)
 	incompatRepo := postgres.NewIncompatibilityRepository(db)
 	registerUC := doguc.NewRegisterDogUseCase(repo)
+	listAllUC := doguc.NewListAllDogsUseCase(repo)
 	listByOwnerUC := doguc.NewListByOwnerUseCase(repo)
+	listActiveUC := doguc.NewListActiveDogsUseCase(repo)
+	listByIsActiveUC := doguc.NewListByIsActiveUseCase(repo)
+	listByIncompatibilityUC := doguc.NewListByIncompatibilityUseCase(repo)
+	listByBreedUC := doguc.NewListByBreedUseCase(repo)
+	listBySexUC := doguc.NewListBySexUseCase(repo)
+	listByNeuteredUC := doguc.NewListByNeuteredUseCase(repo)
+	listByHeatUC := doguc.NewListByHeatUseCase(repo)
+	listByAgeBracketUC := doguc.NewListByAgeBracketUseCase(repo)
+	listBySizeBracketUC := doguc.NewListBySizeBracketUseCase(repo)
 	modifyUC := doguc.NewModifyDogUseCase(repo)
 	addIncompatUC := doguc.NewAddDogIncompatibilityUseCase(repo, incompatRepo)
 	removeIncompatUC := doguc.NewRemoveDogIncompatibilityUseCase(repo)
+	deleteDogUC := doguc.NewDeleteDogUseCase(repo)
 
 	registerIncompatUC := incompatuc.NewRegisterIncompatibilityUseCase(incompatRepo)
 	listIncompatUC := incompatuc.NewListIncompatibilitiesUseCase(incompatRepo)
@@ -49,13 +60,41 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		registerIncompatUC, listIncompatUC, getIncompatUC, modifyIncompatUC, deleteIncompatUC,
 	)
 
-	dogH := handler.NewDogHandler(registerUC, listByOwnerUC, modifyUC, addIncompatUC, removeIncompatUC)
+	dogH := handler.NewDogHandler(
+		registerUC,
+		listAllUC,
+		listByOwnerUC,
+		listActiveUC,
+		listByIsActiveUC,
+		listByIncompatibilityUC,
+		listByBreedUC,
+		listBySexUC,
+		listByNeuteredUC,
+		listByHeatUC,
+		listByAgeBracketUC,
+		listBySizeBracketUC,
+		modifyUC,
+		addIncompatUC,
+		removeIncompatUC,
+		deleteDogUC,
+	)
 
 	v1 := r.Group("/api/v1")
 	{
 		v1.POST("/dogs", dogH.Register)
 		v1.GET("/dogs", dogH.List)
+		v1.GET("/dogs/active", dogH.ListActive)
+		v1.GET("/dogs/is_active/:value", dogH.ListByIsActive)
+		v1.GET("/dogs/incompatibility/:incompat_id", dogH.ListByIncompatibility)
+		v1.GET("/dogs/breed/:breed", dogH.ListByBreed)
+		v1.GET("/dogs/sex/:sex", dogH.ListBySex)
+		v1.GET("/dogs/neutered/:value", dogH.ListByNeutered)
+		v1.GET("/dogs/heat/:value", dogH.ListByHeat)
+		v1.GET("/dogs/age/:bracket", dogH.ListByAgeBracket)
+		v1.GET("/dogs/size/:bracket", dogH.ListBySizeBracket)
+		v1.GET("/dogs/owner/:owner_id", dogH.ListByOwner)
 		v1.PATCH("/dogs/:id", dogH.Modify)
+		v1.DELETE("/dogs/:id", dogH.Delete)
 		v1.POST("/dogs/:id/incompatibilities", dogH.AddIncompatibility)
 		v1.DELETE("/dogs/:id/incompatibilities/:incompatibility_id", dogH.RemoveIncompatibility)
 

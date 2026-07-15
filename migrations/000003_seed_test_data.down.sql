@@ -1,0 +1,18 @@
+-- ============================================================================
+-- DogPaw - Migration 000003: Seed test data (ROLLBACK)
+-- ============================================================================
+-- This file is intentionally empty.
+--
+-- The UP migration inserts 10 users and 30 dogs with auto-generated
+-- IDENTITY IDs, so the DOWN cannot reliably remove them without knowing
+-- which IDs came from the seed versus any subsequent manual test data.
+-- Reverse-rolling the seed would risk deleting real user data.
+--
+-- If you need to undo the seed manually, use:
+--
+--   DELETE FROM dogs  WHERE passport LIKE 'ES-SEED-%';
+--   DELETE FROM users WHERE email = 'admin@dogpaw.com'
+--                       OR email LIKE '%@example.com';
+--
+-- For a clean local reset, drop and re-create the database instead.
+-- ============================================================================

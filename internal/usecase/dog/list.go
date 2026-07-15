@@ -279,6 +279,33 @@ func (uc *ListByHeatUseCase) Execute(ctx context.Context, in ListByHeatInput) (L
 	return ListByHeatOutput{Dogs: dogs}, nil
 }
 
+type ListByIsActiveInput struct {
+	IsActive bool
+	Limit    int
+	Offset   int
+}
+
+type ListByIsActiveOutput struct {
+	Dogs []*domain.Dog
+}
+
+type ListByIsActiveUseCase struct {
+	repo domain.DogRepository
+}
+
+func NewListByIsActiveUseCase(repo domain.DogRepository) *ListByIsActiveUseCase {
+	return &ListByIsActiveUseCase{repo: repo}
+}
+
+func (uc *ListByIsActiveUseCase) Execute(ctx context.Context, in ListByIsActiveInput) (ListByIsActiveOutput, error) {
+	limit, offset := NormalizePagination(in.Limit, in.Offset)
+	dogs, err := uc.repo.ListByIsActive(ctx, in.IsActive, limit, offset)
+	if err != nil {
+		return ListByIsActiveOutput{}, fmt.Errorf("list by is_active: %w", err)
+	}
+	return ListByIsActiveOutput{Dogs: dogs}, nil
+}
+
 type ListByAgeBracketInput struct {
 	AgeBracket domain.AgeBracket
 	Limit      int

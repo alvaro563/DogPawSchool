@@ -1,0 +1,42 @@
+-- ============================================================================
+-- DogPaw - Migration 000004: Seed incompatibilities and dog associations (ROLLBACK)
+-- ============================================================================
+-- This file is intentionally empty.
+--
+-- The UP migration inserts 10 incompatibilities and 33 dog_incompatibilities
+-- rows with auto-generated IDENTITY IDs, so the DOWN cannot reliably remove
+-- them without knowing which IDs came from the seed versus any subsequent
+-- manual test data. Reverse-rolling the seed would risk deleting real data.
+--
+-- If you need to undo the seed manually, use:
+--
+--   DELETE FROM dog_incompatibilities
+--       WHERE incompatibility_id IN (SELECT id FROM incompatibilities
+--           WHERE name IN (
+--               'Reactivo a machos enteros',
+--               'Miedoso con extraños',
+--               'Ansiedad por separación',
+--               'Protección de recursos',
+--               'Agresividad alimentaria',
+--               'Reactivo a hembras en celo',
+--               'Reactivo a bicicletas',
+--               'Selectivo con otros perros',
+--               'Necesita bozal en grupo',
+--               'Agresivo con gatos'
+--           ));
+--   DELETE FROM incompatibilities
+--       WHERE name IN (
+--           'Reactivo a machos enteros',
+--           'Miedoso con extraños',
+--           'Ansiedad por separación',
+--           'Protección de recursos',
+--           'Agresividad alimentaria',
+--           'Reactivo a hembras en celo',
+--           'Reactivo a bicicletas',
+--           'Selectivo con otros perros',
+--           'Necesita bozal en grupo',
+--           'Agresivo con gatos'
+--       );
+--
+-- For a clean local reset, drop and re-create the database instead.
+-- ============================================================================

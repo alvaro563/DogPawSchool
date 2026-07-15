@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -21,6 +22,23 @@ const (
 	pgErrForeignKeyViolation = "23503"
 	pgErrUniqueViolation     = "23505"
 )
+
+// dogSelectClause is the 14-column projection reused by every list method.
+// Keep the column order in lockstep with scanDog.
+const dogSelectClause = `SELECT id, user_id, name, breed, age_in_months, sex,
+	       neutered, heat, weight_kg,
+	       photo_url, medical_notes, educator_notes,
+	       passport, is_active
+	FROM dogs`
+
+// dogJoinSelectClause is the projection used by ListByIncompatibility. It
+// qualifies the dog columns with `d.` so the planner can disambiguate them
+// from the joined dog_incompatibilities columns.
+const dogJoinSelectClause = `SELECT d.id, d.user_id, d.name, d.breed, d.age_in_months, d.sex,
+	       d.neutered, d.heat, d.weight_kg,
+	       d.photo_url, d.medical_notes, d.educator_notes,
+	       d.passport, d.is_active
+	FROM dogs d`
 
 type DogRepository struct {
 	db *sql.DB
@@ -69,15 +87,8 @@ func (r *DogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, error
 		}
 		return nil, err
 	}
-
-	incompats, err := r.loadIncompatibilities(ctx, id)
-	if err != nil {
+	if err := r.loadIncompatibilitiesForDogs(ctx, []*domain.Dog{dog}); err != nil {
 		return nil, fmt.Errorf("load dog incompatibilities: %w", err)
-	}
-	for _, in := range incompats {
-		if _, err := dog.AddIncompatibility(in); err != nil {
-			return nil, fmt.Errorf("attach incompatibility %d: %w", in.ID(), err)
-		}
 	}
 	return dog, nil
 }
@@ -117,20 +128,77 @@ func (r *DogRepository) loadIncompatibilities(ctx context.Context, dogID int) ([
 	return out, rows.Err()
 }
 
+// loadIncompatibilitiesForDogs fetches incompatibilities for every dog in
+// the slice in a single query (no N+1), then attaches them to each dog via
+// AddIncompatibility. The dogs slice is modified in place.
+//
+// Called by every List* method right after the main query, so the response
+// always includes the dog's full incompatibilities. Total round-trips per
+// list call: 2 (one for the dogs, one for the incompats) regardless of
+// the result size.
+func (r *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dogs []*domain.Dog) error {
+	if len(dogs) == 0 {
+		return nil
+	}
+	// Build "($1, $2, ..., $N)" placeholders dynamically for the IN clause.
+	// database/sql does not support array params without a driver-specific
+	// extension; per-id placeholders are portable and Postgres optimizes
+	// them as well as array params for small N.
+	placeholders := make([]string, len(dogs))
+	args := make([]any, len(dogs))
+	for i, d := range dogs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = d.ID()
+	}
+	q := `
+		SELECT di.dog_id, i.id, i.name, i.level_type
+		FROM dog_incompatibilities di
+		JOIN incompatibilities i ON i.id = di.incompatibility_id
+		WHERE di.dog_id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY di.dog_id ASC, di.created_at ASC`
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return fmt.Errorf("load incompatibilities for %d dogs: %w", len(dogs), err)
+	}
+	defer rows.Close()
+
+	// Index dogs by ID for O(1) lookup while scanning the result set.
+	dogByID := make(map[int]*domain.Dog, len(dogs))
+	for _, d := range dogs {
+		dogByID[d.ID()] = d
+	}
+
+	for rows.Next() {
+		var dogID, incompID int
+		var name, level string
+		if err := rows.Scan(&dogID, &incompID, &name, &level); err != nil {
+			return err
+		}
+		in, err := domain.NewIncompatibility(incompID, name, domain.IncompatibilityLevel(level))
+		if err != nil {
+			return fmt.Errorf("reconstruct incompatibility %d: %w", incompID, err)
+		}
+		d, ok := dogByID[dogID]
+		if !ok {
+			// The JOIN guarantees dog_id matches a dog we just loaded.
+			// If this fires, the DB has a row referencing a missing dog.
+			return fmt.Errorf("incompatibility %d references unknown dog %d", incompID, dogID)
+		}
+		if _, err := d.AddIncompatibility(in); err != nil {
+			return fmt.Errorf("attach incompatibility %d to dog %d: %w", incompID, dogID, err)
+		}
+	}
+	return rows.Err()
+}
+
 func (r *DogRepository) ListByOwner(ctx context.Context, userID, limit, offset int) ([]*domain.Dog, error) {
-	const q = `
-		SELECT id, user_id, name, breed, age_in_months, sex,
-		       neutered, heat, weight_kg,
-		       photo_url, medical_notes, educator_notes,
-		       passport, is_active
-		FROM dogs
+	const q = dogSelectClause + `
 		WHERE user_id = $1
 		ORDER BY id DESC
-		LIMIT $2 OFFSET $3
-	`
+		LIMIT $2 OFFSET $3`
 	rows, err := r.db.QueryContext(ctx, q, userID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("query dogs: %w", err)
+		return nil, fmt.Errorf("query dogs by owner: %w", err)
 	}
 	defer rows.Close()
 
@@ -144,6 +212,9 @@ func (r *DogRepository) ListByOwner(ctx context.Context, userID, limit, offset i
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
 	}
 	return dogs, nil
 }
@@ -210,43 +281,288 @@ func (r *DogRepository) Update(ctx context.Context, d *domain.Dog) error {
 }
 
 func (r *DogRepository) ListAll(ctx context.Context, activeOnly bool, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	var (
+		q    string
+		args []any
+	)
+	if activeOnly {
+		q = dogSelectClause + `
+			WHERE is_active = $1
+			ORDER BY id DESC
+			LIMIT $2 OFFSET $3`
+		args = []any{true, limit, offset}
+	} else {
+		q = dogSelectClause + `
+			ORDER BY id DESC
+			LIMIT $1 OFFSET $2`
+		args = []any{limit, offset}
+	}
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query all dogs: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListByIncompatibility(ctx context.Context, incompatibilityID, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogJoinSelectClause + `
+		INNER JOIN dog_incompatibilities di ON di.dog_id = d.id
+		WHERE di.incompatibility_id = $1
+		ORDER BY d.id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, incompatibilityID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by incompatibility: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListByBreed(ctx context.Context, breed string, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogSelectClause + `
+		WHERE breed = $1
+		ORDER BY id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, breed, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by breed: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListBySex(ctx context.Context, sex domain.Sex, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogSelectClause + `
+		WHERE sex = $1
+		ORDER BY id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, string(sex), limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by sex: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListByNeutered(ctx context.Context, neutered bool, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogSelectClause + `
+		WHERE neutered = $1
+		ORDER BY id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, neutered, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by neutered: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListByHeat(ctx context.Context, heat bool, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogSelectClause + `
+		WHERE heat = $1
+		ORDER BY id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, heat, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by heat: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListByIsActive(ctx context.Context, isActive bool, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogSelectClause + `
+		WHERE is_active = $1
+		ORDER BY id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, isActive, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by is_active: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListByAgeBracket(ctx context.Context, bracket domain.AgeBracket, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogSelectClause + `
+		WHERE age_bracket = $1
+		ORDER BY id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, string(bracket), limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by age bracket: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
 func (r *DogRepository) ListBySizeBracket(ctx context.Context, bracket domain.SizeBracket, limit, offset int) ([]*domain.Dog, error) {
-	return nil, errors.New("postgres: not implemented")
+	const q = dogSelectClause + `
+		WHERE size_bracket = $1
+		ORDER BY id DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.QueryContext(ctx, q, string(bracket), limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by size bracket: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, limit)
+	for rows.Next() {
+		d, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := r.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for listed dogs: %w", err)
+	}
+	return dogs, nil
 }
 
+// Delete removes a dog by id. Cascades are handled at the DB level by the
+// ON DELETE CASCADE foreign keys on dog_incompatibilities.dog_id and
+// reservations.dog_id, so the join rows are removed atomically with the dog.
+// Returns ErrNotFound if no dog with the given id exists.
 func (r *DogRepository) Delete(ctx context.Context, id int) error {
-	return errors.New("postgres: not implemented")
+	const q = `DELETE FROM dogs WHERE id = $1`
+	res, err := r.db.ExecContext(ctx, q, id)
+	if err != nil {
+		return fmt.Errorf("delete dog: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete dog: rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 type rowScanner interface {
@@ -318,3 +634,7 @@ func mapUpdateError(err error) error {
 func nullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
+
+// Compile-time assertion that *DogRepository satisfies the domain contract.
+// If a method signature drifts, the build fails here instead of at runtime.
+var _ domain.DogRepository = (*DogRepository)(nil)

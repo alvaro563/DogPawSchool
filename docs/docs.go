@@ -17,22 +17,15 @@ const docTemplate = `{
     "paths": {
         "/api/v1/dogs": {
             "get": {
-                "description": "Returns a paginated list of dogs belonging to the specified owner. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
+                "description": "Returns a paginated list of all dogs across all owners. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "dogs"
                 ],
-                "summary": "List dogs owned by a user",
+                "summary": "List all dogs in the system",
                 "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID of the owner user",
-                        "name": "owner_id",
-                        "in": "query",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "Maximum number of dogs to return (default 50, max 100)",
@@ -51,12 +44,6 @@ const docTemplate = `{
                         "description": "List of dogs with pagination metadata",
                         "schema": {
                             "$ref": "#/definitions/handler.listDogsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid owner_id",
-                        "schema": {
-                            "$ref": "#/definitions/handler.errorResponse"
                         }
                     },
                     "500": {
@@ -118,7 +105,566 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/dogs/active": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose is_active is true. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List active dogs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/age/{bracket}": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose age_bracket matches :bracket. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs filtered by age bracket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Age bracket: CHILDREN, TEENAGER, SEMI_ADULT, ADULT, UNKNOWN",
+                        "name": "bracket",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/breed/{breed}": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose breed matches :breed. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs filtered by breed",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Breed name (exact match)",
+                        "name": "breed",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/heat/{value}": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose heat flag matches :value. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs filtered by heat status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Boolean value: true or false",
+                        "name": "value",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/incompatibility/{incompat_id}": {
+            "get": {
+                "description": "Returns a paginated list of dogs attached to the given incompatibility id. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs that have a specific incompatibility",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the incompatibility",
+                        "name": "incompat_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/is_active/{value}": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose is_active matches :value (true or false). Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs filtered by is_active",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Boolean value: true or false",
+                        "name": "value",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/neutered/{value}": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose neutered flag matches :value. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs filtered by neutered status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Boolean value: true or false",
+                        "name": "value",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/owner/{owner_id}": {
+            "get": {
+                "description": "Returns a paginated list of dogs belonging to the given owner. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs owned by a specific user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the owner user",
+                        "name": "owner_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of dogs with pagination metadata",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid owner_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/sex/{sex}": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose sex matches :sex. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs filtered by sex",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Sex: MALE or FEMALE",
+                        "name": "sex",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/size/{bracket}": {
+            "get": {
+                "description": "Returns a paginated list of dogs whose size_bracket matches :bracket. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "List dogs filtered by size bracket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Size bracket: MINI, MEDIUM, LARGE, UNKNOWN",
+                        "name": "bracket",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of dogs to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of dogs to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/dogs/{id}": {
+            "delete": {
+                "description": "Removes a dog by id. Associated dog_incompatibilities and reservations rows are deleted automatically by the database (ON DELETE CASCADE). Returns 404 if the dog does not exist.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Delete a dog",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
             "patch": {
                 "description": "Applies a partial update to an existing dog. Only the fields present in the request body are modified; omitted fields are preserved. An empty body is a no-op and returns 200 without touching the database. Designed for fixing typos (e.g. \"Labarador\" -\u003e \"Labrador\") or correcting registration mistakes.",
                 "consumes": [
