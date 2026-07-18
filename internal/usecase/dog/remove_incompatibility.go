@@ -26,36 +26,36 @@ func NewRemoveDogIncompatibilityUseCase(repo domain.DogRepository) *RemoveDogInc
 	return &RemoveDogIncompatibilityUseCase{repo: repo}
 }
 
-func (uc *RemoveDogIncompatibilityUseCase) Execute(ctx context.Context, in RemoveDogIncompatibilityInput) (RemoveDogIncompatibilityOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *RemoveDogIncompatibilityUseCase) Execute(ctx context.Context, input RemoveDogIncompatibilityInput) (RemoveDogIncompatibilityOutput, error) {
+	if err := input.validate(); err != nil {
 		return RemoveDogIncompatibilityOutput{}, err
 	}
 
-	d, err := uc.repo.GetByID(ctx, in.DogID)
+	dog, err := uc.repo.GetByID(ctx, input.DogID)
 	if err != nil {
-		return RemoveDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", in.DogID, err)
+		return RemoveDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", input.DogID, err)
 	}
-	if d == nil {
+	if dog == nil {
 		return RemoveDogIncompatibilityOutput{}, ErrNotFound
 	}
 
-	removed, err := d.RemoveIncompatibility(in.IncompatibilityID)
+	removed, err := dog.RemoveIncompatibility(input.IncompatibilityID)
 	if err != nil {
 		return RemoveDogIncompatibilityOutput{}, err
 	}
 	if removed {
-		if err := uc.repo.Update(ctx, d); err != nil {
-			return RemoveDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", in.DogID, err)
+		if err := uc.repo.Update(ctx, dog); err != nil {
+			return RemoveDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", input.DogID, err)
 		}
 	}
 
 	return RemoveDogIncompatibilityOutput{
-		ID:                d.ID(),
-		Incompatibilities: d.Incompatibilities(),
+		ID:                dog.ID(),
+		Incompatibilities: dog.Incompatibilities(),
 		Removed:           removed,
 	}, nil
 }
 
-func (in RemoveDogIncompatibilityInput) validate() error {
-	return validateIncompatibilityInput(in.DogID, in.IncompatibilityID)
+func (input RemoveDogIncompatibilityInput) validate() error {
+	return validateIncompatibilityInput(input.DogID, input.IncompatibilityID)
 }

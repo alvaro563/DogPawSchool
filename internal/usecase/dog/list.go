@@ -43,20 +43,20 @@ func NewListByOwnerUseCase(repo domain.DogRepository) *ListByOwnerUseCase {
 	return &ListByOwnerUseCase{repo: repo}
 }
 
-func (uc *ListByOwnerUseCase) Execute(ctx context.Context, in ListByOwnerInput) (ListByOwnerOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *ListByOwnerUseCase) Execute(ctx context.Context, input ListByOwnerInput) (ListByOwnerOutput, error) {
+	if err := input.validate(); err != nil {
 		return ListByOwnerOutput{}, err
 	}
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListByOwner(ctx, in.OwnerID, limit, offset)
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListByOwner(ctx, input.OwnerID, limit, offset)
 	if err != nil {
 		return ListByOwnerOutput{}, fmt.Errorf("list dogs by owner: %w", err)
 	}
 	return ListByOwnerOutput{Dogs: dogs}, nil
 }
 
-func (in ListByOwnerInput) validate() error {
-	if in.OwnerID <= 0 {
+func (input ListByOwnerInput) validate() error {
+	if input.OwnerID <= 0 {
 		return &ValidationError{Field: "owner_id"}
 	}
 	return nil
@@ -79,8 +79,8 @@ func NewListAllDogsUseCase(repo domain.DogRepository) *ListAllDogsUseCase {
 	return &ListAllDogsUseCase{repo: repo}
 }
 
-func (uc *ListAllDogsUseCase) Execute(ctx context.Context, in ListAllDogsInput) (ListAllDogsOutput, error) {
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
+func (uc *ListAllDogsUseCase) Execute(ctx context.Context, input ListAllDogsInput) (ListAllDogsOutput, error) {
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
 	dogs, err := uc.repo.ListAll(ctx, false, limit, offset)
 	if err != nil {
 		return ListAllDogsOutput{}, fmt.Errorf("list all dogs: %w", err)
@@ -105,8 +105,8 @@ func NewListActiveDogsUseCase(repo domain.DogRepository) *ListActiveDogsUseCase 
 	return &ListActiveDogsUseCase{repo: repo}
 }
 
-func (uc *ListActiveDogsUseCase) Execute(ctx context.Context, in ListActiveDogsInput) (ListActiveDogsOutput, error) {
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
+func (uc *ListActiveDogsUseCase) Execute(ctx context.Context, input ListActiveDogsInput) (ListActiveDogsOutput, error) {
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
 	dogs, err := uc.repo.ListAll(ctx, true, limit, offset)
 	if err != nil {
 		return ListActiveDogsOutput{}, fmt.Errorf("list active dogs: %w", err)
@@ -132,20 +132,20 @@ func NewListByIncompatibilityUseCase(repo domain.DogRepository) *ListByIncompati
 	return &ListByIncompatibilityUseCase{repo: repo}
 }
 
-func (uc *ListByIncompatibilityUseCase) Execute(ctx context.Context, in ListByIncompatibilityInput) (ListByIncompatibilityOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *ListByIncompatibilityUseCase) Execute(ctx context.Context, input ListByIncompatibilityInput) (ListByIncompatibilityOutput, error) {
+	if err := input.validate(); err != nil {
 		return ListByIncompatibilityOutput{}, err
 	}
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListByIncompatibility(ctx, in.IncompatibilityID, limit, offset)
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListByIncompatibility(ctx, input.IncompatibilityID, limit, offset)
 	if err != nil {
 		return ListByIncompatibilityOutput{}, fmt.Errorf("list by incompatibility: %w", err)
 	}
 	return ListByIncompatibilityOutput{Dogs: dogs}, nil
 }
 
-func (in ListByIncompatibilityInput) validate() error {
-	if in.IncompatibilityID <= 0 {
+func (input ListByIncompatibilityInput) validate() error {
+	if input.IncompatibilityID <= 0 {
 		return &ValidationError{Field: "incompatibility_id"}
 	}
 	return nil
@@ -169,20 +169,20 @@ func NewListByBreedUseCase(repo domain.DogRepository) *ListByBreedUseCase {
 	return &ListByBreedUseCase{repo: repo}
 }
 
-func (uc *ListByBreedUseCase) Execute(ctx context.Context, in ListByBreedInput) (ListByBreedOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *ListByBreedUseCase) Execute(ctx context.Context, input ListByBreedInput) (ListByBreedOutput, error) {
+	if err := input.validate(); err != nil {
 		return ListByBreedOutput{}, err
 	}
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListByBreed(ctx, in.Breed, limit, offset)
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListByBreed(ctx, input.Breed, limit, offset)
 	if err != nil {
 		return ListByBreedOutput{}, fmt.Errorf("list by breed: %w", err)
 	}
 	return ListByBreedOutput{Dogs: dogs}, nil
 }
 
-func (in ListByBreedInput) validate() error {
-	if in.Breed == "" {
+func (input ListByBreedInput) validate() error {
+	if input.Breed == "" {
 		return &ValidationError{Field: "breed"}
 	}
 	return nil
@@ -206,20 +206,20 @@ func NewListBySexUseCase(repo domain.DogRepository) *ListBySexUseCase {
 	return &ListBySexUseCase{repo: repo}
 }
 
-func (uc *ListBySexUseCase) Execute(ctx context.Context, in ListBySexInput) (ListBySexOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *ListBySexUseCase) Execute(ctx context.Context, input ListBySexInput) (ListBySexOutput, error) {
+	if err := input.validate(); err != nil {
 		return ListBySexOutput{}, err
 	}
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListBySex(ctx, in.Sex, limit, offset)
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListBySex(ctx, input.Sex, limit, offset)
 	if err != nil {
 		return ListBySexOutput{}, fmt.Errorf("list by sex: %w", err)
 	}
 	return ListBySexOutput{Dogs: dogs}, nil
 }
 
-func (in ListBySexInput) validate() error {
-	if !in.Sex.IsValid() {
+func (input ListBySexInput) validate() error {
+	if !input.Sex.IsValid() {
 		return &ValidationError{Field: "sex"}
 	}
 	return nil
@@ -243,9 +243,9 @@ func NewListByNeuteredUseCase(repo domain.DogRepository) *ListByNeuteredUseCase 
 	return &ListByNeuteredUseCase{repo: repo}
 }
 
-func (uc *ListByNeuteredUseCase) Execute(ctx context.Context, in ListByNeuteredInput) (ListByNeuteredOutput, error) {
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListByNeutered(ctx, in.Neutered, limit, offset)
+func (uc *ListByNeuteredUseCase) Execute(ctx context.Context, input ListByNeuteredInput) (ListByNeuteredOutput, error) {
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListByNeutered(ctx, input.Neutered, limit, offset)
 	if err != nil {
 		return ListByNeuteredOutput{}, fmt.Errorf("list by neutered: %w", err)
 	}
@@ -270,9 +270,9 @@ func NewListByHeatUseCase(repo domain.DogRepository) *ListByHeatUseCase {
 	return &ListByHeatUseCase{repo: repo}
 }
 
-func (uc *ListByHeatUseCase) Execute(ctx context.Context, in ListByHeatInput) (ListByHeatOutput, error) {
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListByHeat(ctx, in.Heat, limit, offset)
+func (uc *ListByHeatUseCase) Execute(ctx context.Context, input ListByHeatInput) (ListByHeatOutput, error) {
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListByHeat(ctx, input.Heat, limit, offset)
 	if err != nil {
 		return ListByHeatOutput{}, fmt.Errorf("list by heat: %w", err)
 	}
@@ -297,9 +297,9 @@ func NewListByIsActiveUseCase(repo domain.DogRepository) *ListByIsActiveUseCase 
 	return &ListByIsActiveUseCase{repo: repo}
 }
 
-func (uc *ListByIsActiveUseCase) Execute(ctx context.Context, in ListByIsActiveInput) (ListByIsActiveOutput, error) {
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListByIsActive(ctx, in.IsActive, limit, offset)
+func (uc *ListByIsActiveUseCase) Execute(ctx context.Context, input ListByIsActiveInput) (ListByIsActiveOutput, error) {
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListByIsActive(ctx, input.IsActive, limit, offset)
 	if err != nil {
 		return ListByIsActiveOutput{}, fmt.Errorf("list by is_active: %w", err)
 	}
@@ -324,20 +324,20 @@ func NewListByAgeBracketUseCase(repo domain.DogRepository) *ListByAgeBracketUseC
 	return &ListByAgeBracketUseCase{repo: repo}
 }
 
-func (uc *ListByAgeBracketUseCase) Execute(ctx context.Context, in ListByAgeBracketInput) (ListByAgeBracketOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *ListByAgeBracketUseCase) Execute(ctx context.Context, input ListByAgeBracketInput) (ListByAgeBracketOutput, error) {
+	if err := input.validate(); err != nil {
 		return ListByAgeBracketOutput{}, err
 	}
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListByAgeBracket(ctx, in.AgeBracket, limit, offset)
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListByAgeBracket(ctx, input.AgeBracket, limit, offset)
 	if err != nil {
 		return ListByAgeBracketOutput{}, fmt.Errorf("list by age bracket: %w", err)
 	}
 	return ListByAgeBracketOutput{Dogs: dogs}, nil
 }
 
-func (in ListByAgeBracketInput) validate() error {
-	if !in.AgeBracket.IsValid() {
+func (input ListByAgeBracketInput) validate() error {
+	if !input.AgeBracket.IsValid() {
 		return &ValidationError{Field: "age_bracket"}
 	}
 	return nil
@@ -361,20 +361,20 @@ func NewListBySizeBracketUseCase(repo domain.DogRepository) *ListBySizeBracketUs
 	return &ListBySizeBracketUseCase{repo: repo}
 }
 
-func (uc *ListBySizeBracketUseCase) Execute(ctx context.Context, in ListBySizeBracketInput) (ListBySizeBracketOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *ListBySizeBracketUseCase) Execute(ctx context.Context, input ListBySizeBracketInput) (ListBySizeBracketOutput, error) {
+	if err := input.validate(); err != nil {
 		return ListBySizeBracketOutput{}, err
 	}
-	limit, offset := NormalizePagination(in.Limit, in.Offset)
-	dogs, err := uc.repo.ListBySizeBracket(ctx, in.SizeBracket, limit, offset)
+	limit, offset := NormalizePagination(input.Limit, input.Offset)
+	dogs, err := uc.repo.ListBySizeBracket(ctx, input.SizeBracket, limit, offset)
 	if err != nil {
 		return ListBySizeBracketOutput{}, fmt.Errorf("list by size bracket: %w", err)
 	}
 	return ListBySizeBracketOutput{Dogs: dogs}, nil
 }
 
-func (in ListBySizeBracketInput) validate() error {
-	if !in.SizeBracket.IsValid() {
+func (input ListBySizeBracketInput) validate() error {
+	if !input.SizeBracket.IsValid() {
 		return &ValidationError{Field: "size_bracket"}
 	}
 	return nil

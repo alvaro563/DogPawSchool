@@ -20,6 +20,8 @@ type mockDogRepository struct {
 	listByIsActive        func(ctx context.Context, isActive bool, limit, offset int) ([]*domain.Dog, error)
 	listByAgeBracket      func(ctx context.Context, bracket domain.AgeBracket, limit, offset int) ([]*domain.Dog, error)
 	listBySizeBracket     func(ctx context.Context, bracket domain.SizeBracket, limit, offset int) ([]*domain.Dog, error)
+	setDogNeutered        func(ctx context.Context, id int, neutered bool) error
+	setDogHeat            func(ctx context.Context, id int, heat bool) error
 	delete                func(ctx context.Context, id int) error
 }
 
@@ -117,6 +119,20 @@ func (m *mockDogRepository) ListBySizeBracket(ctx context.Context, bracket domai
 func (m *mockDogRepository) Delete(ctx context.Context, id int) error {
 	if m.delete != nil {
 		return m.delete(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockDogRepository) SetDogNeutered(ctx context.Context, id int, neutered bool) error {
+	if m.setDogNeutered != nil {
+		return m.setDogNeutered(ctx, id, neutered)
+	}
+	return nil
+}
+
+func (m *mockDogRepository) SetDogHeat(ctx context.Context, id int, heat bool) error {
+	if m.setDogHeat != nil {
+		return m.setDogHeat(ctx, id, heat)
 	}
 	return nil
 }

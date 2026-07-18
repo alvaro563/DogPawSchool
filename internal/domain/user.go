@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// UserRole determines what a User can do in the system.
 type UserRole string
 
 const (
@@ -12,14 +13,16 @@ const (
 	RoleRegular UserRole = "REGULAR"
 )
 
-func (r UserRole) IsValid() bool {
-	switch r {
+// IsValid reports whether the value is a recognized UserRole.
+func (role UserRole) IsValid() bool {
+	switch role {
 	case RoleAdmin, RoleRegular:
 		return true
 	}
 	return false
 }
 
+// User owns dogs and passes.
 type User struct {
 	id       int
 	name     string
@@ -29,6 +32,7 @@ type User struct {
 	isActive bool
 }
 
+// NewUser creates a User. New users start as is_active=true.
 func NewUser(id int, name, email, password string, role UserRole) (*User, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("user: id must not be negative")
@@ -55,18 +59,28 @@ func NewUser(id int, name, email, password string, role UserRole) (*User, error)
 	}, nil
 }
 
-func (u *User) ID() int          { return u.id }
-func (u *User) Name() string     { return u.name }
-func (u *User) Email() string    { return u.email }
-func (u *User) Password() string { return u.password }
-func (u *User) Role() UserRole   { return u.role }
-func (u *User) IsActive() bool   { return u.isActive }
+func (user *User) ID() int          { return user.id }
+func (user *User) Name() string     { return user.name }
+func (user *User) Email() string    { return user.email }
+func (user *User) Password() string { return user.password }
+func (user *User) Role() UserRole   { return user.role }
+func (user *User) IsActive() bool   { return user.isActive }
 
-func (u *User) IsAdmin() bool  { return u.role == RoleAdmin }
-func (u *User) CanLogin() bool { return u.isActive && u.role.IsValid() }
-func (u *User) Activate()      { u.isActive = true }
-func (u *User) Deactivate()    { u.isActive = false }
+// IsAdmin reports whether the user has the ADMIN role.
+func (user *User) IsAdmin() bool { return user.role == RoleAdmin }
 
+// CanLogin reports whether the user can currently log in: must be active
+// and have a valid role.
+func (user *User) CanLogin() bool { return user.isActive && user.role.IsValid() }
+
+// Activate marks the user as active.
+func (user *User) Activate() { user.isActive = true }
+
+// Deactivate marks the user as inactive (soft delete).
+func (user *User) Deactivate() { user.isActive = false }
+
+// UserRepository is the persistence contract for User. Implemented by
+// internal/repository/postgres (future).
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	Update(ctx context.Context, user *User) error

@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// Sex identifies the biological sex of a dog.
 type Sex string
 
 const (
@@ -12,14 +13,16 @@ const (
 	SexFemale Sex = "FEMALE"
 )
 
-func (s Sex) IsValid() bool {
-	switch s {
+// IsValid reports whether the value is a recognized Sex.
+func (sex Sex) IsValid() bool {
+	switch sex {
 	case SexMale, SexFemale:
 		return true
 	}
 	return false
 }
 
+// AgeBracket is a coarse age category used for grouping and filtering.
 type AgeBracket string
 
 const (
@@ -30,6 +33,7 @@ const (
 	AgeBracketUnknown   AgeBracket = "UNKNOWN"
 )
 
+// SizeBracket is a coarse size category derived from weight.
 type SizeBracket string
 
 const (
@@ -39,22 +43,27 @@ const (
 	SizeBracketUnknown SizeBracket = "UNKNOWN"
 )
 
-func (a AgeBracket) IsValid() bool {
-	switch a {
+// IsValid reports whether the value is a recognized AgeBracket.
+func (bracket AgeBracket) IsValid() bool {
+	switch bracket {
 	case AgeBracketChildren, AgeBracketTeenager, AgeBracketSemiAdult, AgeBracketAdult, AgeBracketUnknown:
 		return true
 	}
 	return false
 }
 
-func (s SizeBracket) IsValid() bool {
-	switch s {
+// IsValid reports whether the value is a recognized SizeBracket.
+func (sizeBracket SizeBracket) IsValid() bool {
+	switch sizeBracket {
 	case SizeBracketMini, SizeBracketMedium, SizeBracketLarge, SizeBracketUnknown:
 		return true
 	}
 	return false
 }
 
+// Age and weight thresholds used to derive AgeBracket and SizeBracket.
+// Keep these in sync with the GENERATED ... AS expressions in the
+// migrations (000001_initial_schema).
 const (
 	AgeInfantMaxMonths     = 6
 	AgeAdolescentMaxMonths = 18
@@ -64,6 +73,8 @@ const (
 	WeightMediumMaxKg = 20.0
 )
 
+// Dog is the central aggregate. A Dog is owned by one User and may carry
+// many Incompatibility associations.
 type Dog struct {
 	id                int
 	name              string
@@ -82,6 +93,8 @@ type Dog struct {
 	isActive          bool
 }
 
+// DogPatch is a partial update for Dog: only the non-nil fields are
+// applied. Each field has its own validation rules; see ApplyPatch.
 type DogPatch struct {
 	Name          *string
 	Breed         *string
@@ -97,14 +110,19 @@ type DogPatch struct {
 	IsActive      *bool
 }
 
+// DogValidationError is returned by ApplyPatch when a supplied value is
+// invalid (empty string, negative number, etc.).
 type DogValidationError struct {
 	Field string
 }
 
-func (e *DogValidationError) Error() string {
-	return fmt.Sprintf("dog: invalid value for %s", e.Field)
+func (validationError *DogValidationError) Error() string {
+	return fmt.Sprintf("dog: invalid value for %s", validationError.Field)
 }
 
+// NewDog creates a Dog with the required invariants. Returns a
+// DogValidationError-equivalent error (plain fmt.Errorf) if any field is
+// invalid. A new dog starts as is_active=true.
 func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weightKg float64, userID int) (*Dog, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("dog: id must not be negative")
@@ -143,62 +161,66 @@ func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weig
 	}, nil
 }
 
-func (d *Dog) ID() int               { return d.id }
-func (d *Dog) Name() string          { return d.name }
-func (d *Dog) Breed() string         { return d.breed }
-func (d *Dog) AgeInMonths() int      { return d.ageInMonths }
-func (d *Dog) Sex() Sex              { return d.sex }
-func (d *Dog) Neutered() bool        { return d.neutered }
-func (d *Dog) Heat() bool            { return d.heat }
-func (d *Dog) WeightKg() float64     { return d.weightKg }
-func (d *Dog) PhotoURL() string      { return d.photoURL }
-func (d *Dog) MedicalNotes() string  { return d.medicalNotes }
-func (d *Dog) EducatorNotes() string { return d.educatorNotes }
-func (d *Dog) Passport() string      { return d.passport }
-func (d *Dog) UserID() int           { return d.userID }
-func (d *Dog) IsActive() bool        { return d.isActive }
+func (dog *Dog) ID() int               { return dog.id }
+func (dog *Dog) Name() string          { return dog.name }
+func (dog *Dog) Breed() string         { return dog.breed }
+func (dog *Dog) AgeInMonths() int      { return dog.ageInMonths }
+func (dog *Dog) Sex() Sex              { return dog.sex }
+func (dog *Dog) Neutered() bool        { return dog.neutered }
+func (dog *Dog) Heat() bool            { return dog.heat }
+func (dog *Dog) WeightKg() float64     { return dog.weightKg }
+func (dog *Dog) PhotoURL() string      { return dog.photoURL }
+func (dog *Dog) MedicalNotes() string  { return dog.medicalNotes }
+func (dog *Dog) EducatorNotes() string { return dog.educatorNotes }
+func (dog *Dog) Passport() string      { return dog.passport }
+func (dog *Dog) UserID() int           { return dog.userID }
+func (dog *Dog) IsActive() bool        { return dog.isActive }
 
-func (d *Dog) Incompatibilities() []Incompatibility {
-	out := make([]Incompatibility, len(d.incompatibilities))
-	copy(out, d.incompatibilities)
+// Incompatibilities returns a defensive copy of the dog's incompatibilities.
+func (dog *Dog) Incompatibilities() []Incompatibility {
+	out := make([]Incompatibility, len(dog.incompatibilities))
+	copy(out, dog.incompatibilities)
 	return out
 }
 
-func (d *Dog) AgeBracket() AgeBracket {
+// AgeBracket derives the age category from ageInMonths.
+func (dog *Dog) AgeBracket() AgeBracket {
 	switch {
-	case d.ageInMonths < 0:
+	case dog.ageInMonths < 0:
 		return AgeBracketUnknown
-	case d.ageInMonths <= AgeInfantMaxMonths:
+	case dog.ageInMonths <= AgeInfantMaxMonths:
 		return AgeBracketChildren
-	case d.ageInMonths <= AgeAdolescentMaxMonths:
+	case dog.ageInMonths <= AgeAdolescentMaxMonths:
 		return AgeBracketTeenager
-	case d.ageInMonths <= AgeYoungAdultMaxMonths:
+	case dog.ageInMonths <= AgeYoungAdultMaxMonths:
 		return AgeBracketSemiAdult
 	default:
 		return AgeBracketAdult
 	}
 }
 
-func (d *Dog) SizeBracket() SizeBracket {
+// SizeBracket derives the size category from weightKg.
+func (dog *Dog) SizeBracket() SizeBracket {
 	switch {
-	case d.weightKg <= 0:
+	case dog.weightKg <= 0:
 		return SizeBracketUnknown
-	case d.weightKg <= WeightMiniMaxKg:
+	case dog.weightKg <= WeightMiniMaxKg:
 		return SizeBracketMini
-	case d.weightKg <= WeightMediumMaxKg:
+	case dog.weightKg <= WeightMediumMaxKg:
 		return SizeBracketMedium
 	default:
 		return SizeBracketLarge
 	}
 }
 
-func (d *Dog) IsIntactMale() bool {
-	return d.sex == SexMale && !d.neutered
+// IsIntactMale reports whether the dog is a non-neutered male.
+func (dog *Dog) IsIntactMale() bool {
+	return dog.sex == SexMale && !dog.neutered
 }
 
 func containsIncompatibility(list []Incompatibility, id int) bool {
-	for _, v := range list {
-		if v.ID() == id {
+	for _, value := range list {
+		if value.ID() == id {
 			return true
 		}
 	}
@@ -207,97 +229,110 @@ func containsIncompatibility(list []Incompatibility, id int) bool {
 
 func removeIncompatibility(list []Incompatibility, id int) []Incompatibility {
 	out := make([]Incompatibility, 0, len(list))
-	for _, v := range list {
-		if v.ID() != id {
-			out = append(out, v)
+	for _, value := range list {
+		if value.ID() != id {
+			out = append(out, value)
 		}
 	}
 	return out
 }
 
-func (d *Dog) AddIncompatibility(incompat *Incompatibility) (bool, error) {
+// AddIncompatibility attaches an incompatibility to the dog. Returns
+// (false, nil) if it is already attached — AddIncompatibility is
+// idempotent on duplicates.
+func (dog *Dog) AddIncompatibility(incompat *Incompatibility) (bool, error) {
 	if incompat == nil {
 		return false, fmt.Errorf("dog: incompat cannot be nil")
 	}
-	if containsIncompatibility(d.incompatibilities, incompat.ID()) {
+	if containsIncompatibility(dog.incompatibilities, incompat.ID()) {
 		return false, nil
 	}
-	d.incompatibilities = append(d.incompatibilities, *incompat)
+	dog.incompatibilities = append(dog.incompatibilities, *incompat)
 	return true, nil
 }
 
-func (d *Dog) RemoveIncompatibility(id int) (bool, error) {
+// RemoveIncompatibility detaches the incompatibility with the given id.
+// Returns (false, nil) if the id is not attached.
+func (dog *Dog) RemoveIncompatibility(id int) (bool, error) {
 	if id <= 0 {
 		return false, fmt.Errorf("dog: id must be greater than 0")
 	}
-	if !containsIncompatibility(d.incompatibilities, id) {
+	if !containsIncompatibility(dog.incompatibilities, id) {
 		return false, nil
 	}
-	d.incompatibilities = removeIncompatibility(d.incompatibilities, id)
+	dog.incompatibilities = removeIncompatibility(dog.incompatibilities, id)
 	return true, nil
 }
 
-func (d *Dog) ApplyPatch(p DogPatch) error {
-	if p.Name != nil {
-		if *p.Name == "" {
+// ApplyPatch mutates the dog in place with the fields present in the
+// patch. Each field has its own validation. An empty patch is a no-op.
+func (dog *Dog) ApplyPatch(patch DogPatch) error {
+	if patch.Name != nil {
+		if *patch.Name == "" {
 			return &DogValidationError{Field: "name"}
 		}
-		d.name = *p.Name
+		dog.name = *patch.Name
 	}
-	if p.Breed != nil {
-		if *p.Breed == "" {
+	if patch.Breed != nil {
+		if *patch.Breed == "" {
 			return &DogValidationError{Field: "breed"}
 		}
-		d.breed = *p.Breed
+		dog.breed = *patch.Breed
 	}
-	if p.Passport != nil {
-		if *p.Passport == "" {
+	if patch.Passport != nil {
+		if *patch.Passport == "" {
 			return &DogValidationError{Field: "passport"}
 		}
-		d.passport = *p.Passport
+		dog.passport = *patch.Passport
 	}
-	if p.AgeInMonths != nil {
-		if *p.AgeInMonths < 0 {
+	if patch.AgeInMonths != nil {
+		if *patch.AgeInMonths < 0 {
 			return &DogValidationError{Field: "age_in_months"}
 		}
-		d.ageInMonths = *p.AgeInMonths
+		dog.ageInMonths = *patch.AgeInMonths
 	}
-	if p.WeightKg != nil {
-		if *p.WeightKg < 0 {
+	if patch.WeightKg != nil {
+		if *patch.WeightKg < 0 {
 			return &DogValidationError{Field: "weight_kg"}
 		}
-		d.weightKg = *p.WeightKg
+		dog.weightKg = *patch.WeightKg
 	}
-	if p.Sex != nil {
-		if !p.Sex.IsValid() {
+	if patch.Sex != nil {
+		if !patch.Sex.IsValid() {
 			return &DogValidationError{Field: "sex"}
 		}
-		d.sex = *p.Sex
+		dog.sex = *patch.Sex
 	}
-	if p.Neutered != nil {
-		d.neutered = *p.Neutered
+	if patch.Neutered != nil {
+		dog.neutered = *patch.Neutered
 	}
-	if p.Heat != nil {
-		d.heat = *p.Heat
+	if patch.Heat != nil {
+		dog.heat = *patch.Heat
 	}
-	if p.PhotoURL != nil {
-		d.photoURL = *p.PhotoURL
+	if patch.PhotoURL != nil {
+		dog.photoURL = *patch.PhotoURL
 	}
-	if p.MedicalNotes != nil {
-		d.medicalNotes = *p.MedicalNotes
+	if patch.MedicalNotes != nil {
+		dog.medicalNotes = *patch.MedicalNotes
 	}
-	if p.EducatorNotes != nil {
-		d.educatorNotes = *p.EducatorNotes
+	if patch.EducatorNotes != nil {
+		dog.educatorNotes = *patch.EducatorNotes
 	}
-	if p.IsActive != nil {
-		d.isActive = *p.IsActive
+	if patch.IsActive != nil {
+		dog.isActive = *patch.IsActive
 	}
 	return nil
 }
 
-func (d *Dog) Activate()   { d.isActive = true }
-func (d *Dog) Deactivate() { d.isActive = false }
+// Activate marks the dog as active.
+func (dog *Dog) Activate() { dog.isActive = true }
 
+// Deactivate marks the dog as inactive.
+func (dog *Dog) Deactivate() { dog.isActive = false }
+
+// DogRepository is the persistence contract for Dog. Implemented by
+// internal/repository/postgres.DogRepository. The domain declares the
+// interface; the outer layer implements it (Dependency Inversion).
 type DogRepository interface {
 	Create(ctx context.Context, dog *Dog) (int, error)
 	Update(ctx context.Context, dog *Dog) error
@@ -312,5 +347,7 @@ type DogRepository interface {
 	ListByIsActive(ctx context.Context, isActive bool, limit, offset int) ([]*Dog, error)
 	ListByAgeBracket(ctx context.Context, bracket AgeBracket, limit, offset int) ([]*Dog, error)
 	ListBySizeBracket(ctx context.Context, bracket SizeBracket, limit, offset int) ([]*Dog, error)
+	SetDogNeutered(ctx context.Context, id int, neutered bool) error
+	SetDogHeat(ctx context.Context, id int, heat bool) error
 	Delete(ctx context.Context, id int) error
 }

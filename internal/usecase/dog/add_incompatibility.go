@@ -30,44 +30,44 @@ func NewAddDogIncompatibilityUseCase(
 	return &AddDogIncompatibilityUseCase{dogRepo: dogRepo, incompatRepo: incompatRepo}
 }
 
-func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, in AddDogIncompatibilityInput) (AddDogIncompatibilityOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, input AddDogIncompatibilityInput) (AddDogIncompatibilityOutput, error) {
+	if err := input.validate(); err != nil {
 		return AddDogIncompatibilityOutput{}, err
 	}
 
-	incompat, err := uc.incompatRepo.GetIncompatibilityByID(ctx, in.IncompatibilityID)
+	incompat, err := uc.incompatRepo.GetIncompatibilityByID(ctx, input.IncompatibilityID)
 	if err != nil {
-		return AddDogIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", in.IncompatibilityID, err)
+		return AddDogIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", input.IncompatibilityID, err)
 	}
 	if incompat == nil {
 		return AddDogIncompatibilityOutput{}, ErrNotFound
 	}
 
-	d, err := uc.dogRepo.GetByID(ctx, in.DogID)
+	dog, err := uc.dogRepo.GetByID(ctx, input.DogID)
 	if err != nil {
-		return AddDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", in.DogID, err)
+		return AddDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", input.DogID, err)
 	}
-	if d == nil {
+	if dog == nil {
 		return AddDogIncompatibilityOutput{}, ErrNotFound
 	}
 
-	added, err := d.AddIncompatibility(incompat)
+	added, err := dog.AddIncompatibility(incompat)
 	if err != nil {
 		return AddDogIncompatibilityOutput{}, err
 	}
 	if added {
-		if err := uc.dogRepo.Update(ctx, d); err != nil {
-			return AddDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", in.DogID, err)
+		if err := uc.dogRepo.Update(ctx, dog); err != nil {
+			return AddDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", input.DogID, err)
 		}
 	}
 
 	return AddDogIncompatibilityOutput{
-		ID:                d.ID(),
-		Incompatibilities: d.Incompatibilities(),
+		ID:                dog.ID(),
+		Incompatibilities: dog.Incompatibilities(),
 		Added:             added,
 	}, nil
 }
 
-func (in AddDogIncompatibilityInput) validate() error {
-	return validateIncompatibilityInput(in.DogID, in.IncompatibilityID)
+func (input AddDogIncompatibilityInput) validate() error {
+	return validateIncompatibilityInput(input.DogID, input.IncompatibilityID)
 }

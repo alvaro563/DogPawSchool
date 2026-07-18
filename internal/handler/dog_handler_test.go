@@ -146,20 +146,36 @@ func (s *stubDeleter) Execute(ctx context.Context, in doguc.DeleteDogInput) (dog
 	return s.fn(ctx, in)
 }
 
+type stubNeuteredSetter struct {
+	fn func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error)
+}
+
+func (s *stubNeuteredSetter) Execute(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
+	return s.fn(ctx, in)
+}
+
+type stubHeatSetter struct {
+	fn func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error)
+}
+
+func (s *stubHeatSetter) Execute(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
+	return s.fn(ctx, in)
+}
+
 func newTestHandler(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newTestHandlerFull(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil)
+	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil)
 }
 
 func newTestHandlerFull4(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier, addIncompat DogIncompatibilityAdder) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, nil, nil)
+	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, nil, nil, nil, nil)
 }
 
 func newTestHandlerFull5(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier, addIncompat DogIncompatibilityAdder, removeIncompat DogIncompatibilityRemover) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, removeIncompat, nil)
+	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, removeIncompat, nil, nil, nil)
 }
 
 func mustNewIncompatibility(id int, name string, level domain.IncompatibilityLevel) domain.Incompatibility {
@@ -1191,4 +1207,148 @@ func TestList_IncludesEmptyIncompatibilitiesArray(t *testing.T) {
 	// Field must be present and empty, not absent / null.
 	assert.Contains(t, w.Body.String(), `"incompatibilities":[]`,
 		"incompatibilities must serialize as an empty array, not null")
+}
+
+// ============================================================================
+// SetNeutered / SetHeat handler tests
+// ============================================================================
+
+func TestSetNeutered_Success(t *testing.T) {
+	stub := &stubNeuteredSetter{fn: func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
+		assert.Equal(t, 42, in.ID)
+		assert.True(t, in.Neutered)
+		return doguc.SetDogNeuteredOutput{ID: 42, Neutered: true, Sex: domain.SexFemale}, nil
+	}}
+	h := newTestHandler(nil, nil, nil)
+	h.setNeutered = stub
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/42/neutered", `{"neutered":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "42"}}
+
+	h.SetNeutered(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body setNeuteredResponse
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 42, body.ID)
+	assert.True(t, body.Neutered)
+	assert.Equal(t, "FEMALE", body.Sex)
+}
+
+func TestSetNeutered_NotFound(t *testing.T) {
+	stub := &stubNeuteredSetter{fn: func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
+		return doguc.SetDogNeuteredOutput{}, postgres.ErrNotFound
+	}}
+	h := newTestHandler(nil, nil, nil)
+	h.setNeutered = stub
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/9999/neutered", `{"neutered":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "9999"}}
+
+	h.SetNeutered(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestSetNeutered_InvalidID(t *testing.T) {
+	h := newTestHandler(nil, nil, nil)
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/abc/neutered", `{"neutered":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "abc"}}
+
+	h.SetNeutered(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSetNeutered_InvalidJSON(t *testing.T) {
+	h := newTestHandler(nil, nil, nil)
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/1/neutered", `not json`)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+	h.SetNeutered(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid_request")
+}
+
+func TestSetNeutered_UseCaseValidation(t *testing.T) {
+	stub := &stubNeuteredSetter{fn: func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
+		return doguc.SetDogNeuteredOutput{}, &doguc.ValidationError{Field: "id"}
+	}}
+	h := newTestHandler(nil, nil, nil)
+	h.setNeutered = stub
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/1/neutered", `{"neutered":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+	h.SetNeutered(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"id"`)
+}
+
+func TestSetHeat_Success_Female(t *testing.T) {
+	stub := &stubHeatSetter{fn: func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
+		assert.Equal(t, 2, in.ID)
+		assert.True(t, in.Heat)
+		return doguc.SetDogHeatOutput{ID: 2, Heat: true, Sex: domain.SexFemale}, nil
+	}}
+	h := newTestHandler(nil, nil, nil)
+	h.setHeat = stub
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/2/heat", `{"heat":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "2"}}
+
+	h.SetHeat(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body setHeatResponse
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.True(t, body.Heat)
+	assert.Equal(t, "FEMALE", body.Sex)
+}
+
+func TestSetHeat_RejectedOnMale(t *testing.T) {
+	stub := &stubHeatSetter{fn: func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
+		return doguc.SetDogHeatOutput{}, doguc.ErrInvalidHeatForSex
+	}}
+	h := newTestHandler(nil, nil, nil)
+	h.setHeat = stub
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/9/heat", `{"heat":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "9"}}
+
+	h.SetHeat(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid_heat_for_sex")
+}
+
+func TestSetHeat_NotFound(t *testing.T) {
+	stub := &stubHeatSetter{fn: func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
+		return doguc.SetDogHeatOutput{}, postgres.ErrNotFound
+	}}
+	h := newTestHandler(nil, nil, nil)
+	h.setHeat = stub
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/9999/heat", `{"heat":false}`)
+	c.Params = gin.Params{{Key: "id", Value: "9999"}}
+
+	h.SetHeat(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestSetHeat_InvalidID(t *testing.T) {
+	h := newTestHandler(nil, nil, nil)
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/0/heat", `{"heat":false}`)
+	c.Params = gin.Params{{Key: "id", Value: "0"}}
+
+	h.SetHeat(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSetHeat_InvalidJSON(t *testing.T) {
+	h := newTestHandler(nil, nil, nil)
+	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/1/heat", `{"heat":"yes"}`)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+	h.SetHeat(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

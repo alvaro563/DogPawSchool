@@ -20,3 +20,8 @@ func IsValidationError(err error) bool {
 
 // ErrNotFound is returned by use cases when a requested resource does not exist.
 var ErrNotFound = errors.New("not found")
+
+// ErrInvalidHeatForSex is returned by SetDogHeatUseCase when heat=true is
+// attempted on a dog whose sex is not FEMALE. This is a business rule
+// enforced at the use case layer (the DB does not constrain it).
+var ErrInvalidHeatForSex = errors.New("heat can only be set on female dogs")

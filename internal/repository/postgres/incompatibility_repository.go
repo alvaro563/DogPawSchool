@@ -12,6 +12,8 @@ import (
 	incompatuc "dogpaw/internal/usecase/incompatibility"
 )
 
+// ErrIncompatibilityInUse is returned by Delete when the incompatibility
+// is still attached to at least one dog (FK 23503 from dog_incompatibilities).
 var ErrIncompatibilityInUse = errors.New("incompatibility in use")
 
 type IncompatibilityRepository struct {
@@ -22,44 +24,44 @@ func NewIncompatibilityRepository(db *sql.DB) *IncompatibilityRepository {
 	return &IncompatibilityRepository{db: db}
 }
 
-func (r *IncompatibilityRepository) GetIncompatibilityByID(ctx context.Context, id int) (*domain.Incompatibility, error) {
-	const q = `SELECT id, name, level_type FROM incompatibilities WHERE id = $1`
+func (repo *IncompatibilityRepository) GetIncompatibilityByID(ctx context.Context, id int) (*domain.Incompatibility, error) {
+	const query = `SELECT id, name, level_type FROM incompatibilities WHERE id = $1`
 	var (
-		incompID int
-		name     string
-		level    string
+		incompID     int
+		incompatName string
+		levelType    string
 	)
-	err := r.db.QueryRowContext(ctx, q, id).Scan(&incompID, &name, &level)
+	err := repo.db.QueryRowContext(ctx, query, id).Scan(&incompID, &incompatName, &levelType)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("get incompatibility %d: %w", id, err)
 	}
-	return domain.NewIncompatibility(incompID, name, domain.IncompatibilityLevel(level))
+	return domain.NewIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType))
 }
 
-func (r *IncompatibilityRepository) Create(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
-	const q = `INSERT INTO incompatibilities (name, level_type) VALUES ($1, $2) RETURNING id`
-	var newID int64
-	err := r.db.QueryRowContext(ctx, q, incomp.Name(), string(incomp.Type())).Scan(&newID)
+func (repo *IncompatibilityRepository) Create(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
+	const query = `INSERT INTO incompatibilities (name, level_type) VALUES ($1, $2) RETURNING id`
+	var newIncompatID int64
+	err := repo.db.QueryRowContext(ctx, query, incomp.Name(), string(incomp.Type())).Scan(&newIncompatID)
 	if err != nil {
 		return 0, mapIncompatibilityCreateError(err)
 	}
-	return int(newID), nil
+	return int(newIncompatID), nil
 }
 
-func (r *IncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
+func (repo *IncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
 	var (
 		rows *sql.Rows
 		err  error
 	)
 	if level == nil {
-		const q = `SELECT id, name, level_type FROM incompatibilities ORDER BY name`
-		rows, err = r.db.QueryContext(ctx, q)
+		const query = `SELECT id, name, level_type FROM incompatibilities ORDER BY name`
+		rows, err = repo.db.QueryContext(ctx, query)
 	} else {
-		const q = `SELECT id, name, level_type FROM incompatibilities WHERE level_type = $1 ORDER BY name`
-		rows, err = r.db.QueryContext(ctx, q, string(*level))
+		const query = `SELECT id, name, level_type FROM incompatibilities WHERE level_type = $1 ORDER BY name`
+		rows, err = repo.db.QueryContext(ctx, query, string(*level))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list incompatibilities: %w", err)
@@ -69,18 +71,18 @@ func (r *IncompatibilityRepository) List(ctx context.Context, level *domain.Inco
 	out := make([]*domain.Incompatibility, 0)
 	for rows.Next() {
 		var (
-			id   int
-			name string
-			lvl  string
+			incompID     int
+			incompatName string
+			levelType    string
 		)
-		if err := rows.Scan(&id, &name, &lvl); err != nil {
+		if err := rows.Scan(&incompID, &incompatName, &levelType); err != nil {
 			return nil, fmt.Errorf("scan incompatibility: %w", err)
 		}
-		incomp, err := domain.NewIncompatibility(id, name, domain.IncompatibilityLevel(lvl))
+		incompat, err := domain.NewIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType))
 		if err != nil {
 			return nil, fmt.Errorf("reconstruct incompatibility: %w", err)
 		}
-		out = append(out, incomp)
+		out = append(out, incompat)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows err: %w", err)
@@ -88,33 +90,33 @@ func (r *IncompatibilityRepository) List(ctx context.Context, level *domain.Inco
 	return out, nil
 }
 
-func (r *IncompatibilityRepository) Update(ctx context.Context, incomp *domain.Incompatibility) error {
-	const q = `UPDATE incompatibilities SET name = $1, level_type = $2 WHERE id = $3`
-	res, err := r.db.ExecContext(ctx, q, incomp.Name(), string(incomp.Type()), incomp.ID())
+func (repo *IncompatibilityRepository) Update(ctx context.Context, incomp *domain.Incompatibility) error {
+	const query = `UPDATE incompatibilities SET name = $1, level_type = $2 WHERE id = $3`
+	queryResult, err := repo.db.ExecContext(ctx, query, incomp.Name(), string(incomp.Type()), incomp.ID())
 	if err != nil {
 		return mapIncompatibilityUpdateError(err)
 	}
-	n, err := res.RowsAffected()
+	rowsAffected, err := queryResult.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("update incompatibility: rows affected: %w", err)
 	}
-	if n == 0 {
+	if rowsAffected == 0 {
 		return ErrNotFound
 	}
 	return nil
 }
 
-func (r *IncompatibilityRepository) Delete(ctx context.Context, id int) error {
-	const q = `DELETE FROM incompatibilities WHERE id = $1`
-	res, err := r.db.ExecContext(ctx, q, id)
+func (repo *IncompatibilityRepository) Delete(ctx context.Context, id int) error {
+	const query = `DELETE FROM incompatibilities WHERE id = $1`
+	queryResult, err := repo.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return mapIncompatibilityDeleteError(err)
 	}
-	n, err := res.RowsAffected()
+	rowsAffected, err := queryResult.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("delete incompatibility: rows affected: %w", err)
 	}
-	if n == 0 {
+	if rowsAffected == 0 {
 		return ErrNotFound
 	}
 	return nil

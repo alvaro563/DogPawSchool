@@ -25,37 +25,37 @@ func NewModifyIncompatibilityUseCase(repo domain.IncompatibilityRepository) *Mod
 	return &ModifyIncompatibilityUseCase{repo: repo}
 }
 
-func (uc *ModifyIncompatibilityUseCase) Execute(ctx context.Context, in ModifyIncompatibilityInput) (ModifyIncompatibilityOutput, error) {
-	if in.ID <= 0 {
+func (uc *ModifyIncompatibilityUseCase) Execute(ctx context.Context, input ModifyIncompatibilityInput) (ModifyIncompatibilityOutput, error) {
+	if input.ID <= 0 {
 		return ModifyIncompatibilityOutput{}, &ValidationError{Field: "id"}
 	}
 
-	incomp, err := uc.repo.GetIncompatibilityByID(ctx, in.ID)
+	incompat, err := uc.repo.GetIncompatibilityByID(ctx, input.ID)
 	if err != nil {
-		return ModifyIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", in.ID, err)
+		return ModifyIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", input.ID, err)
 	}
-	if incomp == nil {
+	if incompat == nil {
 		return ModifyIncompatibilityOutput{}, ErrNotFound
 	}
 
-	if err := incomp.ApplyPatch(in.Patch); err != nil {
-		var dverr *domain.IncompatibilityValidationError
-		if errors.As(err, &dverr) {
-			return ModifyIncompatibilityOutput{}, &ValidationError{Field: dverr.Field}
+	if err := incompat.ApplyPatch(input.Patch); err != nil {
+		var validationErr *domain.IncompatibilityValidationError
+		if errors.As(err, &validationErr) {
+			return ModifyIncompatibilityOutput{}, &ValidationError{Field: validationErr.Field}
 		}
 		return ModifyIncompatibilityOutput{}, err
 	}
 
-	if isEmptyIncompatibilityPatch(in.Patch) {
-		return ModifyIncompatibilityOutput{Incompatibility: incomp}, nil
+	if isEmptyIncompatibilityPatch(input.Patch) {
+		return ModifyIncompatibilityOutput{Incompatibility: incompat}, nil
 	}
 
-	if err := uc.repo.Update(ctx, incomp); err != nil {
-		return ModifyIncompatibilityOutput{}, fmt.Errorf("update incompatibility %d: %w", in.ID, err)
+	if err := uc.repo.Update(ctx, incompat); err != nil {
+		return ModifyIncompatibilityOutput{}, fmt.Errorf("update incompatibility %d: %w", input.ID, err)
 	}
-	return ModifyIncompatibilityOutput{Incompatibility: incomp}, nil
+	return ModifyIncompatibilityOutput{Incompatibility: incompat}, nil
 }
 
-func isEmptyIncompatibilityPatch(p domain.IncompatibilityPatch) bool {
-	return p.Name == nil && p.Level == nil
+func isEmptyIncompatibilityPatch(patch domain.IncompatibilityPatch) bool {
+	return patch.Name == nil && patch.Level == nil
 }

@@ -50,6 +50,23 @@ func TestNewActivity(t *testing.T) {
 	})
 }
 
+func TestMustNewActivity(t *testing.T) {
+	date := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
+
+	t.Run("happy_path", func(t *testing.T) {
+		activity := domain.MustNewActivity(1, "Paseo Río", "Parking Central", domain.TypeRoute, 8, 2, date)
+		assert.NotNil(t, activity)
+		assert.Equal(t, 1, activity.ID())
+		assert.Equal(t, "Paseo Río", activity.Name())
+	})
+
+	t.Run("panics_on_invalid_input", func(t *testing.T) {
+		assert.Panics(t, func() {
+			domain.MustNewActivity(1, "", "l", domain.TypeRoute, 8, 2, date)
+		})
+	})
+}
+
 func TestActivity_IsFull(t *testing.T) {
 	date := time.Now()
 	a, _ := domain.NewActivity(1, "n", "l", domain.TypeRoute, 5, 2, date)
@@ -96,6 +113,96 @@ func TestActivityType_IsValid(t *testing.T) {
 	assert.True(t, domain.TypeSocialization.IsValid())
 	assert.True(t, domain.TypeRoute.IsValid())
 	assert.True(t, domain.TypeIndividual.IsValid())
+	assert.True(t, domain.TypeExtra.IsValid())
 	assert.False(t, domain.ActivityType("").IsValid())
 	assert.False(t, domain.ActivityType("OTHER").IsValid())
+}
+
+func TestActivity_ApplyPatch(t *testing.T) {
+	originalDate := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
+	newDate := time.Date(2026, 8, 1, 14, 0, 0, 0, time.UTC)
+
+	t.Run("empty_patch_is_noop", func(t *testing.T) {
+		activity := domain.MustNewActivity(1, "Paseo", "Central", domain.TypeRoute, 8, 2, originalDate)
+		err := activity.ApplyPatch(domain.ActivityPatch{})
+		assert.NoError(t, err)
+		assert.Equal(t, "Paseo", activity.Name())
+		assert.Equal(t, "Central", activity.Location())
+		assert.Equal(t, 8, activity.MaxCapacity())
+	})
+
+	t.Run("applies_all_fields", func(t *testing.T) {
+		activity := domain.MustNewActivity(1, "Paseo", "Central", domain.TypeRoute, 8, 2, originalDate)
+		newName := "Paseo Largo"
+		newLocation := "Río"
+		newType := domain.TypeSocialization
+		newCapacity := 15
+		newDuration := 3
+		patch := domain.ActivityPatch{
+			Name:            &newName,
+			Location:        &newLocation,
+			ActivityType:    &newType,
+			MaxCapacity:     &newCapacity,
+			DurationInHours: &newDuration,
+			Date:            &newDate,
+		}
+		err := activity.ApplyPatch(patch)
+		assert.NoError(t, err)
+		assert.Equal(t, "Paseo Largo", activity.Name())
+		assert.Equal(t, "Río", activity.Location())
+		assert.Equal(t, domain.TypeSocialization, activity.Type())
+		assert.Equal(t, 15, activity.MaxCapacity())
+		assert.Equal(t, 3, activity.DurationInHours())
+		assert.Equal(t, newDate, activity.Date())
+	})
+
+	t.Run("validation_errors", func(t *testing.T) {
+		activity := domain.MustNewActivity(1, "Paseo", "Central", domain.TypeRoute, 8, 2, originalDate)
+		emptyName := ""
+		emptyLocation := ""
+		invalidType := domain.ActivityType("INVALID")
+		zeroCapacity := 0
+		zeroDuration := 0
+		zeroDate := time.Time{}
+		validName := "Valid"
+
+		tests := []struct {
+			name      string
+			patch     domain.ActivityPatch
+			wantField string
+		}{
+			{"empty_name", domain.ActivityPatch{Name: &emptyName}, "name"},
+			{"empty_location", domain.ActivityPatch{Location: &emptyLocation}, "location"},
+			{"invalid_type", domain.ActivityPatch{ActivityType: &invalidType}, "activity_type"},
+			{"zero_capacity", domain.ActivityPatch{MaxCapacity: &zeroCapacity}, "max_capacity"},
+			{"zero_duration", domain.ActivityPatch{DurationInHours: &zeroDuration}, "duration_in_hours"},
+			{"zero_date", domain.ActivityPatch{Date: &zeroDate}, "date"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := activity.ApplyPatch(tt.patch)
+				assert.Error(t, err)
+				var validationErr *domain.ActivityValidationError
+				assert.ErrorAs(t, err, &validationErr)
+				assert.Equal(t, tt.wantField, validationErr.Field)
+			})
+		}
+
+		// Activity should not have been mutated by any failed patch.
+		assert.Equal(t, "Paseo", activity.Name())
+		assert.Equal(t, "Central", activity.Location())
+		assert.Equal(t, 8, activity.MaxCapacity())
+		assert.Equal(t, 2, activity.DurationInHours())
+		assert.Equal(t, originalDate, activity.Date())
+
+		// A valid patch should still work after the failed ones.
+		err := activity.ApplyPatch(domain.ActivityPatch{Name: &validName})
+		assert.NoError(t, err)
+		assert.Equal(t, "Valid", activity.Name())
+	})
+}
+
+func TestActivityValidationError_Error(t *testing.T) {
+	err := &domain.ActivityValidationError{Field: "name"}
+	assert.Equal(t, "activity: invalid value for name", err.Error())
 }

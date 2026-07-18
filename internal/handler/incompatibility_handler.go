@@ -12,23 +12,23 @@ import (
 )
 
 type IncompatibilityRegisterer interface {
-	Execute(ctx context.Context, in incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error)
+	Execute(ctx context.Context, input incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error)
 }
 
 type IncompatibilityLister interface {
-	Execute(ctx context.Context, in incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error)
+	Execute(ctx context.Context, input incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error)
 }
 
 type IncompatibilityGetter interface {
-	Execute(ctx context.Context, in incompatuc.GetIncompatibilityInput) (incompatuc.GetIncompatibilityOutput, error)
+	Execute(ctx context.Context, input incompatuc.GetIncompatibilityInput) (incompatuc.GetIncompatibilityOutput, error)
 }
 
 type IncompatibilityModifier interface {
-	Execute(ctx context.Context, in incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error)
+	Execute(ctx context.Context, input incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error)
 }
 
 type IncompatibilityDeleter interface {
-	Execute(ctx context.Context, in incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error)
+	Execute(ctx context.Context, input incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error)
 }
 
 type IncompatibilityHandler struct {
@@ -64,20 +64,20 @@ func NewIncompatibilityHandler(
 // @Failure      500   {object}  errorResponse                    "Internal server error"
 // @Router       /api/v1/incompatibilities [post]
 func (h *IncompatibilityHandler) Register(c *gin.Context) {
-	var req registerIncompatibilityRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var request registerIncompatibilityRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	out, err := h.register.Execute(c.Request.Context(), incompatuc.RegisterIncompatibilityInput{
-		Name:  req.Name,
-		Level: domain.IncompatibilityLevel(req.Level),
+	output, err := h.register.Execute(c.Request.Context(), incompatuc.RegisterIncompatibilityInput{
+		Name:  request.Name,
+		Level: domain.IncompatibilityLevel(request.Level),
 	})
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, registerIncompatibilityResponse{ID: out.ID})
+	c.JSON(http.StatusCreated, registerIncompatibilityResponse{ID: output.ID})
 }
 
 // List godoc
@@ -92,18 +92,18 @@ func (h *IncompatibilityHandler) Register(c *gin.Context) {
 // @Router       /api/v1/incompatibilities [get]
 func (h *IncompatibilityHandler) List(c *gin.Context) {
 	var levelPtr *domain.IncompatibilityLevel
-	if lvl := c.Query("level"); lvl != "" {
-		l := domain.IncompatibilityLevel(lvl)
-		levelPtr = &l
+	if levelString := c.Query("level"); levelString != "" {
+		parsedLevel := domain.IncompatibilityLevel(levelString)
+		levelPtr = &parsedLevel
 	}
-	out, err := h.list.Execute(c.Request.Context(), incompatuc.ListIncompatibilitiesInput{Level: levelPtr})
+	output, err := h.list.Execute(c.Request.Context(), incompatuc.ListIncompatibilitiesInput{Level: levelPtr})
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	dtos := make([]incompatibilityDTO, len(out.Incompatibilities))
-	for i, in := range out.Incompatibilities {
-		dtos[i] = toIncompatibilityDTO(in)
+	dtos := make([]incompatibilityDTO, len(output.Incompatibilities))
+	for i, incompat := range output.Incompatibilities {
+		dtos[i] = toIncompatibilityDTO(incompat)
 	}
 	c.JSON(http.StatusOK, listIncompatibilitiesResponse{Incompatibilities: dtos, Count: len(dtos)})
 }
@@ -125,12 +125,12 @@ func (h *IncompatibilityHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
-	out, err := h.get.Execute(c.Request.Context(), incompatuc.GetIncompatibilityInput{ID: id})
+	output, err := h.get.Execute(c.Request.Context(), incompatuc.GetIncompatibilityInput{ID: id})
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toIncompatibilityDTO(out.Incompatibility))
+	c.JSON(http.StatusOK, toIncompatibilityDTO(output.Incompatibility))
 }
 
 // Modify godoc
@@ -153,22 +153,22 @@ func (h *IncompatibilityHandler) Modify(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
-	var req modifyIncompatibilityRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var request modifyIncompatibilityRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	patch := domain.IncompatibilityPatch{Name: req.Name}
-	if req.Level != nil {
-		lvl := domain.IncompatibilityLevel(*req.Level)
-		patch.Level = &lvl
+	patch := domain.IncompatibilityPatch{Name: request.Name}
+	if request.Level != nil {
+		levelValue := domain.IncompatibilityLevel(*request.Level)
+		patch.Level = &levelValue
 	}
-	out, err := h.modify.Execute(c.Request.Context(), incompatuc.ModifyIncompatibilityInput{ID: id, Patch: patch})
+	output, err := h.modify.Execute(c.Request.Context(), incompatuc.ModifyIncompatibilityInput{ID: id, Patch: patch})
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toIncompatibilityDTO(out.Incompatibility))
+	c.JSON(http.StatusOK, toIncompatibilityDTO(output.Incompatibility))
 }
 
 // Delete godoc

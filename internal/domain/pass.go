@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// PassType distinguishes the two kinds of prepaid session packs.
 type PassType string
 
 const (
@@ -13,14 +14,18 @@ const (
 	PassSpecial PassType = "ESPECIFICO"
 )
 
-func (t PassType) IsValid() bool {
-	switch t {
+// IsValid reports whether the value is a recognized PassType.
+func (passType PassType) IsValid() bool {
+	switch passType {
 	case PassGeneric, PassSpecial:
 		return true
 	}
 	return false
 }
 
+// PassMovement is the append-only audit entry of a session consume (-1)
+// or refund (+1). The aggregate Pass carries its movements so the
+// domain enforces the pass invariant (remaining = numOf − sum(movements)).
 type PassMovement struct {
 	id        int
 	passID    int
@@ -29,6 +34,8 @@ type PassMovement struct {
 	createdAt time.Time
 }
 
+// NewPassMovement creates a PassMovement. amount must be non-zero (it's
+// either -1 for consume or +1 for refund).
 func NewPassMovement(id, passID, amount int, reason string, createdAt time.Time) (*PassMovement, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("pass movement: id must not be negative")
@@ -54,12 +61,15 @@ func NewPassMovement(id, passID, amount int, reason string, createdAt time.Time)
 	}, nil
 }
 
-func (m *PassMovement) ID() int              { return m.id }
-func (m *PassMovement) PassID() int          { return m.passID }
-func (m *PassMovement) Amount() int          { return m.amount }
-func (m *PassMovement) Reason() string       { return m.reason }
-func (m *PassMovement) CreatedAt() time.Time { return m.createdAt }
+func (movement *PassMovement) ID() int              { return movement.id }
+func (movement *PassMovement) PassID() int          { return movement.passID }
+func (movement *PassMovement) Amount() int          { return movement.amount }
+func (movement *PassMovement) Reason() string       { return movement.reason }
+func (movement *PassMovement) CreatedAt() time.Time { return movement.createdAt }
 
+// Pass is a prepaid session pack owned by a User. A Pass starts with
+// remainingSessions == numOfSessions and is decremented as the user
+// consumes sessions (or incremented on refund).
 type Pass struct {
 	id                int
 	numOfSessions     int
@@ -72,6 +82,8 @@ type Pass struct {
 	movements         []PassMovement
 }
 
+// NewPass creates a Pass. A new pass starts fully available
+// (remainingSessions = numOfSessions) with no movements.
 func NewPass(id, numOfSessions, price int, passType PassType, userID int, createdAt time.Time, expiresAt *time.Time) (*Pass, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("pass: id must not be negative")
@@ -103,79 +115,96 @@ func NewPass(id, numOfSessions, price int, passType PassType, userID int, create
 	}, nil
 }
 
-func (p *Pass) ID() int                { return p.id }
-func (p *Pass) NumOfSessions() int     { return p.numOfSessions }
-func (p *Pass) RemainingSessions() int { return p.remainingSessions }
-func (p *Pass) Price() int             { return p.price }
-func (p *Pass) Type() PassType         { return p.passType }
-func (p *Pass) CreatedAt() time.Time   { return p.createdAt }
-func (p *Pass) ExpiresAt() *time.Time  { return p.expiresAt }
-func (p *Pass) UserID() int            { return p.userID }
+func (pass *Pass) ID() int                { return pass.id }
+func (pass *Pass) NumOfSessions() int     { return pass.numOfSessions }
+func (pass *Pass) RemainingSessions() int { return pass.remainingSessions }
+func (pass *Pass) Price() int             { return pass.price }
+func (pass *Pass) Type() PassType         { return pass.passType }
+func (pass *Pass) CreatedAt() time.Time   { return pass.createdAt }
+func (pass *Pass) ExpiresAt() *time.Time  { return pass.expiresAt }
+func (pass *Pass) UserID() int            { return pass.userID }
 
-func (p *Pass) Movements() []PassMovement {
-	out := make([]PassMovement, len(p.movements))
-	copy(out, p.movements)
+// Movements returns a defensive copy of the pass movements.
+func (pass *Pass) Movements() []PassMovement {
+	out := make([]PassMovement, len(pass.movements))
+	copy(out, pass.movements)
 	return out
 }
 
-func (p *Pass) IsExpired(now time.Time) bool {
-	return p.expiresAt != nil && now.After(*p.expiresAt)
+// IsExpired reports whether the pass has expired relative to now.
+// A pass with no expiry is never expired.
+func (pass *Pass) IsExpired(now time.Time) bool {
+	return pass.expiresAt != nil && now.After(*pass.expiresAt)
 }
 
-func (p *Pass) IsExhausted() bool {
-	return p.remainingSessions <= 0
+// IsExhausted reports whether the pass has no remaining sessions.
+func (pass *Pass) IsExhausted() bool {
+	return pass.remainingSessions <= 0
 }
 
-func (p *Pass) CanConsume(now time.Time) bool {
-	return !p.IsExhausted() && !p.IsExpired(now)
+// CanConsume reports whether the pass is currently usable: not exhausted
+// and not expired.
+func (pass *Pass) CanConsume(now time.Time) bool {
+	return !pass.IsExhausted() && !pass.IsExpired(now)
 }
 
-func (p *Pass) ConsumeSession(reason string, now time.Time) (PassMovement, error) {
+// ConsumeSession decrements remainingSessions by 1 and appends a
+// movement (amount=-1) to the audit log. Returns the created movement.
+// Errors if the pass is exhausted, expired, or reason is empty.
+func (pass *Pass) ConsumeSession(reason string, now time.Time) (PassMovement, error) {
 	if reason == "" {
 		return PassMovement{}, fmt.Errorf("pass: reason must not be empty")
 	}
-	if p.IsExhausted() {
+	if pass.IsExhausted() {
 		return PassMovement{}, fmt.Errorf("pass: cannot consume, already exhausted")
 	}
-	if p.IsExpired(now) {
+	if pass.IsExpired(now) {
 		return PassMovement{}, fmt.Errorf("pass: cannot consume, expired")
 	}
 	movement := PassMovement{
-		passID:    p.id,
+		passID:    pass.id,
 		amount:    -1,
 		reason:    reason,
 		createdAt: now,
 	}
-	p.movements = append(p.movements, movement)
-	p.remainingSessions--
+	pass.movements = append(pass.movements, movement)
+	pass.remainingSessions--
 	return movement, nil
 }
 
-func (p *Pass) CanRefund() bool {
-	return p.remainingSessions < p.numOfSessions
+// CanRefund reports whether the pass has any consumed sessions to refund.
+func (pass *Pass) CanRefund() bool {
+	return pass.remainingSessions < pass.numOfSessions
 }
 
-func (p *Pass) RefundSession(reason string, now time.Time) (PassMovement, error) {
+// RefundSession increments remainingSessions by 1 and appends a
+// movement (amount=+1) to the audit log. Returns the created movement.
+// Errors if there is nothing to refund, the pass is expired, or reason
+// is empty.
+func (pass *Pass) RefundSession(reason string, now time.Time) (PassMovement, error) {
 	if reason == "" {
 		return PassMovement{}, fmt.Errorf("pass: reason must not be empty")
 	}
-	if !p.CanRefund() {
+	if !pass.CanRefund() {
 		return PassMovement{}, fmt.Errorf("pass: cannot refund, no sessions to refund")
 	}
-	if p.IsExpired(now) {
+	if pass.IsExpired(now) {
 		return PassMovement{}, fmt.Errorf("pass: cannot refund, expired")
 	}
 	movement := PassMovement{
-		passID:    p.id,
+		passID:    pass.id,
 		amount:    1,
 		reason:    reason,
 		createdAt: now,
 	}
-	p.movements = append(p.movements, movement)
-	p.remainingSessions++
+	pass.movements = append(pass.movements, movement)
+	pass.remainingSessions++
 	return movement, nil
 }
 
+// PassRepository is the persistence contract for Pass (and its
+// PassMovement children). Implemented by
+// internal/repository/postgres (future).
 type PassRepository interface {
 	Create(ctx context.Context, pass *Pass) error
 	Update(ctx context.Context, pass *Pass) error

@@ -6,6 +6,9 @@ import (
 	"fmt"
 )
 
+// IncompatibilityLevel classifies how strict an incompatibility is — the
+// higher the level, the more careful the matching must be at the
+// scheduler.
 type IncompatibilityLevel string
 
 const (
@@ -14,8 +17,9 @@ const (
 	IncompatibilityLevelBaja     IncompatibilityLevel = "BAJA"
 )
 
-func (l IncompatibilityLevel) IsValid() bool {
-	switch l {
+// IsValid reports whether the value is a recognized IncompatibilityLevel.
+func (levelType IncompatibilityLevel) IsValid() bool {
+	switch levelType {
 	case IncompatibilityLevelAbsoluta,
 		IncompatibilityLevelMedia,
 		IncompatibilityLevelBaja:
@@ -24,12 +28,15 @@ func (l IncompatibilityLevel) IsValid() bool {
 	return false
 }
 
+// Incompatibility is a category that may be attached to one or more dogs
+// (via the dog_incompatibilities join table).
 type Incompatibility struct {
 	id        int
 	name      string
 	levelType IncompatibilityLevel
 }
 
+// NewIncompatibility creates an Incompatibility with validated fields.
 func NewIncompatibility(id int, name string, levelType IncompatibilityLevel) (*Incompatibility, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("incompatibility: id must not be negative")
@@ -46,51 +53,59 @@ func NewIncompatibility(id int, name string, levelType IncompatibilityLevel) (*I
 // MustNewIncompatibility is like NewIncompatibility but panics on error.
 // Intended for tests and seed data where the inputs are known to be valid.
 func MustNewIncompatibility(id int, name string, levelType IncompatibilityLevel) *Incompatibility {
-	in, err := NewIncompatibility(id, name, levelType)
+	incompat, err := NewIncompatibility(id, name, levelType)
 	if err != nil {
 		panic(err)
 	}
-	return in
+	return incompat
 }
 
-func (i *Incompatibility) ID() int                    { return i.id }
-func (i *Incompatibility) Name() string               { return i.name }
-func (i *Incompatibility) Type() IncompatibilityLevel { return i.levelType }
+func (incompat *Incompatibility) ID() int                    { return incompat.id }
+func (incompat *Incompatibility) Name() string               { return incompat.name }
+func (incompat *Incompatibility) Type() IncompatibilityLevel { return incompat.levelType }
 
-// IncompatibilityPatch is a partial update: only the non-nil fields are mutated.
+// IncompatibilityPatch is a partial update: only the non-nil fields are
+// mutated. See ApplyPatch for per-field validation.
 type IncompatibilityPatch struct {
 	Name  *string
 	Level *IncompatibilityLevel
 }
 
-// IncompatibilityValidationError is returned by ApplyPatch when a supplied value is invalid.
+// IncompatibilityValidationError is returned by ApplyPatch when a supplied
+// value is invalid.
 type IncompatibilityValidationError struct {
 	Field string
 }
 
-func (e *IncompatibilityValidationError) Error() string {
-	return fmt.Sprintf("incompatibility: invalid value for %s", e.Field)
+func (validationError *IncompatibilityValidationError) Error() string {
+	return fmt.Sprintf("incompatibility: invalid value for %s", validationError.Field)
 }
 
-func (i *Incompatibility) ApplyPatch(p IncompatibilityPatch) error {
-	if p.Name != nil {
-		if *p.Name == "" {
+// ApplyPatch mutates the incompatibility in place with the fields present
+// in the patch. An empty patch is a no-op.
+func (incompat *Incompatibility) ApplyPatch(patch IncompatibilityPatch) error {
+	if patch.Name != nil {
+		if *patch.Name == "" {
 			return &IncompatibilityValidationError{Field: "name"}
 		}
-		i.name = *p.Name
+		incompat.name = *patch.Name
 	}
-	if p.Level != nil {
-		if !p.Level.IsValid() {
+	if patch.Level != nil {
+		if !patch.Level.IsValid() {
 			return &IncompatibilityValidationError{Field: "level"}
 		}
-		i.levelType = *p.Level
+		incompat.levelType = *patch.Level
 	}
 	return nil
 }
 
-// ErrNotFound is returned by repository implementations when a row does not exist.
+// ErrNotFound is returned by repository implementations when a row does
+// not exist.
 var ErrNotFound = errors.New("not found")
 
+// IncompatibilityRepository is the persistence contract for
+// Incompatibility. Implemented by
+// internal/repository/postgres.IncompatibilityRepository.
 type IncompatibilityRepository interface {
 	GetIncompatibilityByID(ctx context.Context, id int) (*Incompatibility, error)
 	Create(ctx context.Context, incomp *Incompatibility) (int, error)

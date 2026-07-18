@@ -15,6 +15,234 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/activities": {
+            "get": {
+                "description": "Returns a paginated list of all activities in the system, most recent first. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "List all activities",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of activities to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of activities to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of activities",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listActivitiesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new school activity (class, route, individual session, or extra). Returns the new resource URL in the Location header.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Register a new activity",
+                "parameters": [
+                    {
+                        "description": "Activity to create",
+                        "name": "activity",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerActivityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Activity created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerActivityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or missing fields",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/activities/upcoming": {
+            "get": {
+                "description": "Returns a paginated list of activities scheduled at or after the current time, soonest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "List upcoming activities",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of activities to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of activities to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of upcoming activities",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listActivitiesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/activities/{id}": {
+            "get": {
+                "description": "Returns a single activity by its id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Get activity by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Activity found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.activityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partially updates an activity. Only the supplied fields are mutated; an empty body is a no-op.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Patch an activity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to patch",
+                        "name": "activity",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.modifyActivityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated activity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.activityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, body, or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/dogs": {
             "get": {
                 "description": "Returns a paginated list of all dogs across all owners. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
@@ -729,6 +957,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/dogs/{id}/heat": {
+            "patch": {
+                "description": "Fast-path endpoint to flip the heat flag. Body is {\"heat\": true|false}. Returns 400 with error \"invalid_heat_for_sex\" if heat=true is attempted on a non-female dog.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Set the heat flag of a dog",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New value for heat",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.setHeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.setHeatResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/dogs/{id}/incompatibilities": {
             "post": {
                 "description": "Idempotently attaches an existing incompatibility (looked up by id) to a dog. If the dog already has that incompatibility, returns 200 with ` + "`" + `added: false` + "`" + ` and the current list (no DB write). Otherwise persists the change and returns 201 with ` + "`" + `added: true` + "`" + ` and the updated list. Both the dog and the incompatibility must exist.",
@@ -841,6 +1128,65 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/{id}/neutered": {
+            "patch": {
+                "description": "Fast-path endpoint to flip the neutered flag. Body is {\"neutered\": true|false}. Returns the new state plus the dog's sex. Returns 404 if the dog does not exist.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Set the neutered flag of a dog",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New value for neutered",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.setNeuteredRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.setNeuteredResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -1098,6 +1444,72 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handler.activityDTO": {
+            "type": "object",
+            "properties": {
+                "activity_type": {
+                    "type": "string",
+                    "example": "ROUTE"
+                },
+                "date": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "duration_in_hours": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "location": {
+                    "type": "string",
+                    "example": "Parking Central"
+                },
+                "max_capacity": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Paseo Río"
+                }
+            }
+        },
+        "handler.activityResponse": {
+            "type": "object",
+            "properties": {
+                "activity_type": {
+                    "type": "string",
+                    "example": "ROUTE"
+                },
+                "date": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "duration_in_hours": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "location": {
+                    "type": "string",
+                    "example": "Parking Central"
+                },
+                "max_capacity": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Paseo Río"
+                }
+            }
+        },
         "handler.addIncompatibilityRequest": {
             "type": "object",
             "required": [
@@ -1151,6 +1563,12 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 1
+                },
+                "incompatibilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.incompatibilityDTO"
+                    }
                 },
                 "is_active": {
                     "type": "boolean",
@@ -1241,6 +1659,29 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.listActivitiesResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.activityDTO"
+                    }
+                },
+                "count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
         "handler.listDogsResponse": {
             "type": "object",
             "properties": {
@@ -1276,6 +1717,35 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handler.incompatibilityDTO"
                     }
+                }
+            }
+        },
+        "handler.modifyActivityRequest": {
+            "type": "object",
+            "properties": {
+                "activity_type": {
+                    "type": "string",
+                    "example": "SOCIALIZATION_GROUP"
+                },
+                "date": {
+                    "type": "string",
+                    "example": "2026-09-01T10:00:00Z"
+                },
+                "duration_in_hours": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "location": {
+                    "type": "string",
+                    "example": "Río"
+                },
+                "max_capacity": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Paseo Largo"
                 }
             }
         },
@@ -1351,6 +1821,62 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Miedo a petardos y cohetes"
+                }
+            }
+        },
+        "handler.registerActivityRequest": {
+            "type": "object",
+            "required": [
+                "activity_type",
+                "date",
+                "duration_in_hours",
+                "location",
+                "max_capacity",
+                "name"
+            ],
+            "properties": {
+                "activity_type": {
+                    "type": "string",
+                    "enum": [
+                        "SOCIALIZATION_GROUP",
+                        "ROUTE",
+                        "INDIVIDUAL_CLASS",
+                        "EXTRA"
+                    ],
+                    "example": "ROUTE"
+                },
+                "date": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "duration_in_hours": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "location": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "example": "Parking Central"
+                },
+                "max_capacity": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "example": "Paseo Río"
+                }
+            }
+        },
+        "handler.registerActivityResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },
@@ -1464,6 +1990,58 @@ const docTemplate = `{
                 "removed": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "handler.setHeatRequest": {
+            "type": "object",
+            "properties": {
+                "heat": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "handler.setHeatResponse": {
+            "type": "object",
+            "properties": {
+                "heat": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "sex": {
+                    "type": "string",
+                    "example": "FEMALE"
+                }
+            }
+        },
+        "handler.setNeuteredRequest": {
+            "type": "object",
+            "properties": {
+                "neutered": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "handler.setNeuteredResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "neutered": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "sex": {
+                    "type": "string",
+                    "example": "FEMALE"
                 }
             }
         }

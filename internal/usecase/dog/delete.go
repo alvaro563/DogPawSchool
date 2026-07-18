@@ -27,11 +27,11 @@ func NewDeleteDogUseCase(repo domain.DogRepository) *DeleteDogUseCase {
 	return &DeleteDogUseCase{repo: repo}
 }
 
-func (uc *DeleteDogUseCase) Execute(ctx context.Context, in DeleteDogInput) (DeleteDogOutput, error) {
-	if in.ID <= 0 {
+func (uc *DeleteDogUseCase) Execute(ctx context.Context, input DeleteDogInput) (DeleteDogOutput, error) {
+	if input.ID <= 0 {
 		return DeleteDogOutput{}, &ValidationError{Field: "id"}
 	}
-	if err := uc.repo.Delete(ctx, in.ID); err != nil {
+	if err := uc.repo.Delete(ctx, input.ID); err != nil {
 		return DeleteDogOutput{}, fmt.Errorf("delete dog: %w", err)
 	}
 	return DeleteDogOutput{}, nil

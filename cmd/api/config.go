@@ -27,13 +27,17 @@ type DBConfig struct {
 	PingTimeout     time.Duration
 }
 
-func (d DBConfig) DSN() string {
+// DSN renders the PostgreSQL Data Source Name for opening the connection
+// pool with database/sql and the pgx stdlib adapter.
+func (dbConfig DBConfig) DSN() string {
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		d.User, d.Password, d.Host, d.Port, d.Name, d.SSLMode,
+		dbConfig.User, dbConfig.Password, dbConfig.Host, dbConfig.Port, dbConfig.Name, dbConfig.SSLMode,
 	)
 }
 
+// LoadConfig reads configuration from environment variables, falling back
+// to safe development defaults if any variable is missing or empty.
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		Env:             getEnv("ENV", "development"),
@@ -55,27 +59,27 @@ func LoadConfig() (Config, error) {
 	return cfg, nil
 }
 
-func getEnv(key, def string) string {
-	if v, ok := os.LookupEnv(key); ok && v != "" {
-		return v
+func getEnv(key, defaultValue string) string {
+	if value, ok := os.LookupEnv(key); ok && value != "" {
+		return value
 	}
-	return def
+	return defaultValue
 }
 
-func getEnvInt(key string, def int) int {
-	if v, ok := os.LookupEnv(key); ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
+func getEnvInt(key string, defaultValue int) int {
+	if value, ok := os.LookupEnv(key); ok {
+		if parsedInt, err := strconv.Atoi(value); err == nil {
+			return parsedInt
 		}
 	}
-	return def
+	return defaultValue
 }
 
-func getEnvDuration(key string, def time.Duration) time.Duration {
-	if v, ok := os.LookupEnv(key); ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	if value, ok := os.LookupEnv(key); ok {
+		if parsedDuration, err := time.ParseDuration(value); err == nil {
+			return parsedDuration
 		}
 	}
-	return def
+	return defaultValue
 }

@@ -13,6 +13,7 @@ import (
 
 	"dogpaw/internal/handler"
 	"dogpaw/internal/repository/postgres"
+	activityuc "dogpaw/internal/usecase/activity"
 	doguc "dogpaw/internal/usecase/dog"
 	incompatuc "dogpaw/internal/usecase/incompatibility"
 
@@ -50,6 +51,8 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	addIncompatUC := doguc.NewAddDogIncompatibilityUseCase(repo, incompatRepo)
 	removeIncompatUC := doguc.NewRemoveDogIncompatibilityUseCase(repo)
 	deleteDogUC := doguc.NewDeleteDogUseCase(repo)
+	setNeuteredUC := doguc.NewSetDogNeuteredUseCase(repo)
+	setHeatUC := doguc.NewSetDogHeatUseCase(repo)
 
 	registerIncompatUC := incompatuc.NewRegisterIncompatibilityUseCase(incompatRepo)
 	listIncompatUC := incompatuc.NewListIncompatibilitiesUseCase(incompatRepo)
@@ -58,6 +61,17 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	deleteIncompatUC := incompatuc.NewDeleteIncompatibilityUseCase(incompatRepo)
 	incompatH := handler.NewIncompatibilityHandler(
 		registerIncompatUC, listIncompatUC, getIncompatUC, modifyIncompatUC, deleteIncompatUC,
+	)
+
+	activityRepo := postgres.NewActivityRepository(db)
+	registerActivityUC := activityuc.NewRegisterActivityUseCase(activityRepo)
+	getActivityUC := activityuc.NewGetActivityUseCase(activityRepo)
+	modifyActivityUC := activityuc.NewModifyActivityUseCase(activityRepo)
+	listAllActivityUC := activityuc.NewListAllActivitiesUseCase(activityRepo)
+	listUpcomingActivityUC := activityuc.NewListUpcomingActivitiesUseCase(activityRepo)
+	activityH := handler.NewActivityHandler(
+		registerActivityUC, getActivityUC, modifyActivityUC,
+		listAllActivityUC, listUpcomingActivityUC,
 	)
 
 	dogH := handler.NewDogHandler(
@@ -77,6 +91,8 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		addIncompatUC,
 		removeIncompatUC,
 		deleteDogUC,
+		setNeuteredUC,
+		setHeatUC,
 	)
 
 	v1 := r.Group("/api/v1")
@@ -94,6 +110,8 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		v1.GET("/dogs/size/:bracket", dogH.ListBySizeBracket)
 		v1.GET("/dogs/owner/:owner_id", dogH.ListByOwner)
 		v1.PATCH("/dogs/:id", dogH.Modify)
+		v1.PATCH("/dogs/:id/neutered", dogH.SetNeutered)
+		v1.PATCH("/dogs/:id/heat", dogH.SetHeat)
 		v1.DELETE("/dogs/:id", dogH.Delete)
 		v1.POST("/dogs/:id/incompatibilities", dogH.AddIncompatibility)
 		v1.DELETE("/dogs/:id/incompatibilities/:incompatibility_id", dogH.RemoveIncompatibility)
@@ -103,6 +121,12 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		v1.GET("/incompatibilities/:id", incompatH.GetByID)
 		v1.PATCH("/incompatibilities/:id", incompatH.Modify)
 		v1.DELETE("/incompatibilities/:id", incompatH.Delete)
+
+		v1.POST("/activities", activityH.Register)
+		v1.GET("/activities", activityH.List)
+		v1.GET("/activities/upcoming", activityH.ListUpcoming)
+		v1.GET("/activities/:id", activityH.GetByID)
+		v1.PATCH("/activities/:id", activityH.Modify)
 	}
 
 	return r

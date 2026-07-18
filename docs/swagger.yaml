@@ -1,4 +1,52 @@
 definitions:
+  handler.activityDTO:
+    properties:
+      activity_type:
+        example: ROUTE
+        type: string
+      date:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      duration_in_hours:
+        example: 2
+        type: integer
+      id:
+        example: 42
+        type: integer
+      location:
+        example: Parking Central
+        type: string
+      max_capacity:
+        example: 8
+        type: integer
+      name:
+        example: Paseo Río
+        type: string
+    type: object
+  handler.activityResponse:
+    properties:
+      activity_type:
+        example: ROUTE
+        type: string
+      date:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      duration_in_hours:
+        example: 2
+        type: integer
+      id:
+        example: 42
+        type: integer
+      location:
+        example: Parking Central
+        type: string
+      max_capacity:
+        example: 8
+        type: integer
+      name:
+        example: Paseo Río
+        type: string
+    type: object
   handler.addIncompatibilityRequest:
     properties:
       incompatibility_id:
@@ -37,6 +85,10 @@ definitions:
       id:
         example: 1
         type: integer
+      incompatibilities:
+        items:
+          $ref: '#/definitions/handler.incompatibilityDTO'
+        type: array
       is_active:
         example: true
         type: boolean
@@ -101,6 +153,22 @@ definitions:
         example: Miedo a petardos
         type: string
     type: object
+  handler.listActivitiesResponse:
+    properties:
+      activities:
+        items:
+          $ref: '#/definitions/handler.activityDTO'
+        type: array
+      count:
+        example: 1
+        type: integer
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+    type: object
   handler.listDogsResponse:
     properties:
       count:
@@ -126,6 +194,27 @@ definitions:
         items:
           $ref: '#/definitions/handler.incompatibilityDTO'
         type: array
+    type: object
+  handler.modifyActivityRequest:
+    properties:
+      activity_type:
+        example: SOCIALIZATION_GROUP
+        type: string
+      date:
+        example: "2026-09-01T10:00:00Z"
+        type: string
+      duration_in_hours:
+        example: 3
+        type: integer
+      location:
+        example: Río
+        type: string
+      max_capacity:
+        example: 12
+        type: integer
+      name:
+        example: Paseo Largo
+        type: string
     type: object
   handler.modifyDogRequest:
     properties:
@@ -180,6 +269,49 @@ definitions:
       name:
         example: Miedo a petardos y cohetes
         type: string
+    type: object
+  handler.registerActivityRequest:
+    properties:
+      activity_type:
+        enum:
+        - SOCIALIZATION_GROUP
+        - ROUTE
+        - INDIVIDUAL_CLASS
+        - EXTRA
+        example: ROUTE
+        type: string
+      date:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      duration_in_hours:
+        example: 2
+        type: integer
+      location:
+        example: Parking Central
+        maxLength: 200
+        minLength: 1
+        type: string
+      max_capacity:
+        example: 8
+        type: integer
+      name:
+        example: Paseo Río
+        maxLength: 200
+        minLength: 1
+        type: string
+    required:
+    - activity_type
+    - date
+    - duration_in_hours
+    - location
+    - max_capacity
+    - name
+    type: object
+  handler.registerActivityResponse:
+    properties:
+      id:
+        example: 42
+        type: integer
     type: object
   handler.registerDogRequest:
     properties:
@@ -265,9 +397,200 @@ definitions:
         example: true
         type: boolean
     type: object
+  handler.setHeatRequest:
+    properties:
+      heat:
+        example: false
+        type: boolean
+    type: object
+  handler.setHeatResponse:
+    properties:
+      heat:
+        example: false
+        type: boolean
+      id:
+        example: 42
+        type: integer
+      sex:
+        example: FEMALE
+        type: string
+    type: object
+  handler.setNeuteredRequest:
+    properties:
+      neutered:
+        example: true
+        type: boolean
+    type: object
+  handler.setNeuteredResponse:
+    properties:
+      id:
+        example: 42
+        type: integer
+      neutered:
+        example: true
+        type: boolean
+      sex:
+        example: FEMALE
+        type: string
+    type: object
 info:
   contact: {}
 paths:
+  /api/v1/activities:
+    get:
+      description: Returns a paginated list of all activities in the system, most
+        recent first. Limit defaults to 50 and is capped at 100. Offset defaults to
+        0.
+      parameters:
+      - description: Maximum number of activities to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of activities to skip for pagination (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of activities
+          schema:
+            $ref: '#/definitions/handler.listActivitiesResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List all activities
+      tags:
+      - activities
+    post:
+      consumes:
+      - application/json
+      description: Creates a new school activity (class, route, individual session,
+        or extra). Returns the new resource URL in the Location header.
+      parameters:
+      - description: Activity to create
+        in: body
+        name: activity
+        required: true
+        schema:
+          $ref: '#/definitions/handler.registerActivityRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Activity created
+          schema:
+            $ref: '#/definitions/handler.registerActivityResponse'
+        "400":
+          description: Invalid request body or missing fields
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Register a new activity
+      tags:
+      - activities
+  /api/v1/activities/{id}:
+    get:
+      description: Returns a single activity by its id.
+      parameters:
+      - description: Activity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Activity found
+          schema:
+            $ref: '#/definitions/handler.activityResponse'
+        "400":
+          description: Invalid id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Activity not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Get activity by ID
+      tags:
+      - activities
+    patch:
+      consumes:
+      - application/json
+      description: Partially updates an activity. Only the supplied fields are mutated;
+        an empty body is a no-op.
+      parameters:
+      - description: Activity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to patch
+        in: body
+        name: activity
+        required: true
+        schema:
+          $ref: '#/definitions/handler.modifyActivityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated activity
+          schema:
+            $ref: '#/definitions/handler.activityResponse'
+        "400":
+          description: Invalid id, body, or validation error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Activity not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Patch an activity
+      tags:
+      - activities
+  /api/v1/activities/upcoming:
+    get:
+      description: Returns a paginated list of activities scheduled at or after the
+        current time, soonest first.
+      parameters:
+      - description: Maximum number of activities to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of activities to skip for pagination (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of upcoming activities
+          schema:
+            $ref: '#/definitions/handler.listActivitiesResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List upcoming activities
+      tags:
+      - activities
   /api/v1/dogs:
     get:
       description: Returns a paginated list of all dogs across all owners. Limit defaults
@@ -407,6 +730,47 @@ paths:
       summary: Patch a dog (partial update)
       tags:
       - dogs
+  /api/v1/dogs/{id}/heat:
+    patch:
+      consumes:
+      - application/json
+      description: 'Fast-path endpoint to flip the heat flag. Body is {"heat": true|false}.
+        Returns 400 with error "invalid_heat_for_sex" if heat=true is attempted on
+        a non-female dog.'
+      parameters:
+      - description: Dog ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: New value for heat
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.setHeatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.setHeatResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Set the heat flag of a dog
+      tags:
+      - dogs
   /api/v1/dogs/{id}/incompatibilities:
     post:
       consumes:
@@ -493,6 +857,47 @@ paths:
           schema:
             $ref: '#/definitions/handler.errorResponse'
       summary: Remove an incompatibility from a dog
+      tags:
+      - dogs
+  /api/v1/dogs/{id}/neutered:
+    patch:
+      consumes:
+      - application/json
+      description: 'Fast-path endpoint to flip the neutered flag. Body is {"neutered":
+        true|false}. Returns the new state plus the dog''s sex. Returns 404 if the
+        dog does not exist.'
+      parameters:
+      - description: Dog ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: New value for neutered
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.setNeuteredRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.setNeuteredResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Set the neutered flag of a dog
       tags:
       - dogs
   /api/v1/dogs/active:

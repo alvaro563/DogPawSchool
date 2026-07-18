@@ -23,13 +23,13 @@ func NewDeleteIncompatibilityUseCase(repo domain.IncompatibilityRepository) *Del
 	return &DeleteIncompatibilityUseCase{repo: repo}
 }
 
-func (uc *DeleteIncompatibilityUseCase) Execute(ctx context.Context, in DeleteIncompatibilityInput) (DeleteIncompatibilityOutput, error) {
-	if in.ID <= 0 {
+func (uc *DeleteIncompatibilityUseCase) Execute(ctx context.Context, input DeleteIncompatibilityInput) (DeleteIncompatibilityOutput, error) {
+	if input.ID <= 0 {
 		return DeleteIncompatibilityOutput{}, &ValidationError{Field: "id"}
 	}
 
-	if err := uc.repo.Delete(ctx, in.ID); err != nil {
-		return DeleteIncompatibilityOutput{}, fmt.Errorf("delete incompatibility %d: %w", in.ID, err)
+	if err := uc.repo.Delete(ctx, input.ID); err != nil {
+		return DeleteIncompatibilityOutput{}, fmt.Errorf("delete incompatibility %d: %w", input.ID, err)
 	}
-	return DeleteIncompatibilityOutput{ID: in.ID}, nil
+	return DeleteIncompatibilityOutput{ID: input.ID}, nil
 }

@@ -25,41 +25,41 @@ func NewModifyDogUseCase(repo domain.DogRepository) *ModifyDogUseCase {
 	return &ModifyDogUseCase{repo: repo}
 }
 
-func (uc *ModifyDogUseCase) Execute(ctx context.Context, in ModifyDogInput) (ModifyDogOutput, error) {
-	if in.ID <= 0 {
+func (uc *ModifyDogUseCase) Execute(ctx context.Context, input ModifyDogInput) (ModifyDogOutput, error) {
+	if input.ID <= 0 {
 		return ModifyDogOutput{}, &ValidationError{Field: "id"}
 	}
 
-	d, err := uc.repo.GetByID(ctx, in.ID)
+	dog, err := uc.repo.GetByID(ctx, input.ID)
 	if err != nil {
-		return ModifyDogOutput{}, fmt.Errorf("get dog %d: %w", in.ID, err)
+		return ModifyDogOutput{}, fmt.Errorf("get dog %d: %w", input.ID, err)
 	}
-	if d == nil {
+	if dog == nil {
 		return ModifyDogOutput{}, ErrNotFound
 	}
 
-	if err := d.ApplyPatch(in.Patch); err != nil {
-		var dverr *domain.DogValidationError
-		if errors.As(err, &dverr) {
-			return ModifyDogOutput{}, &ValidationError{Field: dverr.Field}
+	if err := dog.ApplyPatch(input.Patch); err != nil {
+		var validationErr *domain.DogValidationError
+		if errors.As(err, &validationErr) {
+			return ModifyDogOutput{}, &ValidationError{Field: validationErr.Field}
 		}
 		return ModifyDogOutput{}, err
 	}
 
-	if isEmptyPatch(in.Patch) {
-		return ModifyDogOutput{ID: d.ID()}, nil
+	if isEmptyPatch(input.Patch) {
+		return ModifyDogOutput{ID: dog.ID()}, nil
 	}
 
-	if err := uc.repo.Update(ctx, d); err != nil {
-		return ModifyDogOutput{}, fmt.Errorf("update dog %d: %w", in.ID, err)
+	if err := uc.repo.Update(ctx, dog); err != nil {
+		return ModifyDogOutput{}, fmt.Errorf("update dog %d: %w", input.ID, err)
 	}
 
-	return ModifyDogOutput{ID: d.ID()}, nil
+	return ModifyDogOutput{ID: dog.ID()}, nil
 }
 
-func isEmptyPatch(p domain.DogPatch) bool {
-	return p.Name == nil && p.Breed == nil && p.AgeInMonths == nil &&
-		p.Sex == nil && p.Passport == nil && p.WeightKg == nil &&
-		p.Neutered == nil && p.Heat == nil && p.PhotoURL == nil &&
-		p.MedicalNotes == nil && p.EducatorNotes == nil && p.IsActive == nil
+func isEmptyPatch(patch domain.DogPatch) bool {
+	return patch.Name == nil && patch.Breed == nil && patch.AgeInMonths == nil &&
+		patch.Sex == nil && patch.Passport == nil && patch.WeightKg == nil &&
+		patch.Neutered == nil && patch.Heat == nil && patch.PhotoURL == nil &&
+		patch.MedicalNotes == nil && patch.EducatorNotes == nil && patch.IsActive == nil
 }

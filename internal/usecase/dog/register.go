@@ -29,17 +29,17 @@ func NewRegisterDogUseCase(repo domain.DogRepository) *RegisterDogUseCase {
 	return &RegisterDogUseCase{repo: repo}
 }
 
-func (uc *RegisterDogUseCase) Execute(ctx context.Context, in RegisterDogInput) (RegisterDogOutput, error) {
-	if err := in.validate(); err != nil {
+func (uc *RegisterDogUseCase) Execute(ctx context.Context, input RegisterDogInput) (RegisterDogOutput, error) {
+	if err := input.validate(); err != nil {
 		return RegisterDogOutput{}, err
 	}
 
-	d, err := domain.NewDog(0, in.Name, in.Breed, in.Passport, in.AgeInMonths, in.Sex, in.WeightKg, in.UserID)
+	dog, err := domain.NewDog(0, input.Name, input.Breed, input.Passport, input.AgeInMonths, input.Sex, input.WeightKg, input.UserID)
 	if err != nil {
 		return RegisterDogOutput{}, err
 	}
 
-	id, err := uc.repo.Create(ctx, d)
+	id, err := uc.repo.Create(ctx, dog)
 	if err != nil {
 		return RegisterDogOutput{}, fmt.Errorf("register dog: %w", err)
 	}
@@ -47,26 +47,26 @@ func (uc *RegisterDogUseCase) Execute(ctx context.Context, in RegisterDogInput) 
 	return RegisterDogOutput{ID: id}, nil
 }
 
-func (in RegisterDogInput) validate() error {
-	if in.Name == "" {
+func (input RegisterDogInput) validate() error {
+	if input.Name == "" {
 		return &ValidationError{Field: "name"}
 	}
-	if in.Breed == "" {
+	if input.Breed == "" {
 		return &ValidationError{Field: "breed"}
 	}
-	if in.AgeInMonths <= 0 {
+	if input.AgeInMonths <= 0 {
 		return &ValidationError{Field: "age_in_months"}
 	}
-	if in.Sex == "" {
+	if input.Sex == "" {
 		return &ValidationError{Field: "sex"}
 	}
-	if in.WeightKg <= 0 {
+	if input.WeightKg <= 0 {
 		return &ValidationError{Field: "weight_kg"}
 	}
-	if in.Passport == "" {
+	if input.Passport == "" {
 		return &ValidationError{Field: "passport"}
 	}
-	if in.UserID <= 0 {
+	if input.UserID <= 0 {
 		return &ValidationError{Field: "user_id"}
 	}
 	return nil

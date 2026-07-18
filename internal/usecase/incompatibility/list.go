@@ -23,11 +23,11 @@ func NewListIncompatibilitiesUseCase(repo domain.IncompatibilityRepository) *Lis
 	return &ListIncompatibilitiesUseCase{repo: repo}
 }
 
-func (uc *ListIncompatibilitiesUseCase) Execute(ctx context.Context, in ListIncompatibilitiesInput) (ListIncompatibilitiesOutput, error) {
-	if in.Level != nil && !in.Level.IsValid() {
+func (uc *ListIncompatibilitiesUseCase) Execute(ctx context.Context, input ListIncompatibilitiesInput) (ListIncompatibilitiesOutput, error) {
+	if input.Level != nil && !input.Level.IsValid() {
 		return ListIncompatibilitiesOutput{}, &ValidationError{Field: "level"}
 	}
-	out, err := uc.repo.List(ctx, in.Level)
+	out, err := uc.repo.List(ctx, input.Level)
 	if err != nil {
 		return ListIncompatibilitiesOutput{}, fmt.Errorf("list incompatibilities: %w", err)
 	}
