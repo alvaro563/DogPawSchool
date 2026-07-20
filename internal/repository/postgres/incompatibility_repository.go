@@ -31,7 +31,7 @@ func (repo *IncompatibilityRepository) GetIncompatibilityByID(ctx context.Contex
 		incompatName string
 		levelType    string
 	)
-	err := repo.db.QueryRowContext(ctx, query, id).Scan(&incompID, &incompatName, &levelType)
+	err := runner(ctx, repo.db).QueryRowContext(ctx, query, id).Scan(&incompID, &incompatName, &levelType)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -44,7 +44,7 @@ func (repo *IncompatibilityRepository) GetIncompatibilityByID(ctx context.Contex
 func (repo *IncompatibilityRepository) Create(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
 	const query = `INSERT INTO incompatibilities (name, level_type) VALUES ($1, $2) RETURNING id`
 	var newIncompatID int64
-	err := repo.db.QueryRowContext(ctx, query, incomp.Name(), string(incomp.Type())).Scan(&newIncompatID)
+	err := runner(ctx, repo.db).QueryRowContext(ctx, query, incomp.Name(), string(incomp.Type())).Scan(&newIncompatID)
 	if err != nil {
 		return 0, mapIncompatibilityCreateError(err)
 	}
@@ -58,10 +58,10 @@ func (repo *IncompatibilityRepository) List(ctx context.Context, level *domain.I
 	)
 	if level == nil {
 		const query = `SELECT id, name, level_type FROM incompatibilities ORDER BY name`
-		rows, err = repo.db.QueryContext(ctx, query)
+		rows, err = runner(ctx, repo.db).QueryContext(ctx, query)
 	} else {
 		const query = `SELECT id, name, level_type FROM incompatibilities WHERE level_type = $1 ORDER BY name`
-		rows, err = repo.db.QueryContext(ctx, query, string(*level))
+		rows, err = runner(ctx, repo.db).QueryContext(ctx, query, string(*level))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list incompatibilities: %w", err)
@@ -92,7 +92,7 @@ func (repo *IncompatibilityRepository) List(ctx context.Context, level *domain.I
 
 func (repo *IncompatibilityRepository) Update(ctx context.Context, incomp *domain.Incompatibility) error {
 	const query = `UPDATE incompatibilities SET name = $1, level_type = $2 WHERE id = $3`
-	queryResult, err := repo.db.ExecContext(ctx, query, incomp.Name(), string(incomp.Type()), incomp.ID())
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, incomp.Name(), string(incomp.Type()), incomp.ID())
 	if err != nil {
 		return mapIncompatibilityUpdateError(err)
 	}
@@ -108,7 +108,7 @@ func (repo *IncompatibilityRepository) Update(ctx context.Context, incomp *domai
 
 func (repo *IncompatibilityRepository) Delete(ctx context.Context, id int) error {
 	const query = `DELETE FROM incompatibilities WHERE id = $1`
-	queryResult, err := repo.db.ExecContext(ctx, query, id)
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, id)
 	if err != nil {
 		return mapIncompatibilityDeleteError(err)
 	}

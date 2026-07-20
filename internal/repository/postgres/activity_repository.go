@@ -43,7 +43,7 @@ func (repo *ActivityRepository) Create(ctx context.Context, activity *domain.Act
 		RETURNING id
 	`
 	var newActivityID int64
-	err := repo.db.QueryRowContext(ctx, query,
+	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
 		activity.Name(), string(activity.Type()), activity.MaxCapacity(),
 		activity.Location(), activity.DurationInHours(), activity.Date(),
 	).Scan(&newActivityID)
@@ -57,7 +57,7 @@ func (repo *ActivityRepository) Create(ctx context.Context, activity *domain.Act
 // when no row matches.
 func (repo *ActivityRepository) GetByID(ctx context.Context, id int) (*domain.Activity, error) {
 	query := activitySelectClause + ` WHERE id = $1`
-	row := repo.db.QueryRowContext(ctx, query, id)
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
 	activity, err := scanActivity(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -77,7 +77,7 @@ func (repo *ActivityRepository) Update(ctx context.Context, activity *domain.Act
 		    location = $4, duration_in_hours = $5, date = $6
 		WHERE id = $7
 	`
-	queryResult, err := repo.db.ExecContext(ctx, query,
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
 		activity.Name(), string(activity.Type()), activity.MaxCapacity(),
 		activity.Location(), activity.DurationInHours(), activity.Date(),
 		activity.ID(),
@@ -101,7 +101,7 @@ func (repo *ActivityRepository) Update(ctx context.Context, activity *domain.Act
 // interface assertion compiles and the method is ready for use.
 func (repo *ActivityRepository) Delete(ctx context.Context, id int) error {
 	const query = `DELETE FROM activities WHERE id = $1`
-	queryResult, err := repo.db.ExecContext(ctx, query, id)
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("delete activity: %w", err)
 	}
@@ -136,7 +136,7 @@ func (repo *ActivityRepository) ListUpcoming(ctx context.Context, limit, offset 
 // queryActivities is the shared row-iteration loop for List and
 // ListUpcoming. Returns a non-nil empty slice on no rows.
 func (repo *ActivityRepository) queryActivities(ctx context.Context, query string, args ...any) ([]*domain.Activity, error) {
-	rows, err := repo.db.QueryContext(ctx, query, args...)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query activities: %w", err)
 	}

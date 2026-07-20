@@ -68,6 +68,15 @@ definitions:
           $ref: '#/definitions/handler.incompatibilityDTO'
         type: array
     type: object
+  handler.cancelReservationResponse:
+    properties:
+      id:
+        example: 99
+        type: integer
+      status:
+        example: CANCELLED_IN_TIME
+        type: string
+    type: object
   handler.dogDTO:
     properties:
       age_in_months:
@@ -195,6 +204,35 @@ definitions:
           $ref: '#/definitions/handler.incompatibilityDTO'
         type: array
     type: object
+  handler.listPassesResponse:
+    properties:
+      count:
+        example: 3
+        type: integer
+      limit:
+        example: 50
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      passes:
+        items:
+          $ref: '#/definitions/handler.passDTO'
+        type: array
+    type: object
+  handler.listReservationsResponse:
+    properties:
+      count:
+        type: integer
+      limit:
+        type: integer
+      offset:
+        type: integer
+      reservations:
+        items:
+          $ref: '#/definitions/handler.reservationViewDTO'
+        type: array
+    type: object
   handler.modifyActivityRequest:
     properties:
       activity_type:
@@ -269,6 +307,82 @@ definitions:
       name:
         example: Miedo a petardos y cohetes
         type: string
+    type: object
+  handler.modifyPassRequest:
+    properties:
+      expires_at:
+        example: "2027-06-30T23:59:59Z"
+        type: string
+      pass_type:
+        enum:
+        - GENERICO
+        - ESPECIFICO
+        example: ESPECIFICO
+        type: string
+      price:
+        example: 15000
+        minimum: 0
+        type: integer
+    type: object
+  handler.passDTO:
+    properties:
+      created_at:
+        example: "2026-07-01T10:00:00Z"
+        type: string
+      expires_at:
+        example: "2026-12-31T23:59:59Z"
+        type: string
+      id:
+        example: 42
+        type: integer
+      num_of_sessions:
+        example: 10
+        type: integer
+      pass_type:
+        example: GENERICO
+        type: string
+      price:
+        example: 12000
+        type: integer
+      remaining_sessions:
+        example: 7
+        type: integer
+      updated_at:
+        example: "2026-07-15T14:30:00Z"
+        type: string
+      user_id:
+        example: 1
+        type: integer
+    type: object
+  handler.passResponse:
+    properties:
+      created_at:
+        example: "2026-07-01T10:00:00Z"
+        type: string
+      expires_at:
+        example: "2026-12-31T23:59:59Z"
+        type: string
+      id:
+        example: 42
+        type: integer
+      num_of_sessions:
+        example: 10
+        type: integer
+      pass_type:
+        example: GENERICO
+        type: string
+      price:
+        example: 12000
+        type: integer
+      remaining_sessions:
+        example: 7
+        type: integer
+      updated_at:
+        example: "2026-07-15T14:30:00Z"
+        type: string
+      user_id:
+        example: 1
+        type: integer
     type: object
   handler.registerActivityRequest:
     properties:
@@ -384,6 +498,56 @@ definitions:
         example: 5
         type: integer
     type: object
+  handler.registerPassRequest:
+    properties:
+      expires_at:
+        example: "2026-12-31T23:59:59Z"
+        type: string
+      num_of_sessions:
+        example: 10
+        type: integer
+      pass_type:
+        enum:
+        - GENERICO
+        - ESPECIFICO
+        example: GENERICO
+        type: string
+      price:
+        example: 12000
+        minimum: 0
+        type: integer
+    required:
+    - num_of_sessions
+    - pass_type
+    type: object
+  handler.registerPassResponse:
+    properties:
+      id:
+        example: 42
+        type: integer
+    type: object
+  handler.registerReservationRequest:
+    properties:
+      activity_id:
+        example: 42
+        type: integer
+      dog_id:
+        example: 7
+        type: integer
+      pass_id:
+        example: 3
+        type: integer
+    required:
+    - activity_id
+    - dog_id
+    - pass_id
+    type: object
+  handler.registerReservationResponse:
+    properties:
+      id:
+        example: 99
+        type: integer
+    type: object
   handler.removeIncompatibilityResponse:
     properties:
       dog_id:
@@ -396,6 +560,50 @@ definitions:
       removed:
         example: true
         type: boolean
+    type: object
+  handler.reservationViewDTO:
+    properties:
+      activity_date:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      activity_id:
+        example: 10
+        type: integer
+      activity_location:
+        example: Parking Central
+        type: string
+      activity_name:
+        example: Paseo Río
+        type: string
+      created_at:
+        example: "2026-07-20T10:00:00Z"
+        type: string
+      dog_id:
+        example: 5
+        type: integer
+      dog_name:
+        example: Luna
+        type: string
+      id:
+        example: 42
+        type: integer
+      pass_id:
+        example: 3
+        type: integer
+      pass_remaining:
+        example: 7
+        type: integer
+      pass_type:
+        example: GENERICO
+        type: string
+      status:
+        example: CONFIRMED
+        type: string
+    type: object
+  handler.reservationViewResponse:
+    properties:
+      reservation:
+        $ref: '#/definitions/handler.reservationViewDTO'
     type: object
   handler.setHeatRequest:
     properties:
@@ -564,6 +772,44 @@ paths:
       summary: Patch an activity
       tags:
       - activities
+  /api/v1/activities/{id}/reservations:
+    get:
+      description: |-
+        Returns the views of every reservation for the
+        given activity, ordered by created_at ASC. Class
+        roster view.
+      parameters:
+      - description: Activity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Maximum number of reservations to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of reservations to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listReservationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List an activity's reservations
+      tags:
+      - reservations
   /api/v1/activities/upcoming:
     get:
       description: Returns a paginated list of activities scheduled at or after the
@@ -653,6 +899,43 @@ paths:
       summary: Register a new dog
       tags:
       - dogs
+  /api/v1/dogs/{dog_id}/reservations:
+    get:
+      description: |-
+        Returns the views of every reservation for the
+        given dog, ordered by created_at DESC.
+      parameters:
+      - description: Dog ID
+        in: path
+        name: dog_id
+        required: true
+        type: integer
+      - description: Maximum number of reservations to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of reservations to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listReservationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List a dog's reservations
+      tags:
+      - reservations
   /api/v1/dogs/{id}:
     delete:
       description: Removes a dog by id. Associated dog_incompatibilities and reservations
@@ -1418,4 +1701,447 @@ paths:
       summary: Patch an incompatibility
       tags:
       - incompatibilities
+  /api/v1/passes:
+    get:
+      description: |-
+        Returns a paginated list of all passes in the system.
+        TODO: gate this route behind an admin-role middleware
+        before production. Currently any client can read all
+        passes, which exposes other users' data.
+      parameters:
+      - description: Maximum number of passes to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of passes to skip for pagination (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of passes
+          schema:
+            $ref: '#/definitions/handler.listPassesResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List all passes (admin only in production)
+      tags:
+      - passes
+  /api/v1/passes/{id}:
+    get:
+      description: Returns a single pass by its id.
+      parameters:
+      - description: Pass ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pass found
+          schema:
+            $ref: '#/definitions/handler.passResponse'
+        "400":
+          description: Invalid id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Pass not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Get a pass by ID
+      tags:
+      - passes
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Partially updates a pass. Only price, pass_type, and
+        expires_at are editable. num_of_sessions,
+        remaining_sessions, user_id, and created_at are
+        immutable to preserve the audit-log invariant. An
+        empty body is a no-op.
+      parameters:
+      - description: Pass ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to patch
+        in: body
+        name: pass
+        required: true
+        schema:
+          $ref: '#/definitions/handler.modifyPassRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated pass
+          schema:
+            $ref: '#/definitions/handler.passResponse'
+        "400":
+          description: Invalid id, body, or field value
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Pass not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Patch a pass
+      tags:
+      - passes
+  /api/v1/passes/{id}/reservations:
+    get:
+      description: |-
+        Returns the views of every reservation paid from
+        the given pass, ordered by created_at DESC.
+        Pass audit view.
+      parameters:
+      - description: Pass ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Maximum number of reservations to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of reservations to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listReservationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List a pass's reservations
+      tags:
+      - reservations
+  /api/v1/users/{user_id}/passes:
+    get:
+      description: Returns a paginated list of passes owned by the user identified
+        by the user_id path param.
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Maximum number of passes to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of passes to skip for pagination (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of passes
+          schema:
+            $ref: '#/definitions/handler.listPassesResponse'
+        "400":
+          description: Invalid user_id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List passes owned by a user
+      tags:
+      - passes
+    post:
+      consumes:
+      - application/json
+      description: Creates a new prepaid session pack for the user identified by the
+        user_id path param. Price is stored in cents.
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Pass to create
+        in: body
+        name: pass
+        required: true
+        schema:
+          $ref: '#/definitions/handler.registerPassRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Pass created
+          schema:
+            $ref: '#/definitions/handler.registerPassResponse'
+        "400":
+          description: Invalid user_id, request body, or missing fields
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Register a new pass (bono) for a user
+      tags:
+      - passes
+  /api/v1/users/{user_id}/reservations:
+    get:
+      description: |-
+        Returns the denormalized ReservationView for every
+        reservation whose dog is owned by the user in the
+        path, ordered by created_at DESC. Supports
+        optional filters: status, from, to.
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Filter by status (CONFIRMED, COMPLETED, CANCELLED_IN_TIME, CANCELLED_LATE,
+          FORGIVEN, NO_SHOW)
+        in: query
+        name: status
+        type: string
+      - description: Filter by created_at >= from (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: Filter by created_at <  to (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Maximum number of reservations to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of reservations to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listReservationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List a user's reservations
+      tags:
+      - reservations
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Books a dog into an activity, paid from one of the
+        owner's passes. Atomically: validates the activity
+        is in the future and not full, the dog is owned by
+        the user in the path, and the pass is owned by the
+        user and has at least one session. Consumes one pass
+        session and creates the reservation in StatusConfirmed.
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Reservation to create
+        in: body
+        name: reservation
+        required: true
+        schema:
+          $ref: '#/definitions/handler.registerReservationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Reservation created
+          schema:
+            $ref: '#/definitions/handler.registerReservationResponse'
+        "400":
+          description: Invalid user_id, request body, or missing fields
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Activity full or duplicate reservation
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Book a reservation for a dog
+      tags:
+      - reservations
+  /api/v1/users/{user_id}/reservations/{id}:
+    get:
+      description: |-
+        Returns the denormalized ReservationView for the
+        given reservation id, owned by the user in the
+        path. Returns 404 if the id does not exist OR if
+        the reservation belongs to a different user (no
+        leak).
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.reservationViewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Get a reservation by id
+      tags:
+      - reservations
+  /api/v1/users/{user_id}/reservations/{id}/cancel:
+    post:
+      description: |-
+        Cancels a CONFIRMED reservation owned by the user in
+        the path. The activity must still be in the future
+        and the reservation must be in StatusConfirmed. If
+        the cancel happens more than 2h before the activity
+        date, the reservation transitions to
+        StatusCancelledInTime AND the pass session is
+        refunded (remaining_sessions + 1, audit movement +1
+        appended). If the cancel happens within the late
+        window, the reservation transitions to
+        StatusCancelledLate and no refund is applied (an
+        admin can later call Forgive to refund it).
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reservation cancelled
+          schema:
+            $ref: '#/definitions/handler.cancelReservationResponse'
+        "400":
+          description: Invalid user_id or reservation_id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Reservation not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Already cancelled / not in a cancellable state
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Cancel a reservation
+      tags:
+      - reservations
+  /api/v1/users/{user_id}/reservations/upcoming:
+    get:
+      description: |-
+        Returns the views of every CONFIRMED reservation
+        whose activity date is at or after the current
+        time, ordered by activity date ASC.
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Maximum number of reservations to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of reservations to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listReservationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: List a user's upcoming reservations
+      tags:
+      - reservations
 swagger: "2.0"

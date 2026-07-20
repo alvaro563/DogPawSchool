@@ -243,6 +243,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/activities/{id}/reservations": {
+            "get": {
+                "description": "Returns the views of every reservation for the\ngiven activity, ordered by created_at ASC. Class\nroster view.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List an activity's reservations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of reservations to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of reservations to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listReservationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/dogs": {
             "get": {
                 "description": "Returns a paginated list of all dogs across all owners. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
@@ -833,6 +886,59 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.listDogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/{dog_id}/reservations": {
+            "get": {
+                "description": "Returns the views of every reservation for the\ngiven dog, ordered by created_at DESC.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List a dog's reservations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "dog_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of reservations to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of reservations to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listReservationsResponse"
                         }
                     },
                     "400": {
@@ -1441,6 +1547,608 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/v1/passes": {
+            "get": {
+                "description": "Returns a paginated list of all passes in the system.\nTODO: gate this route behind an admin-role middleware\nbefore production. Currently any client can read all\npasses, which exposes other users' data.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passes"
+                ],
+                "summary": "List all passes (admin only in production)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of passes to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of passes to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of passes",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listPassesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/passes/{id}": {
+            "get": {
+                "description": "Returns a single pass by its id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passes"
+                ],
+                "summary": "Get a pass by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Pass ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pass found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.passResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Pass not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partially updates a pass. Only price, pass_type, and\nexpires_at are editable. num_of_sessions,\nremaining_sessions, user_id, and created_at are\nimmutable to preserve the audit-log invariant. An\nempty body is a no-op.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passes"
+                ],
+                "summary": "Patch a pass",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Pass ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to patch",
+                        "name": "pass",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.modifyPassRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated pass",
+                        "schema": {
+                            "$ref": "#/definitions/handler.passResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, body, or field value",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Pass not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/passes/{id}/reservations": {
+            "get": {
+                "description": "Returns the views of every reservation paid from\nthe given pass, ordered by created_at DESC.\nPass audit view.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List a pass's reservations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Pass ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of reservations to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of reservations to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listReservationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/passes": {
+            "get": {
+                "description": "Returns a paginated list of passes owned by the user identified by the user_id path param.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passes"
+                ],
+                "summary": "List passes owned by a user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of passes to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of passes to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of passes",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listPassesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new prepaid session pack for the user identified by the user_id path param. Price is stored in cents.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passes"
+                ],
+                "summary": "Register a new pass (bono) for a user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pass to create",
+                        "name": "pass",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerPassRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Pass created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerPassResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user_id, request body, or missing fields",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/reservations": {
+            "get": {
+                "description": "Returns the denormalized ReservationView for every\nreservation whose dog is owned by the user in the\npath, ordered by created_at DESC. Supports\noptional filters: status, from, to.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List a user's reservations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by status (CONFIRMED, COMPLETED, CANCELLED_IN_TIME, CANCELLED_LATE, FORGIVEN, NO_SHOW)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by created_at \u003e= from (RFC3339)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by created_at \u003c  to (RFC3339)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of reservations to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of reservations to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listReservationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Books a dog into an activity, paid from one of the\nowner's passes. Atomically: validates the activity\nis in the future and not full, the dog is owned by\nthe user in the path, and the pass is owned by the\nuser and has at least one session. Consumes one pass\nsession and creates the reservation in StatusConfirmed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Book a reservation for a dog",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Reservation to create",
+                        "name": "reservation",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerReservationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Reservation created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerReservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user_id, request body, or missing fields",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Activity full or duplicate reservation",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/reservations/upcoming": {
+            "get": {
+                "description": "Returns the views of every CONFIRMED reservation\nwhose activity date is at or after the current\ntime, ordered by activity date ASC.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List a user's upcoming reservations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of reservations to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of reservations to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listReservationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/reservations/{id}": {
+            "get": {
+                "description": "Returns the denormalized ReservationView for the\ngiven reservation id, owned by the user in the\npath. Returns 404 if the id does not exist OR if\nthe reservation belongs to a different user (no\nleak).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Get a reservation by id",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.reservationViewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/reservations/{id}/cancel": {
+            "post": {
+                "description": "Cancels a CONFIRMED reservation owned by the user in\nthe path. The activity must still be in the future\nand the reservation must be in StatusConfirmed. If\nthe cancel happens more than 2h before the activity\ndate, the reservation transitions to\nStatusCancelledInTime AND the pass session is\nrefunded (remaining_sessions + 1, audit movement +1\nappended). If the cancel happens within the late\nwindow, the reservation transitions to\nStatusCancelledLate and no refund is applied (an\nadmin can later call Forgive to refund it).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Cancel a reservation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reservation cancelled",
+                        "schema": {
+                            "$ref": "#/definitions/handler.cancelReservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user_id or reservation_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Already cancelled / not in a cancellable state",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1538,6 +2246,19 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handler.incompatibilityDTO"
                     }
+                }
+            }
+        },
+        "handler.cancelReservationResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 99
+                },
+                "status": {
+                    "type": "string",
+                    "example": "CANCELLED_IN_TIME"
                 }
             }
         },
@@ -1720,6 +2441,49 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.listPassesResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "passes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.passDTO"
+                    }
+                }
+            }
+        },
+        "handler.listReservationsResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "reservations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.reservationViewDTO"
+                    }
+                }
+            }
+        },
         "handler.modifyActivityRequest": {
             "type": "object",
             "properties": {
@@ -1821,6 +2585,110 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Miedo a petardos y cohetes"
+                }
+            }
+        },
+        "handler.modifyPassRequest": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "example": "2027-06-30T23:59:59Z"
+                },
+                "pass_type": {
+                    "type": "string",
+                    "enum": [
+                        "GENERICO",
+                        "ESPECIFICO"
+                    ],
+                    "example": "ESPECIFICO"
+                },
+                "price": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 15000
+                }
+            }
+        },
+        "handler.passDTO": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-07-01T10:00:00Z"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-12-31T23:59:59Z"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "num_of_sessions": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "pass_type": {
+                    "type": "string",
+                    "example": "GENERICO"
+                },
+                "price": {
+                    "type": "integer",
+                    "example": 12000
+                },
+                "remaining_sessions": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-07-15T14:30:00Z"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.passResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-07-01T10:00:00Z"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-12-31T23:59:59Z"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "num_of_sessions": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "pass_type": {
+                    "type": "string",
+                    "example": "GENERICO"
+                },
+                "price": {
+                    "type": "integer",
+                    "example": 12000
+                },
+                "remaining_sessions": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-07-15T14:30:00Z"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -1974,6 +2842,76 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.registerPassRequest": {
+            "type": "object",
+            "required": [
+                "num_of_sessions",
+                "pass_type"
+            ],
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-12-31T23:59:59Z"
+                },
+                "num_of_sessions": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "pass_type": {
+                    "type": "string",
+                    "enum": [
+                        "GENERICO",
+                        "ESPECIFICO"
+                    ],
+                    "example": "GENERICO"
+                },
+                "price": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 12000
+                }
+            }
+        },
+        "handler.registerPassResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "handler.registerReservationRequest": {
+            "type": "object",
+            "required": [
+                "activity_id",
+                "dog_id",
+                "pass_id"
+            ],
+            "properties": {
+                "activity_id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "dog_id": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "pass_id": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "handler.registerReservationResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 99
+                }
+            }
+        },
         "handler.removeIncompatibilityResponse": {
             "type": "object",
             "properties": {
@@ -1990,6 +2928,67 @@ const docTemplate = `{
                 "removed": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "handler.reservationViewDTO": {
+            "type": "object",
+            "properties": {
+                "activity_date": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "activity_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "activity_location": {
+                    "type": "string",
+                    "example": "Parking Central"
+                },
+                "activity_name": {
+                    "type": "string",
+                    "example": "Paseo Río"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-07-20T10:00:00Z"
+                },
+                "dog_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "dog_name": {
+                    "type": "string",
+                    "example": "Luna"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "pass_id": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "pass_remaining": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "pass_type": {
+                    "type": "string",
+                    "example": "GENERICO"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "CONFIRMED"
+                }
+            }
+        },
+        "handler.reservationViewResponse": {
+            "type": "object",
+            "properties": {
+                "reservation": {
+                    "$ref": "#/definitions/handler.reservationViewDTO"
                 }
             }
         },

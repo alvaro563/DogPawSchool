@@ -69,7 +69,10 @@ func (movement *PassMovement) CreatedAt() time.Time { return movement.createdAt 
 
 // Pass is a prepaid session pack owned by a User. A Pass starts with
 // remainingSessions == numOfSessions and is decremented as the user
-// consumes sessions (or incremented on refund).
+// consumes sessions (or incremented on refund). The createdAt and
+// updatedAt timestamps are both maintained automatically: createdAt
+// is set on first persist, updatedAt is bumped by a DB trigger on
+// every UPDATE.
 type Pass struct {
 	id                int
 	numOfSessions     int
@@ -77,19 +80,31 @@ type Pass struct {
 	price             int
 	passType          PassType
 	createdAt         time.Time
+	updatedAt         time.Time
 	expiresAt         *time.Time
 	userID            int
 	movements         []PassMovement
 }
 
-// NewPass creates a Pass. A new pass starts fully available
-// (remainingSessions = numOfSessions) with no movements.
-func NewPass(id, numOfSessions, price int, passType PassType, userID int, createdAt time.Time, expiresAt *time.Time) (*Pass, error) {
+// NewPass creates a Pass. The caller must pass the current
+// remainingSessions explicitly: for a brand-new pass, pass the same
+// value as numOfSessions; for a pass loaded from the DB, pass the
+// value that the DB currently holds (the repository is the only
+// caller in the latter case). The invariant
+// remainingSessions <= numOfSessions is enforced here so a buggy
+// caller cannot put the aggregate into an inconsistent state.
+func NewPass(id, numOfSessions, remainingSessions, price int, passType PassType, userID int, createdAt, updatedAt time.Time, expiresAt *time.Time) (*Pass, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("pass: id must not be negative")
 	}
 	if numOfSessions <= 0 {
 		return nil, fmt.Errorf("pass: numOfSessions must be greater than 0")
+	}
+	if remainingSessions < 0 {
+		return nil, fmt.Errorf("pass: remainingSessions must not be negative")
+	}
+	if remainingSessions > numOfSessions {
+		return nil, fmt.Errorf("pass: remainingSessions (%d) must not exceed numOfSessions (%d)", remainingSessions, numOfSessions)
 	}
 	if price < 0 {
 		return nil, fmt.Errorf("pass: price must not be negative")
@@ -103,16 +118,30 @@ func NewPass(id, numOfSessions, price int, passType PassType, userID int, create
 	if createdAt.IsZero() {
 		return nil, fmt.Errorf("pass: createdAt must be a valid time")
 	}
+	if updatedAt.IsZero() {
+		return nil, fmt.Errorf("pass: updatedAt must be a valid time")
+	}
 	return &Pass{
 		id:                id,
 		numOfSessions:     numOfSessions,
-		remainingSessions: numOfSessions,
+		remainingSessions: remainingSessions,
 		price:             price,
 		passType:          passType,
 		createdAt:         createdAt,
+		updatedAt:         updatedAt,
 		expiresAt:         expiresAt,
 		userID:            userID,
 	}, nil
+}
+
+// MustNewPass is like NewPass but panics on error. Intended for
+// tests and seed data where the inputs are known to be valid.
+func MustNewPass(id, numOfSessions, remainingSessions, price int, passType PassType, userID int, createdAt, updatedAt time.Time, expiresAt *time.Time) *Pass {
+	pass, err := NewPass(id, numOfSessions, remainingSessions, price, passType, userID, createdAt, updatedAt, expiresAt)
+	if err != nil {
+		panic(err)
+	}
+	return pass
 }
 
 func (pass *Pass) ID() int                { return pass.id }
@@ -121,6 +150,7 @@ func (pass *Pass) RemainingSessions() int { return pass.remainingSessions }
 func (pass *Pass) Price() int             { return pass.price }
 func (pass *Pass) Type() PassType         { return pass.passType }
 func (pass *Pass) CreatedAt() time.Time   { return pass.createdAt }
+func (pass *Pass) UpdatedAt() time.Time   { return pass.updatedAt }
 func (pass *Pass) ExpiresAt() *time.Time  { return pass.expiresAt }
 func (pass *Pass) UserID() int            { return pass.userID }
 
@@ -129,6 +159,54 @@ func (pass *Pass) Movements() []PassMovement {
 	out := make([]PassMovement, len(pass.movements))
 	copy(out, pass.movements)
 	return out
+}
+
+// PassPatch is a partial update: only the non-nil fields are mutated.
+// See ApplyPatch for per-field validation. The non-modifiable fields
+// (id, numOfSessions, remainingSessions, userID, createdAt) are
+// deliberately excluded from the patch — changing them would either
+// break the audit-log invariant (sum of movements must match the
+// pass state) or be a different operation (e.g., re-assigning
+// ownership).
+type PassPatch struct {
+	Price     *int
+	PassType  *PassType
+	ExpiresAt *time.Time
+}
+
+// PassValidationError is returned by ApplyPatch when a supplied
+// value is invalid.
+type PassValidationError struct {
+	Field string
+}
+
+func (validationError *PassValidationError) Error() string {
+	return fmt.Sprintf("pass: invalid value for %s", validationError.Field)
+}
+
+// ApplyPatch mutates the pass in place with the fields present in
+// the patch. An empty patch is a no-op. Only the editable fields
+// (price, pass_type, expires_at) are accepted.
+func (pass *Pass) ApplyPatch(patch PassPatch) error {
+	if patch.Price != nil {
+		if *patch.Price < 0 {
+			return &PassValidationError{Field: "price"}
+		}
+		pass.price = *patch.Price
+	}
+	if patch.PassType != nil {
+		if !patch.PassType.IsValid() {
+			return &PassValidationError{Field: "pass_type"}
+		}
+		pass.passType = *patch.PassType
+	}
+	if patch.ExpiresAt != nil {
+		if patch.ExpiresAt.IsZero() {
+			return &PassValidationError{Field: "expires_at"}
+		}
+		pass.expiresAt = patch.ExpiresAt
+	}
+	return nil
 }
 
 // IsExpired reports whether the pass has expired relative to now.
@@ -179,17 +257,20 @@ func (pass *Pass) CanRefund() bool {
 
 // RefundSession increments remainingSessions by 1 and appends a
 // movement (amount=+1) to the audit log. Returns the created movement.
-// Errors if there is nothing to refund, the pass is expired, or reason
-// is empty.
+// Errors if there is nothing to refund or the reason is empty.
+//
+// This method intentionally does NOT check pass.IsExpired. The policy
+// "no refund on expired pass" is enforced at the use case layer
+// (owner-side refunds). Admin-side refunds (e.g., activity
+// cancellation) can and should override this rule. ConsumeSession
+// still checks expiry because consuming a session on an expired pass
+// is never a valid operation.
 func (pass *Pass) RefundSession(reason string, now time.Time) (PassMovement, error) {
 	if reason == "" {
 		return PassMovement{}, fmt.Errorf("pass: reason must not be empty")
 	}
 	if !pass.CanRefund() {
 		return PassMovement{}, fmt.Errorf("pass: cannot refund, no sessions to refund")
-	}
-	if pass.IsExpired(now) {
-		return PassMovement{}, fmt.Errorf("pass: cannot refund, expired")
 	}
 	movement := PassMovement{
 		passID:    pass.id,
@@ -204,11 +285,12 @@ func (pass *Pass) RefundSession(reason string, now time.Time) (PassMovement, err
 
 // PassRepository is the persistence contract for Pass (and its
 // PassMovement children). Implemented by
-// internal/repository/postgres (future).
+// internal/repository/postgres.
 type PassRepository interface {
-	Create(ctx context.Context, pass *Pass) error
+	Create(ctx context.Context, pass *Pass) (int, error)
 	Update(ctx context.Context, pass *Pass) error
 	GetByID(ctx context.Context, id int) (*Pass, error)
-	ListByOwner(ctx context.Context, userID int) ([]*Pass, error)
+	ListAll(ctx context.Context, limit, offset int) ([]*Pass, error)
+	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Pass, error)
 	AddMovement(ctx context.Context, movement *PassMovement) error
 }

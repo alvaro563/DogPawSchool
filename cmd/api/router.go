@@ -16,6 +16,8 @@ import (
 	activityuc "dogpaw/internal/usecase/activity"
 	doguc "dogpaw/internal/usecase/dog"
 	incompatuc "dogpaw/internal/usecase/incompatibility"
+	passuc "dogpaw/internal/usecase/pass"
+	reservationuc "dogpaw/internal/usecase/reservation"
 
 	_ "dogpaw/docs"
 )
@@ -74,6 +76,34 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		listAllActivityUC, listUpcomingActivityUC,
 	)
 
+	passRepo := postgres.NewPassRepository(db)
+	registerPassUC := passuc.NewRegisterPassUseCase(passRepo)
+	modifyPassUC := passuc.NewModifyPassUseCase(passRepo)
+	getPassUC := passuc.NewGetPassUseCase(passRepo)
+	listAllPassUC := passuc.NewListAllPassesUseCase(passRepo)
+	listByUserPassUC := passuc.NewListByUserPassesUseCase(passRepo)
+	passH := handler.NewPassHandler(registerPassUC, modifyPassUC, getPassUC, listAllPassUC, listByUserPassUC)
+
+	transactor := postgres.NewTransactor(db)
+	reservationRepo := postgres.NewReservationRepository(db)
+	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
+		transactor, activityRepo, repo, passRepo, reservationRepo,
+	)
+	cancelReservationUC := reservationuc.NewCancelReservationUseCase(
+		transactor, activityRepo, repo, passRepo, reservationRepo,
+	)
+	getReservationUC := reservationuc.NewGetReservationUseCase(reservationRepo)
+	listByUserReservationsUC := reservationuc.NewListByUserReservationsUseCase(reservationRepo)
+	listUpcomingByUserReservationsUC := reservationuc.NewListUpcomingByUserUseCase(reservationRepo)
+	listByDogReservationsUC := reservationuc.NewListByDogReservationsUseCase(reservationRepo)
+	listByPassReservationsUC := reservationuc.NewListByPassReservationsUseCase(reservationRepo)
+	listByActivityReservationsUC := reservationuc.NewListByActivityReservationsUseCase(reservationRepo)
+	reservationH := handler.NewReservationHandler(
+		registerReservationUC, cancelReservationUC,
+		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
+		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
+	)
+
 	dogH := handler.NewDogHandler(
 		registerUC,
 		listAllUC,
@@ -127,6 +157,22 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		v1.GET("/activities/upcoming", activityH.ListUpcoming)
 		v1.GET("/activities/:id", activityH.GetByID)
 		v1.PATCH("/activities/:id", activityH.Modify)
+
+		v1.POST("/users/:user_id/passes", passH.Register)
+		v1.GET("/users/:user_id/passes", passH.ListByUser)
+		v1.GET("/passes", passH.List)
+		v1.GET("/passes/:id", passH.GetByID)
+		v1.PATCH("/passes/:id", passH.Modify)
+
+		v1.POST("/users/:user_id/reservations", reservationH.Register)
+		v1.POST("/users/:user_id/reservations/:id/cancel", reservationH.Cancel)
+
+		v1.GET("/users/:user_id/reservations", reservationH.ListByUser)
+		v1.GET("/users/:user_id/reservations/upcoming", reservationH.ListUpcomingByUser)
+		v1.GET("/users/:user_id/reservations/:id", reservationH.GetByID)
+		v1.GET("/dogs/:dog_id/reservations", reservationH.ListByDog)
+		v1.GET("/passes/:id/reservations", reservationH.ListByPass)
+		v1.GET("/activities/:id/reservations", reservationH.ListByActivity)
 	}
 
 	return r

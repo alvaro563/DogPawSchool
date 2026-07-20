@@ -150,6 +150,8 @@ func (reservation *Reservation) IsCancelled() bool {
 	return reservation.status == StatusCancelledInTime || reservation.status == StatusCancelledLate || reservation.status == StatusForgiven
 }
 
+func (reservation *Reservation) IsForgiven() bool { return reservation.status == StatusForgiven }
+
 // WasCancelledInTime reports whether the reservation was cancelled with
 // enough lead time for the slot to be resold.
 func (reservation *Reservation) WasCancelledInTime() bool {
@@ -164,12 +166,56 @@ func (reservation *Reservation) WasCancelledLate() bool {
 }
 
 // ReservationRepository is the persistence contract for Reservation.
-// Implemented by internal/repository/postgres (future).
+// Implemented by internal/repository/postgres. The first 6 methods
+// are the write + bare-list operations; the 6 "View" methods
+// return denormalized ReservationView aggregates used by the read
+// HTTP endpoints.
 type ReservationRepository interface {
-	Create(ctx context.Context, reservation *Reservation) error
+	Create(ctx context.Context, reservation *Reservation) (int, error)
 	Update(ctx context.Context, reservation *Reservation) error
 	GetByID(ctx context.Context, id int) (*Reservation, error)
 	ListByActivity(ctx context.Context, activityID int) ([]*Reservation, error)
 	ListByDog(ctx context.Context, dogID int) ([]*Reservation, error)
 	ListByPass(ctx context.Context, passID int) ([]*Reservation, error)
+
+	// GetView returns the denormalized ReservationView for a single
+	// reservation id. Returns ErrReservationNotFound-equivalent
+	// (the postgres repo sentinel) when the id does not resolve.
+	GetView(ctx context.Context, id int) (*ReservationView, error)
+
+	// ListByUserView returns the views of every reservation that
+	// belongs to the user (via the dog's owner_id), with optional
+	// filters. status / from / to are nullable: pass nil to skip
+	// that filter. limit / offset are normalized by the caller.
+	ListByUserView(
+		ctx context.Context,
+		userID int,
+		status *ReservationStatus,
+		from, to *time.Time,
+		limit, offset int,
+	) ([]*ReservationView, error)
+
+	// ListByUserUpcomingView returns the views of every CONFIRMED
+	// reservation whose activity date is at or after the current
+	// time, ordered by activity date ASC. limit / offset are
+	// normalized by the caller.
+	ListByUserUpcomingView(
+		ctx context.Context,
+		userID, limit, offset int,
+	) ([]*ReservationView, error)
+
+	// ListByDogView returns the views of every reservation for a
+	// given dog, most recent first. Used by the
+	// "history of this dog" endpoint.
+	ListByDogView(ctx context.Context, dogID, limit, offset int) ([]*ReservationView, error)
+
+	// ListByPassView returns the views of every reservation paid
+	// from a given pass, most recent first. Used by the pass
+	// audit endpoint.
+	ListByPassView(ctx context.Context, passID, limit, offset int) ([]*ReservationView, error)
+
+	// ListByActivityView returns the views of every reservation
+	// for a given activity, oldest first (chronological order is
+	// the most useful for a class roster).
+	ListByActivityView(ctx context.Context, activityID, limit, offset int) ([]*ReservationView, error)
 }

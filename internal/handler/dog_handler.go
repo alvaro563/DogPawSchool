@@ -15,6 +15,8 @@ import (
 	activityuc "dogpaw/internal/usecase/activity"
 	doguc "dogpaw/internal/usecase/dog"
 	incompatuc "dogpaw/internal/usecase/incompatibility"
+	passuc "dogpaw/internal/usecase/pass"
+	reservationuc "dogpaw/internal/usecase/reservation"
 )
 
 type DogRegistrar interface {
@@ -836,15 +838,21 @@ func writeError(c *gin.Context, err error) {
 	var dogValidationErr *doguc.ValidationError
 	var incompValidationErr *incompatuc.ValidationError
 	var activityValidationErr *activityuc.ValidationError
-	if errors.As(err, &dogValidationErr) || errors.As(err, &incompValidationErr) || errors.As(err, &activityValidationErr) {
+	var passValidationErr *passuc.ValidationError
+	var reservationValidationErr *reservationuc.ValidationError
+	if errors.As(err, &dogValidationErr) || errors.As(err, &incompValidationErr) || errors.As(err, &activityValidationErr) || errors.As(err, &passValidationErr) || errors.As(err, &reservationValidationErr) {
 		var field string
 		switch {
 		case dogValidationErr != nil:
 			field = dogValidationErr.Field
 		case incompValidationErr != nil:
 			field = incompValidationErr.Field
-		default:
+		case activityValidationErr != nil:
 			field = activityValidationErr.Field
+		case reservationValidationErr != nil:
+			field = reservationValidationErr.Field
+		default:
+			field = passValidationErr.Field
 		}
 		c.JSON(http.StatusBadRequest, errorResponse{
 			Error: "validation",
@@ -852,12 +860,40 @@ func writeError(c *gin.Context, err error) {
 		})
 		return
 	}
-	if errors.Is(err, doguc.ErrNotFound) || errors.Is(err, incompatuc.ErrNotFound) || errors.Is(err, activityuc.ErrNotFound) || errors.Is(err, postgres.ErrNotFound) || errors.Is(err, postgres.ErrActivityNotFound) {
+	if errors.Is(err, doguc.ErrNotFound) || errors.Is(err, incompatuc.ErrNotFound) || errors.Is(err, activityuc.ErrNotFound) || errors.Is(err, passuc.ErrNotFound) || errors.Is(err, reservationuc.ErrNotFound) || errors.Is(err, reservationuc.ErrInvalidReservation) || errors.Is(err, reservationuc.ErrReservationNotOwned) || errors.Is(err, postgres.ErrNotFound) || errors.Is(err, postgres.ErrActivityNotFound) || errors.Is(err, postgres.ErrPassNotFound) || errors.Is(err, postgres.ErrReservationNotFound) {
 		c.JSON(http.StatusNotFound, errorResponse{Error: "not_found"})
 		return
 	}
-	if errors.Is(err, postgres.ErrInvalidUser) {
+	if errors.Is(err, postgres.ErrInvalidUser) || errors.Is(err, postgres.ErrInvalidPassUser) || errors.Is(err, passuc.ErrInvalidUserID) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user_id"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrInvalidActivity) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_activity_id"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrActivityInPast) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "activity_in_past"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrActivityFull) || errors.Is(err, reservationuc.ErrDuplicateReservationForDog) || errors.Is(err, reservationuc.ErrAlreadyCancelled) {
+		c.JSON(http.StatusConflict, errorResponse{Error: mapReservationConflictError(err)})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrInvalidDog) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_dog_id"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrInvalidPass) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_pass_id"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrPassExhausted) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "pass_exhausted"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrPassExpired) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "pass_expired"})
 		return
 	}
 	if errors.Is(err, postgres.ErrDuplicatePassport) {
@@ -882,6 +918,22 @@ func writeError(c *gin.Context, err error) {
 		"method", c.Request.Method,
 	)
 	c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal"})
+}
+
+// mapReservationConflictError returns the wire-level "error" key
+// for reservation conflicts. Three sentinels map to 409: capacity
+// exceeded, duplicate booking for the same dog + activity, and
+// already-cancelled reservations. The caller has already checked
+// the sentinel so we know one of them matches.
+func mapReservationConflictError(err error) string {
+	switch {
+	case errors.Is(err, reservationuc.ErrActivityFull):
+		return "activity_full"
+	case errors.Is(err, reservationuc.ErrAlreadyCancelled):
+		return "already_cancelled"
+	default:
+		return "duplicate_reservation"
+	}
 }
 
 type registerDogRequest struct {

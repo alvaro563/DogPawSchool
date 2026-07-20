@@ -1,0 +1,8 @@
+-- ============================================================================
+-- DogPaw - Migration 000005 DOWN: drop the seed data
+-- ============================================================================
+-- Intentionally empty, consistent with 000003 and 000004. The
+-- migrations are NOT idempotent and the seed data is not part of the
+-- production schema. To start fresh on a dev database, drop and
+-- re-create the DB; do not rely on this DOWN.
+-- ============================================================================

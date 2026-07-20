@@ -59,7 +59,7 @@ func (repo *DogRepository) Create(ctx context.Context, dog *domain.Dog) (int, er
 		RETURNING id
 	`
 	var newDogID int64
-	err := repo.db.QueryRowContext(ctx, query,
+	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
 		dog.UserID(), dog.Name(), dog.Breed(), dog.AgeInMonths(), dog.Sex(),
 		dog.Neutered(), dog.Heat(), dog.WeightKg(),
 		nullString(dog.PhotoURL()), nullString(dog.MedicalNotes()), nullString(dog.EducatorNotes()),
@@ -79,7 +79,7 @@ func (repo *DogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, er
 		       passport, is_active
 		FROM dogs WHERE id = $1
 	`
-	row := repo.db.QueryRowContext(ctx, query, id)
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
 	dog, err := scanDog(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -103,7 +103,7 @@ func (repo *DogRepository) loadIncompatibilities(ctx context.Context, dogID int)
 		WHERE di.dog_id = $1
 		ORDER BY di.created_at ASC
 	`
-	rows, err := repo.db.QueryContext(ctx, query, dogID)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, dogID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 		JOIN incompatibilities i ON i.id = di.incompatibility_id
 		WHERE di.dog_id IN (` + strings.Join(placeholders, ",") + `)
 		ORDER BY di.dog_id ASC, di.created_at ASC`
-	rows, err := repo.db.QueryContext(ctx, query, args...)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("load incompatibilities for %d dogs: %w", len(dogs), err)
 	}
@@ -196,7 +196,7 @@ func (repo *DogRepository) ListByOwner(ctx context.Context, userID, limit, offse
 		WHERE user_id = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, userID, limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by owner: %w", err)
 	}
@@ -297,7 +297,7 @@ func (repo *DogRepository) ListAll(ctx context.Context, activeOnly bool, limit, 
 			LIMIT $1 OFFSET $2`
 		args = []any{limit, offset}
 	}
-	rows, err := repo.db.QueryContext(ctx, query, args...)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query all dogs: %w", err)
 	}
@@ -326,7 +326,7 @@ func (repo *DogRepository) ListByIncompatibility(ctx context.Context, incompatib
 		WHERE di.incompatibility_id = $1
 		ORDER BY d.id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, incompatibilityID, limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, incompatibilityID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by incompatibility: %w", err)
 	}
@@ -354,7 +354,7 @@ func (repo *DogRepository) ListByBreed(ctx context.Context, breed string, limit,
 		WHERE breed = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, breed, limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, breed, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by breed: %w", err)
 	}
@@ -382,7 +382,7 @@ func (repo *DogRepository) ListBySex(ctx context.Context, sex domain.Sex, limit,
 		WHERE sex = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, string(sex), limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, string(sex), limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by sex: %w", err)
 	}
@@ -410,7 +410,7 @@ func (repo *DogRepository) ListByNeutered(ctx context.Context, neutered bool, li
 		WHERE neutered = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, neutered, limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, neutered, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by neutered: %w", err)
 	}
@@ -438,7 +438,7 @@ func (repo *DogRepository) ListByHeat(ctx context.Context, heat bool, limit, off
 		WHERE heat = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, heat, limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, heat, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by heat: %w", err)
 	}
@@ -466,7 +466,7 @@ func (repo *DogRepository) ListByIsActive(ctx context.Context, isActive bool, li
 		WHERE is_active = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, isActive, limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, isActive, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by is_active: %w", err)
 	}
@@ -494,7 +494,7 @@ func (repo *DogRepository) ListByAgeBracket(ctx context.Context, bracket domain.
 		WHERE age_bracket = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, string(bracket), limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, string(bracket), limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by age bracket: %w", err)
 	}
@@ -522,7 +522,7 @@ func (repo *DogRepository) ListBySizeBracket(ctx context.Context, bracket domain
 		WHERE size_bracket = $1
 		ORDER BY id DESC
 		LIMIT $2 OFFSET $3`
-	rows, err := repo.db.QueryContext(ctx, query, string(bracket), limit, offset)
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, string(bracket), limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query dogs by size bracket: %w", err)
 	}
@@ -551,7 +551,7 @@ func (repo *DogRepository) ListBySizeBracket(ctx context.Context, bracket domain
 // Returns ErrNotFound if no dog with the given id exists.
 func (repo *DogRepository) Delete(ctx context.Context, id int) error {
 	const query = `DELETE FROM dogs WHERE id = $1`
-	queryResult, err := repo.db.ExecContext(ctx, query, id)
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("delete dog: %w", err)
 	}
@@ -570,7 +570,7 @@ func (repo *DogRepository) Delete(ctx context.Context, id int) error {
 // cascade — designed to be the fast path for the dynamic neutered toggle.
 func (repo *DogRepository) SetDogNeutered(ctx context.Context, id int, neutered bool) error {
 	const query = `UPDATE dogs SET neutered = $1 WHERE id = $2`
-	queryResult, err := repo.db.ExecContext(ctx, query, neutered, id)
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, neutered, id)
 	if err != nil {
 		return fmt.Errorf("set dog neutered: %w", err)
 	}
@@ -590,7 +590,7 @@ func (repo *DogRepository) SetDogNeutered(ctx context.Context, id int, neutered 
 // "heat=true requires sex=FEMALE" (the DB does not constrain it).
 func (repo *DogRepository) SetDogHeat(ctx context.Context, id int, heat bool) error {
 	const query = `UPDATE dogs SET heat = $1 WHERE id = $2`
-	queryResult, err := repo.db.ExecContext(ctx, query, heat, id)
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, heat, id)
 	if err != nil {
 		return fmt.Errorf("set dog heat: %w", err)
 	}
