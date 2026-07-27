@@ -11,24 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dogpaw/internal/domain"
-	"dogpaw/internal/repository/postgres"
 )
 
-// validRegisterInput returns a known-good input. Tests mutate one
-// field at a time to cover the negative cases.
 func validRegisterInput() RegisterReservationInput {
-	return RegisterReservationInput{
-		UserID:     1,
-		ActivityID: 10,
-		DogID:      20,
-		PassID:     30,
-	}
+	return MustNewRegisterReservationInput(1, 10, 20, 30, func() time.Time { return fixedNow })
 }
 
 // validFutureActivity returns an activity in the future, with room
-// for at least one more booking.
+// for at least one more booking. Anchored to fixedNow so the test
+// is deterministic regardless of the wall clock.
 func validFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, time.Now().Add(7*24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
 }
 
 // validDog returns a dog owned by the given user.
@@ -41,12 +34,9 @@ func validDog(id, userID int) *domain.Dog {
 }
 
 // validPass returns a pass owned by the given user with the given
-// remaining sessions, no expiry. It always starts from
-// numOfSessions=10 and consumes the difference to land at the
-// requested remaining (so callers can pass remaining=0 without
-// tripping the constructor's numOfSessions>0 check).
+// remaining sessions, no expiry. Anchored to fixedNow.
 func validPass(id, userID, remaining int) *domain.Pass {
-	now := time.Now()
+	now := fixedNow
 	const initialSessions = 10
 	pass := domain.MustNewPass(id, initialSessions, initialSessions, 1000, domain.PassGeneric, userID, now, now, nil)
 	for i := 0; i < initialSessions-remaining; i++ {
@@ -67,11 +57,37 @@ func newRegisterUseCase(
 	if transactor == nil {
 		transactor = &stubTransactor{}
 	}
-	return NewRegisterReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo)
+	return NewRegisterReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo, func() time.Time { return fixedNow })
+}
+
+func TestNewRegisterReservationInput(t *testing.T) {
+	tests := []struct {
+		name   string
+		userID int
+		actID  int
+		dogID  int
+		passID int
+		field  string
+	}{
+		{"zero_user_id", 0, 10, 20, 30, "user_id"},
+		{"negative_user_id", -1, 10, 20, 30, "user_id"},
+		{"zero_activity_id", 1, 0, 20, 30, "activity_id"},
+		{"zero_dog_id", 1, 10, 0, 30, "dog_id"},
+		{"zero_pass_id", 1, 10, 20, 0, "pass_id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewRegisterReservationInput(tt.userID, tt.actID, tt.dogID, tt.passID, func() time.Time { return fixedNow })
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, tt.field, verr.Field)
+		})
+	}
 }
 
 func TestRegisterReservationUseCase_Success(t *testing.T) {
-	now := time.Now()
+	now := fixedNow
 	userID := 1
 	activity := validFutureActivity(10)
 	dog := validDog(20, userID)
@@ -108,7 +124,7 @@ func TestRegisterReservationUseCase_Success(t *testing.T) {
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(_ context.Context, id int) ([]*domain.Reservation, error) {
 			assert.Equal(t, 10, id)
-			return nil, nil // no existing bookings → capacity available
+			return nil, nil
 		},
 		create: func(_ context.Context, r *domain.Reservation) (int, error) {
 			capturedReservation = r
@@ -125,94 +141,19 @@ func TestRegisterReservationUseCase_Success(t *testing.T) {
 	output, err := uc.Execute(context.Background(), validRegisterInput())
 
 	require.NoError(t, err)
-	assert.Equal(t, 99, output.ID, "use case should return the DB-assigned id from the create stub")
+	assert.Equal(t, 99, output.ID)
 	require.NotNil(t, capturedReservation)
-	// capturedReservation is the in-memory object BEFORE the DB
-	// assigns the id, so it has id=0. The post-insert id is in
-	// output.ID. We still verify the rest of the fields here.
 	assert.Equal(t, 0, capturedReservation.ID(), "in-memory reservation has id=0 before DB insert")
 	assert.Equal(t, 10, capturedReservation.ActivityID())
-	// The pass update was observed in the stub; the in-memory pass
-	// now reflects the consumption.
 	assert.Equal(t, 4, pass.RemainingSessions())
 	assert.True(t, now.Before(pass.Movements()[0].CreatedAt().Add(time.Second)),
 		"movement createdAt should be ~now")
 }
 
-func TestRegisterReservationUseCase_ValidationErrors(t *testing.T) {
-	base := validRegisterInput()
-	tests := []struct {
-		name      string
-		mutate    func(input *RegisterReservationInput)
-		wantField string
-	}{
-		{
-			name:      "zero_user_id",
-			mutate:    func(i *RegisterReservationInput) { i.UserID = 0 },
-			wantField: "user_id",
-		},
-		{
-			name:      "negative_user_id",
-			mutate:    func(i *RegisterReservationInput) { i.UserID = -1 },
-			wantField: "user_id",
-		},
-		{
-			name:      "zero_activity_id",
-			mutate:    func(i *RegisterReservationInput) { i.ActivityID = 0 },
-			wantField: "activity_id",
-		},
-		{
-			name:      "zero_dog_id",
-			mutate:    func(i *RegisterReservationInput) { i.DogID = 0 },
-			wantField: "dog_id",
-		},
-		{
-			name:      "zero_pass_id",
-			mutate:    func(i *RegisterReservationInput) { i.PassID = 0 },
-			wantField: "pass_id",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			input := base
-			tt.mutate(&input)
-			// All repos wired with asserts that the use case does
-			// not reach the repo layer on validation failure.
-			activityRepo := &stubActivityRepository{
-				getByID: func(context.Context, int) (*domain.Activity, error) {
-					t.Fatal("activityRepo.GetByID should not be called")
-					return nil, nil
-				},
-			}
-			dogRepo := &stubDogRepository{
-				getByID: func(context.Context, int) (*domain.Dog, error) {
-					t.Fatal("dogRepo.GetByID should not be called")
-					return nil, nil
-				},
-			}
-			passRepo := &stubPassRepository{
-				getByID: func(context.Context, int) (*domain.Pass, error) {
-					t.Fatal("passRepo.GetByID should not be called")
-					return nil, nil
-				},
-			}
-			reservationRepo := &mockReservationRepository{
-				listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
-					t.Fatal("reservationRepo.ListByActivity should not be called")
-					return nil, nil
-				},
-			}
-			uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
-			_, err := uc.Execute(context.Background(), input)
-			assertValidationError(t, err, tt.wantField)
-		})
-	}
-}
-
 func TestRegisterReservationUseCase_ActivityNotFound(t *testing.T) {
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
-			return nil, postgres.ErrActivityNotFound
+			return nil, domain.ErrNotFound
 		},
 	}
 	uc := newRegisterUseCase(activityRepo, nil, nil, nil, nil)
@@ -222,7 +163,7 @@ func TestRegisterReservationUseCase_ActivityNotFound(t *testing.T) {
 
 func TestRegisterReservationUseCase_ActivityInPast(t *testing.T) {
 	pastActivity := domain.MustNewActivity(10, "Paseo", "Central", domain.TypeRoute, 5, 1,
-		time.Now().Add(-24*time.Hour))
+		fixedNow.Add(-24*time.Hour))
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return pastActivity, nil
@@ -240,7 +181,6 @@ func TestRegisterReservationUseCase_ActivityFull(t *testing.T) {
 			return activity, nil
 		},
 	}
-	// 5 max capacity, 5 CONFIRMED → full
 	existing := []*domain.Reservation{
 		mustNewReservation(1, 10, 100, 30, domain.StatusConfirmed, time.Now()),
 		mustNewReservation(2, 10, 101, 30, domain.StatusConfirmed, time.Now()),
@@ -259,7 +199,6 @@ func TestRegisterReservationUseCase_ActivityFull(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_ActivityCancellationsFreeCapacity(t *testing.T) {
-	// 5 max capacity, 3 CONFIRMED + 2 CANCELLED → not full
 	activity := validFutureActivity(10)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
@@ -275,11 +214,15 @@ func TestRegisterReservationUseCase_ActivityCancellationsFreeCapacity(t *testing
 	}
 	dog := validDog(20, 1)
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
 	pass := validPass(30, 1, 5)
 	passRepo := &stubPassRepository{
-		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return pass, nil
+		},
 	}
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
@@ -308,11 +251,13 @@ func noListActivity() *mockReservationRepository {
 func TestRegisterReservationUseCase_DogNotFound(t *testing.T) {
 	activity := validFutureActivity(10)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
 	dogRepo := &stubDogRepository{
 		getByID: func(context.Context, int) (*domain.Dog, error) {
-			return nil, postgres.ErrNotFound
+			return nil, domain.ErrNotFound
 		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, nil, noListActivity(), nil)
@@ -323,12 +268,15 @@ func TestRegisterReservationUseCase_DogNotFound(t *testing.T) {
 func TestRegisterReservationUseCase_DogNotOwnedByUser(t *testing.T) {
 	activity := validFutureActivity(10)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
-	// Dog belongs to user 99, but the request is for user 1.
 	dog := validDog(20, 99)
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, nil, noListActivity(), nil)
 	_, err := uc.Execute(context.Background(), validRegisterInput())
@@ -339,14 +287,18 @@ func TestRegisterReservationUseCase_PassNotFound(t *testing.T) {
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) {
-			return nil, postgres.ErrPassNotFound
+			return nil, domain.ErrNotFound
 		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, noListActivity(), nil)
@@ -358,15 +310,20 @@ func TestRegisterReservationUseCase_PassNotOwnedByUser(t *testing.T) {
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
-	// Pass belongs to user 99.
 	pass := validPass(30, 99, 5)
 	passRepo := &stubPassRepository{
-		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return pass, nil
+		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, noListActivity(), nil)
 	_, err := uc.Execute(context.Background(), validRegisterInput())
@@ -377,14 +334,20 @@ func TestRegisterReservationUseCase_PassExhausted(t *testing.T) {
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
-	pass := validPass(30, 1, 0) // 0 remaining
+	pass := validPass(30, 1, 0)
 	passRepo := &stubPassRepository{
-		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return pass, nil
+		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, noListActivity(), nil)
 	_, err := uc.Execute(context.Background(), validRegisterInput())
@@ -395,16 +358,22 @@ func TestRegisterReservationUseCase_PassExpired(t *testing.T) {
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
-	now := time.Now()
-	expiry := now.Add(-24 * time.Hour) // expired yesterday
+	now := fixedNow
+	expiry := now.Add(-24 * time.Hour)
 	pass := domain.MustNewPass(30, 5, 5, 1000, domain.PassGeneric, 1, now.Add(-48*time.Hour), now.Add(-48*time.Hour), &expiry)
 	passRepo := &stubPassRepository{
-		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return pass, nil
+		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, noListActivity(), nil)
 	_, err := uc.Execute(context.Background(), validRegisterInput())
@@ -416,18 +385,24 @@ func TestRegisterReservationUseCase_DuplicateReservation(t *testing.T) {
 	dog := validDog(20, 1)
 	pass := validPass(30, 1, 5)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
 	passRepo := &stubPassRepository{
-		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return pass, nil
+		},
 	}
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) { return nil, nil },
 		create: func(context.Context, *domain.Reservation) (int, error) {
-			return 0, postgres.ErrDuplicateReservation
+			return 0, domain.ErrDuplicateReservation
 		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
@@ -436,29 +411,30 @@ func TestRegisterReservationUseCase_DuplicateReservation(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_TransactorRollsBackOnRepoError(t *testing.T) {
-	// The pass AddMovement step fails; the transactor must roll back
-	// the transaction so no partial state is persisted. The use case
-	// returns the underlying error wrapped.
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	pass := validPass(30, 1, 5)
 	activityRepo := &stubActivityRepository{
-		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return activity, nil
+		},
 	}
 	dogRepo := &stubDogRepository{
-		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return dog, nil
+		},
 	}
 	passRepo := &stubPassRepository{
-		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update:  func(context.Context, *domain.Pass) error { return nil },
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return pass, nil
+		},
+		update: func(context.Context, *domain.Pass) error { return nil },
 		addMovement: func(context.Context, *domain.PassMovement) error {
 			return errors.New("movement insert failed")
 		},
 	}
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) { return nil, nil },
-		// create should not be called because the tx rolls back
-		// before the reservation is inserted.
 		create: func(context.Context, *domain.Reservation) (int, error) {
 			t.Fatal("reservation Create should not be called after AddMovement fails")
 			return 0, nil
@@ -471,8 +447,6 @@ func TestRegisterReservationUseCase_TransactorRollsBackOnRepoError(t *testing.T)
 }
 
 func TestRegisterReservationUseCase_ActivityRepoErrorIsWrapped(t *testing.T) {
-	// Non-sentinel errors are wrapped (no mapping), so the handler
-	// surfaces them as 500.
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return nil, errors.New("db connection lost")

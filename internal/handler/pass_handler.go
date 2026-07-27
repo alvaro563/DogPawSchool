@@ -82,13 +82,16 @@ func (h *PassHandler) Register(c *gin.Context) {
 		})
 		return
 	}
-	output, err := h.register.Execute(c.Request.Context(), passuc.RegisterPassInput{
-		NumOfSessions: request.NumOfSessions,
-		Price:         request.Price,
-		PassType:      domain.PassType(request.PassType),
-		UserID:        userID,
-		ExpiresAt:     request.ExpiresAt,
-	})
+	in, err := passuc.NewRegisterPassInput(
+		request.NumOfSessions, request.Price,
+		domain.PassType(request.PassType),
+		userID, request.ExpiresAt,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.register.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -125,14 +128,20 @@ func (h *PassHandler) Modify(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	output, err := h.modify.Execute(c.Request.Context(), passuc.ModifyPassInput{
-		ID: id,
-		Patch: domain.PassPatch{
-			Price:     request.Price,
-			PassType:  passTypePtrFromString(request.PassType),
-			ExpiresAt: request.ExpiresAt,
-		},
-	})
+	patch := domain.PassPatch{
+		Price:     request.Price,
+		ExpiresAt: request.ExpiresAt,
+	}
+	if request.PassType != nil {
+		passType := domain.PassType(*request.PassType)
+		patch.PassType = &passType
+	}
+	in, err := passuc.NewModifyPassInput(id, patch)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.modify.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -157,7 +166,12 @@ func (h *PassHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
-	output, err := h.getter.Execute(c.Request.Context(), passuc.GetPassInput{ID: id})
+	in, err := passuc.NewGetPassInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.getter.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -181,15 +195,13 @@ func (h *PassHandler) GetByID(c *gin.Context) {
 func (h *PassHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	output, err := h.lister.Execute(c.Request.Context(), passuc.ListAllPassesInput{
-		Limit:  limit,
-		Offset: offset,
-	})
+	in, _ := passuc.NewListAllPassesInput(limit, offset)
+	output, err := h.lister.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toListPassesResponse(output.Passes, limit, offset))
+	c.JSON(http.StatusOK, toListPassesResponse(output.Passes, in))
 }
 
 // ListByUser godoc
@@ -212,22 +224,23 @@ func (h *PassHandler) ListByUser(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	output, err := h.byUserLister.Execute(c.Request.Context(), passuc.ListByUserPassesInput{
-		UserID: userID,
-		Limit:  limit,
-		Offset: offset,
-	})
+	in, err := passuc.NewListByUserPassesInput(userID, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toListPassesResponse(output.Passes, limit, offset))
+	output, err := h.byUserLister.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListPassesResponse(output.Passes, in))
 }
 
 type registerPassRequest struct {
-	NumOfSessions int        `json:"num_of_sessions" binding:"required,gt=0" example:"10"`
-	Price         int        `json:"price"           binding:"gte=0" example:"12000"`
-	PassType      string     `json:"pass_type"       binding:"required,oneof=GENERICO ESPECIFICO" example:"GENERICO"`
+	NumOfSessions int        `json:"num_of_sessions" example:"10"`
+	Price         int        `json:"price"           example:"12000"`
+	PassType      string     `json:"pass_type"       example:"GENERICO"`
 	ExpiresAt     *time.Time `json:"expires_at,omitempty" example:"2026-12-31T23:59:59Z"`
 }
 
@@ -237,7 +250,7 @@ type registerPassResponse struct {
 
 type modifyPassRequest struct {
 	Price     *int       `json:"price,omitempty"                binding:"omitempty,gte=0"      example:"15000"`
-	PassType  *string    `json:"pass_type,omitempty"            binding:"omitempty,oneof=GENERICO ESPECIFICO" example:"ESPECIFICO"`
+	PassType  *string    `json:"pass_type,omitempty"            example:"ESPECIFICO"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"           example:"2027-06-30T23:59:59Z"`
 }
 
@@ -268,6 +281,27 @@ type passDTO struct {
 // passResponse is the alias used in Swagger annotations.
 type passResponse = passDTO
 
+// passPagination is the contract every pass list input satisfies.
+type passPagination interface {
+	Limit() int
+	Offset() int
+}
+
+// toListPassesResponse builds the list response envelope with
+// the normalized limit/offset from the validated input.
+func toListPassesResponse(passes []*domain.Pass, in passPagination) listPassesResponse {
+	dtos := make([]passDTO, len(passes))
+	for i, pass := range passes {
+		dtos[i] = toPassDTO(pass)
+	}
+	return listPassesResponse{
+		Passes: dtos,
+		Limit:  in.Limit(),
+		Offset: in.Offset(),
+		Count:  len(dtos),
+	}
+}
+
 // toPassDTO converts a domain.Pass into the HTTP wire format.
 func toPassDTO(pass *domain.Pass) passDTO {
 	return passDTO{
@@ -280,35 +314,5 @@ func toPassDTO(pass *domain.Pass) passDTO {
 		CreatedAt:         pass.CreatedAt(),
 		UpdatedAt:         pass.UpdatedAt(),
 		ExpiresAt:         pass.ExpiresAt(),
-	}
-}
-
-// passTypePtrFromString converts an optional *string to a
-// *domain.PassType. The domain.PassType type does not implement
-// encoding.TextUnmarshaler with a case-insensitive match for
-// Gin's "oneof" tag, so the handler validates the string before
-// calling the use case.
-func passTypePtrFromString(s *string) *domain.PassType {
-	if s == nil {
-		return nil
-	}
-	passType := domain.PassType(*s)
-	return &passType
-}
-
-// toListPassesResponse builds the list response envelope with
-// normalized limit/offset and a non-nil passes slice (so the JSON
-// is always "passes":[] and never "passes":null).
-func toListPassesResponse(passes []*domain.Pass, limit, offset int) listPassesResponse {
-	normalizedLimit, normalizedOffset := passuc.NormalizePagination(limit, offset)
-	dtos := make([]passDTO, len(passes))
-	for i, pass := range passes {
-		dtos[i] = toPassDTO(pass)
-	}
-	return listPassesResponse{
-		Passes: dtos,
-		Limit:  normalizedLimit,
-		Offset: normalizedOffset,
-		Count:  len(dtos),
 	}
 }

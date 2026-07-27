@@ -2,7 +2,6 @@ package domain
 
 import (
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -98,10 +97,6 @@ func (incompat *Incompatibility) ApplyPatch(patch IncompatibilityPatch) error {
 	}
 	return nil
 }
-
-// ErrNotFound is returned by repository implementations when a row does
-// not exist.
-var ErrNotFound = errors.New("not found")
 
 // IncompatibilityRepository is the persistence contract for
 // Incompatibility. Implemented by

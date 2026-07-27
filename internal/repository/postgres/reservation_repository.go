@@ -12,11 +12,23 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// Not-found and duplicate sentinels alias the domain-level persistence
+// errors so callers match them via errors.Is(err, domain.ErrX) without
+// importing this package.
 var (
 	// ErrReservationNotFound is returned by GetByID/Update when no row
-	// matches the id. Mirrors the dog / activity / pass sentinels.
-	ErrReservationNotFound = errors.New("postgres: reservation not found")
+	// matches the id.
+	ErrReservationNotFound = domain.ErrNotFound
 
+	// ErrDuplicateReservation is returned by Create when the
+	// UNIQUE (activity_id, dog_id) constraint is violated. This
+	// enforces the "one dog per activity" business rule at the DB
+	// level: the same dog cannot be booked twice into the same
+	// activity, even if the first booking was later cancelled.
+	ErrDuplicateReservation = domain.ErrDuplicateReservation
+)
+
+var (
 	// ErrInvalidReservationActivity is returned by Create when the
 	// activity_id foreign key does not resolve to an existing activity.
 	ErrInvalidReservationActivity = errors.New("postgres: reservation activity_id does not exist")
@@ -28,13 +40,6 @@ var (
 	// ErrInvalidReservationPass is returned by Create when the pass_id
 	// foreign key does not resolve to an existing pass.
 	ErrInvalidReservationPass = errors.New("postgres: reservation pass_id does not exist")
-
-	// ErrDuplicateReservation is returned by Create when the
-	// UNIQUE (activity_id, dog_id) constraint is violated. This
-	// enforces the "one dog per activity" business rule at the DB
-	// level: the same dog cannot be booked twice into the same
-	// activity, even if the first booking was later cancelled.
-	ErrDuplicateReservation = errors.New("postgres: dog already booked for this activity")
 )
 
 // reservationSelectClause is the 6-column projection reused by every
@@ -285,7 +290,7 @@ func mapReservationForeignKeyError(pgErr *pgconn.PgError) error {
 // stable; if you change it you must update both the SELECT clauses
 // and the scanReservationView function in lockstep.
 
-// reservationViewSelectClause is the 24-column projection reused by
+// reservationViewSelectClause is the 27-column projection reused by
 // every read-view method. Keep the column order in lockstep with
 // scanReservationView. The clause includes the full SELECT for
 // reservations, activities, dogs, AND passes; the caller is
@@ -293,10 +298,15 @@ func mapReservationForeignKeyError(pgErr *pgconn.PgError) error {
 // plus the JOIN ON passes (the FROM/JOIN dogs is already included
 // here so callers only need `JOIN passes p ON p.id = r.pass_id
 // WHERE ...`).
+//
+// The dog projection includes the real age_in_months, sex, and
+// weight_kg columns so the reconstructed domain.Dog is a faithful
+// aggregate: its derived methods (AgeBracket, SizeBracket,
+// IsIntactMale) return correct values instead of placeholders.
 const reservationViewSelectClause = `SELECT
 		r.id, r.status, r.created_at,
-		a.id, a.name, a.activity_type, a.max_capacity, a.location, a.duration_in_hours, a.date,
-		d.id, d.user_id, d.name, d.breed, d.passport,
+		a.id, a.name, a.activity_type, a.max_capacity, a.location, a.duration_in_hours, a.date, a.closed,
+		d.id, d.user_id, d.name, d.breed, d.passport, d.age_in_months, d.sex, d.weight_kg,
 		p.id, p.num_of_sessions, p.remaining_sessions, p.price,
 		p.pass_type, p.created_at, p.updated_at, p.expires_at, p.user_id
 	FROM reservations r
@@ -340,11 +350,11 @@ func (repo *ReservationRepository) ListByUserUpcomingView(ctx context.Context, u
 	query := reservationViewSelectClause + `
 		JOIN passes p ON p.id = r.pass_id
 		WHERE d.user_id = $1
-		  AND r.status = 'CONFIRMED'
+		  AND r.status = $2
 		  AND a.date >= NOW()
 		ORDER BY a.date ASC
-		LIMIT $2 OFFSET $3`
-	return queryReservationViews(ctx, runner(ctx, repo.db), query, userID, limit, offset)
+		LIMIT $3 OFFSET $4`
+	return queryReservationViews(ctx, runner(ctx, repo.db), query, userID, string(domain.StatusConfirmed), limit, offset)
 }
 
 // ListByDogView returns every reservation for a given dog, most
@@ -460,7 +470,7 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 		status        string
 		createdAt     time.Time
 
-		// activity (7 cols)
+		// activity (8 cols)
 		activityID       int
 		activityName     string
 		activityType     string
@@ -468,13 +478,17 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 		activityLocation string
 		durationInHours  int
 		activityDate     time.Time
+		activityClosed   bool
 
-		// dog (5 cols)
-		dogID     int
-		dogUserID int
-		dogName   string
-		dogBreed  string
-		passport  string
+		// dog (8 cols)
+		dogID        int
+		dogUserID    int
+		dogName      string
+		dogBreed     string
+		passport     string
+		dogAgeMonths int
+		dogSex       string
+		dogWeightKg  float64
 
 		// pass (5 cols)
 		passID            int
@@ -489,8 +503,8 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 	)
 	if err := row.Scan(
 		&reservationID, &status, &createdAt,
-		&activityID, &activityName, &activityType, &maxCapacity, &activityLocation, &durationInHours, &activityDate,
-		&dogID, &dogUserID, &dogName, &dogBreed, &passport,
+		&activityID, &activityName, &activityType, &maxCapacity, &activityLocation, &durationInHours, &activityDate, &activityClosed,
+		&dogID, &dogUserID, &dogName, &dogBreed, &passport, &dogAgeMonths, &dogSex, &dogWeightKg,
 		&passID, &numOfSessions, &remainingSessions, &price,
 		&passType, &passCreatedAt, &passUpdatedAt, &passExpiresAt, &passUserID,
 	); err != nil {
@@ -511,11 +525,10 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct activity: %w", err)
 	}
+	activity.SetClosed(activityClosed)
 	dog, err := domain.NewDog(
 		dogID, dogName, dogBreed, passport,
-		// Use zero age/weight; the read model does not need them
-		// and NewDog only requires id > 0 and userID > 0 here.
-		0, domain.SexMale, 0, dogUserID,
+		dogAgeMonths, domain.Sex(dogSex), dogWeightKg, dogUserID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct dog: %w", err)

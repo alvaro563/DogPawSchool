@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,7 +12,7 @@ import (
 )
 
 func validListUpcomingInput() ListUpcomingByUserInput {
-	return ListUpcomingByUserInput{UserID: 1, Limit: 50, Offset: 0}
+	return MustNewListUpcomingByUserInput(1, 50, 0)
 }
 
 func TestListUpcomingByUserUseCase_Success(t *testing.T) {
@@ -33,13 +34,10 @@ func TestListUpcomingByUserUseCase_Success(t *testing.T) {
 	assert.Len(t, output.Views, 2)
 }
 
-func TestListUpcomingByUserUseCase_ZeroUserID(t *testing.T) {
-	uc := NewListUpcomingByUserUseCase(&mockReservationRepository{
-		listByUserUpcoming: func(context.Context, int, int, int) ([]*domain.ReservationView, error) {
-			t.Fatal("ListByUserUpcomingView should not be called on validation error")
-			return nil, nil
-		},
-	})
-	_, err := uc.Execute(context.Background(), ListUpcomingByUserInput{UserID: 0, Limit: 50, Offset: 0})
-	assertValidationError(t, err, "user_id")
+func TestNewListUpcomingByUserInput_ZeroUserID(t *testing.T) {
+	_, err := NewListUpcomingByUserInput(0, 50, 0)
+	assert.Error(t, err)
+	var verr *ValidationError
+	assert.True(t, errors.As(err, &verr))
+	assert.Equal(t, "user_id", verr.Field)
 }

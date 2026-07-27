@@ -38,7 +38,16 @@ func NewTransactor(db *sql.DB) *Transactor {
 // not will continue to use the live *sql.DB. Use case implementations
 // that need to return a value from inside the closure should capture
 // it in a variable that lives in the enclosing scope.
+//
+// If a transaction is already in flight on ctx (attached by an outer
+// WithinTx), the closure simply runs within that existing transaction
+// rather than opening a new one. This makes WithinTx safely composable:
+// a repository method may wrap its own writes in WithinTx and still join
+// a use-case-level transaction when one is active.
 func (transactor *Transactor) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if TxFrom(ctx) != nil {
+		return fn(ctx)
+	}
 	tx, err := transactor.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)

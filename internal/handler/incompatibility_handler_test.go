@@ -151,7 +151,7 @@ func TestIncompatList_Success(t *testing.T) {
 		domain.MustNewIncompatibility(2, "B", domain.IncompatibilityLevelMedia),
 	}
 	stub := &stubIncompatibilityLister{fn: func(ctx context.Context, in incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error) {
-		assert.Nil(t, in.Level)
+		assert.Nil(t, in.Level())
 		return incompatuc.ListIncompatibilitiesOutput{Incompatibilities: incompats}, nil
 	}}
 	h := newIncompatHandlerLst(stub)
@@ -166,7 +166,7 @@ func TestIncompatList_Success(t *testing.T) {
 func TestIncompatList_FilteredByLevel(t *testing.T) {
 	var captured *domain.IncompatibilityLevel
 	stub := &stubIncompatibilityLister{fn: func(ctx context.Context, in incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error) {
-		captured = in.Level
+		captured = in.Level()
 		return incompatuc.ListIncompatibilitiesOutput{Incompatibilities: nil}, nil
 	}}
 	h := newIncompatHandlerLst(stub)
@@ -198,7 +198,7 @@ func TestIncompatList_InternalError(t *testing.T) {
 func TestIncompatGetByID_Success(t *testing.T) {
 	want := domain.MustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
 	h := newIncompatHandlerGet(&stubIncompatibilityGetter{fn: func(ctx context.Context, in incompatuc.GetIncompatibilityInput) (incompatuc.GetIncompatibilityOutput, error) {
-		assert.Equal(t, 3, in.ID)
+		assert.Equal(t, 3, in.ID())
 		return incompatuc.GetIncompatibilityOutput{Incompatibility: want}, nil
 	}})
 	c, w := setupCtx(http.MethodGet, "/api/v1/incompatibilities/3", "")
@@ -234,9 +234,9 @@ func TestIncompatGetByID_NotFound(t *testing.T) {
 func TestIncompatModify_Success(t *testing.T) {
 	existing := domain.MustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
 	h := newIncompatHandlerMod(&stubIncompatibilityModifier{fn: func(ctx context.Context, in incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error) {
-		assert.Equal(t, 3, in.ID)
-		assert.NotNil(t, in.Patch.Name)
-		assert.Equal(t, "Miedo a petardos y cohetes", *in.Patch.Name)
+		assert.Equal(t, 3, in.ID())
+		assert.NotNil(t, in.Patch().Name)
+		assert.Equal(t, "Miedo a petardos y cohetes", *in.Patch().Name)
 		return incompatuc.ModifyIncompatibilityOutput{Incompatibility: existing}, nil
 	}})
 	c, w := setupCtx(http.MethodPatch, "/api/v1/incompatibilities/3", `{"name":"Miedo a petardos y cohetes"}`)
@@ -287,7 +287,7 @@ func TestIncompatModify_InternalError(t *testing.T) {
 
 func TestIncompatDelete_Success(t *testing.T) {
 	h := newIncompatHandlerDel(&stubIncompatibilityDeleter{fn: func(ctx context.Context, in incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error) {
-		assert.Equal(t, 3, in.ID)
+		assert.Equal(t, 3, in.ID())
 		return incompatuc.DeleteIncompatibilityOutput{ID: 3}, nil
 	}})
 	c, w := setupCtx(http.MethodDelete, "/api/v1/incompatibilities/3", "")

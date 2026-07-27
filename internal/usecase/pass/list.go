@@ -8,10 +8,30 @@ import (
 )
 
 // ListAllPassesInput is the paginated request for listing every
-// pass in the system.
+// pass in the system. The pagination is already normalized by
+// the factory.
 type ListAllPassesInput struct {
-	Limit  int
-	Offset int
+	limit  int
+	offset int
+}
+
+func (in ListAllPassesInput) Limit() int  { return in.limit }
+func (in ListAllPassesInput) Offset() int { return in.offset }
+
+// NewListAllPassesInput normalizes pagination. Error is always
+// nil; the factory exists for uniform signature.
+func NewListAllPassesInput(limit, offset int) (ListAllPassesInput, error) {
+	limit, offset = normalizePagination(limit, offset)
+	return ListAllPassesInput{limit: limit, offset: offset}, nil
+}
+
+// MustNewListAllPassesInput panics on error. For tests.
+func MustNewListAllPassesInput(limit, offset int) ListAllPassesInput {
+	in, err := NewListAllPassesInput(limit, offset)
+	if err != nil {
+		panic(err)
+	}
+	return in
 }
 
 // ListAllPassesOutput carries the result page, most recent first.
@@ -31,8 +51,7 @@ func NewListAllPassesUseCase(repo domain.PassRepository) *ListAllPassesUseCase {
 }
 
 func (uc *ListAllPassesUseCase) Execute(ctx context.Context, input ListAllPassesInput) (ListAllPassesOutput, error) {
-	limit, offset := NormalizePagination(input.Limit, input.Offset)
-	passes, err := uc.repo.ListAll(ctx, limit, offset)
+	passes, err := uc.repo.ListAll(ctx, input.Limit(), input.Offset())
 	if err != nil {
 		return ListAllPassesOutput{}, fmt.Errorf("list all passes: %w", err)
 	}

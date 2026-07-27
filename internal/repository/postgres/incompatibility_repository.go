@@ -9,12 +9,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"dogpaw/internal/domain"
-	incompatuc "dogpaw/internal/usecase/incompatibility"
 )
 
-// ErrIncompatibilityInUse is returned by Delete when the incompatibility
-// is still attached to at least one dog (FK 23503 from dog_incompatibilities).
-var ErrIncompatibilityInUse = errors.New("incompatibility in use")
+// ErrIncompatibilityInUse aliases the domain sentinel returned by Delete
+// when the incompatibility is still attached to at least one dog (FK
+// 23503 from dog_incompatibilities).
+var ErrIncompatibilityInUse = domain.ErrIncompatibilityInUse
 
 type IncompatibilityRepository struct {
 	db *sql.DB
@@ -127,7 +127,7 @@ func mapIncompatibilityCreateError(err error) error {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case pgErrUniqueViolation:
-			return incompatuc.ErrDuplicateName
+			return domain.ErrDuplicateIncompatibilityName
 		}
 	}
 	return fmt.Errorf("create incompatibility: %w", err)
@@ -138,7 +138,7 @@ func mapIncompatibilityUpdateError(err error) error {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case pgErrUniqueViolation:
-			return incompatuc.ErrDuplicateName
+			return domain.ErrDuplicateIncompatibilityName
 		}
 	}
 	return fmt.Errorf("update incompatibility: %w", err)

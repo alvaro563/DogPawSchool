@@ -49,8 +49,10 @@ func TestNewDog(t *testing.T) {
 			{"empty_name", 1, "", "b", "p", 24, domain.SexMale, 10, 1, "name must not be empty"},
 			{"empty_breed", 1, "n", "", "p", 24, domain.SexMale, 10, 1, "breed must not be empty"},
 			{"empty_passport", 1, "n", "b", "", 24, domain.SexMale, 10, 1, "passport must not be empty"},
-			{"negative_age", 1, "n", "b", "p", -1, domain.SexMale, 10, 1, "ageInMonths must not be negative"},
-			{"negative_weight", 1, "n", "b", "p", 24, domain.SexMale, -1, 1, "weightKg must not be negative"},
+			{"negative_age", 1, "n", "b", "p", -1, domain.SexMale, 10, 1, "ageInMonths must be greater than 0"},
+			{"zero_age", 1, "n", "b", "p", 0, domain.SexMale, 10, 1, "ageInMonths must be greater than 0"},
+			{"negative_weight", 1, "n", "b", "p", 24, domain.SexMale, -1, 1, "weightKg must be greater than 0"},
+			{"zero_weight", 1, "n", "b", "p", 24, domain.SexMale, 0, 1, "weightKg must be greater than 0"},
 			{"invalid_sex", 1, "n", "b", "p", 24, domain.Sex(""), 10, 1, "invalid sex"},
 			{"zero_user_id", 1, "n", "b", "p", 24, domain.SexMale, 10, 0, "userID must be greater than 0"},
 		}
@@ -70,7 +72,7 @@ func TestDog_AgeBracket(t *testing.T) {
 		age      int
 		expected domain.AgeBracket
 	}{
-		{"zero_months_is_children", 0, domain.AgeBracketChildren},
+		{"newborn_is_children", 1, domain.AgeBracketChildren},
 		{"infant_upper_boundary_is_children", 6, domain.AgeBracketChildren},
 		{"teenager_lower_boundary", 7, domain.AgeBracketTeenager},
 		{"teenager_upper_boundary", 18, domain.AgeBracketTeenager},
@@ -94,7 +96,6 @@ func TestDog_SizeBracket(t *testing.T) {
 		weight   float64
 		expected domain.SizeBracket
 	}{
-		{"zero_weight_returns_unknown", 0, domain.SizeBracketUnknown},
 		{"tiny_puppy_is_mini", 0.1, domain.SizeBracketMini},
 		{"mini_upper_boundary", 5.0, domain.SizeBracketMini},
 		{"medium_lower_boundary", 5.1, domain.SizeBracketMedium},
@@ -303,4 +304,47 @@ func TestSex_IsValid(t *testing.T) {
 	assert.True(t, domain.SexFemale.IsValid())
 	assert.False(t, domain.Sex("").IsValid())
 	assert.False(t, domain.Sex("UNKNOWN").IsValid())
+}
+
+func TestDog_SetHeat(t *testing.T) {
+	t.Run("female_can_enter_heat", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexFemale, 10.0, false)
+		assert.NoError(t, d.SetHeat(true))
+		assert.True(t, d.Heat())
+	})
+
+	t.Run("male_cannot_enter_heat", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		err := d.SetHeat(true)
+		assert.Error(t, err)
+		var dverr *domain.DogValidationError
+		assert.True(t, errors.As(err, &dverr), "expected DogValidationError, got %T", err)
+		assert.Equal(t, "heat", dverr.Field)
+		assert.False(t, d.Heat(), "failed SetHeat must not mutate state")
+	})
+
+	t.Run("heat_false_always_allowed", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		assert.NoError(t, d.SetHeat(false))
+		assert.False(t, d.Heat())
+	})
+
+	t.Run("apply_patch_enforces_female_only_heat", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		heat := true
+		err := d.ApplyPatch(domain.DogPatch{Heat: &heat})
+		assert.Error(t, err, "ApplyPatch must reject heat=true on a male dog")
+		assert.False(t, d.Heat())
+	})
+}
+
+func TestDog_SetNeutered(t *testing.T) {
+	t.Run("toggle_neutered", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		assert.False(t, d.Neutered())
+		d.SetNeutered(true)
+		assert.True(t, d.Neutered())
+		d.SetNeutered(false)
+		assert.False(t, d.Neutered())
+	})
 }

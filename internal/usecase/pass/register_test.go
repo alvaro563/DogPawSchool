@@ -2,6 +2,7 @@ package pass
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,13 +12,7 @@ import (
 )
 
 func validRegisterInput() RegisterPassInput {
-	return RegisterPassInput{
-		NumOfSessions: 10,
-		Price:         12000,
-		PassType:      domain.PassGeneric,
-		UserID:        1,
-		ExpiresAt:     nil,
-	}
+	return MustNewRegisterPassInput(10, 12000, domain.PassGeneric, 1, nil)
 }
 
 func TestRegisterPassUseCase_Success(t *testing.T) {
@@ -51,73 +46,38 @@ func TestRegisterPassUseCase_SuccessWithExpiry(t *testing.T) {
 		},
 	}
 	uc := NewRegisterPassUseCase(repo)
-	output, err := uc.Execute(context.Background(), RegisterPassInput{
-		NumOfSessions: 5,
-		Price:         5000,
-		PassType:      domain.PassSpecial,
-		UserID:        3,
-		ExpiresAt:     &expiry,
-	})
+	in := MustNewRegisterPassInput(5, 5000, domain.PassSpecial, 3, &expiry)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, 7, output.ID)
 }
 
-func TestRegisterPassUseCase_ValidationErrors(t *testing.T) {
-	base := validRegisterInput()
-	tests := []struct {
-		name      string
-		mutate    func(input *RegisterPassInput)
-		wantField string
+func TestNewRegisterPassInput(t *testing.T) {
+	scenarios := []struct {
+		name    string
+		factory func() (RegisterPassInput, error)
+		field   string
 	}{
-		{
-			name:      "zero_sessions",
-			mutate:    func(i *RegisterPassInput) { i.NumOfSessions = 0 },
-			wantField: "num_of_sessions",
-		},
-		{
-			name:      "negative_sessions",
-			mutate:    func(i *RegisterPassInput) { i.NumOfSessions = -3 },
-			wantField: "num_of_sessions",
-		},
-		{
-			name:      "negative_price",
-			mutate:    func(i *RegisterPassInput) { i.Price = -1 },
-			wantField: "price",
-		},
-		{
-			name:      "invalid_type",
-			mutate:    func(i *RegisterPassInput) { i.PassType = domain.PassType("WRONG") },
-			wantField: "pass_type",
-		},
-		{
-			name:      "zero_user_id",
-			mutate:    func(i *RegisterPassInput) { i.UserID = 0 },
-			wantField: "user_id",
-		},
-		{
-			name:      "negative_user_id",
-			mutate:    func(i *RegisterPassInput) { i.UserID = -1 },
-			wantField: "user_id",
-		},
-		{
-			name:      "zero_expires_at",
-			mutate:    func(i *RegisterPassInput) { i.ExpiresAt = &time.Time{} },
-			wantField: "expires_at",
-		},
+		{"zero_sessions", func() (RegisterPassInput, error) { return NewRegisterPassInput(0, 100, domain.PassGeneric, 1, nil) }, "num_of_sessions"},
+		{"negative_sessions", func() (RegisterPassInput, error) { return NewRegisterPassInput(-3, 100, domain.PassGeneric, 1, nil) }, "num_of_sessions"},
+		{"negative_price", func() (RegisterPassInput, error) { return NewRegisterPassInput(10, -1, domain.PassGeneric, 1, nil) }, "price"},
+		{"invalid_type", func() (RegisterPassInput, error) {
+			return NewRegisterPassInput(10, 100, domain.PassType("WRONG"), 1, nil)
+		}, "pass_type"},
+		{"zero_user_id", func() (RegisterPassInput, error) { return NewRegisterPassInput(10, 100, domain.PassGeneric, 0, nil) }, "user_id"},
+		{"negative_user_id", func() (RegisterPassInput, error) { return NewRegisterPassInput(10, 100, domain.PassGeneric, -1, nil) }, "user_id"},
+		{"zero_expires_at", func() (RegisterPassInput, error) {
+			zt := time.Time{}
+			return NewRegisterPassInput(10, 100, domain.PassGeneric, 1, &zt)
+		}, "expires_at"},
 	}
-	for _, tt := range tests {
+	for _, tt := range scenarios {
 		t.Run(tt.name, func(t *testing.T) {
-			input := base
-			tt.mutate(&input)
-			repo := &mockPassRepository{
-				create: func(context.Context, *domain.Pass) (int, error) {
-					t.Fatal("create should not be called on validation error")
-					return 0, nil
-				},
-			}
-			uc := NewRegisterPassUseCase(repo)
-			_, err := uc.Execute(context.Background(), input)
-			assertValidationError(t, err, tt.wantField)
+			_, err := tt.factory()
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, tt.field, verr.Field)
 		})
 	}
 }

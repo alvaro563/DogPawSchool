@@ -18,29 +18,26 @@ func newTestDogForList(id int) *domain.Dog {
 	return d
 }
 
-func TestListByOwnerUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         ListByOwnerInput
-			expectedField string
-		}{
-			{"zero_owner_id", ListByOwnerInput{Limit: 10, Offset: 0}, "owner_id"},
-			{"negative_owner_id", ListByOwnerInput{OwnerID: -1, Limit: 10, Offset: 0}, "owner_id"},
-		}
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewListByOwnerUseCase(mock)
-				_, err := uc.Execute(context.Background(), s.input)
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr))
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
+func TestNewListByOwnerInput(t *testing.T) {
+	scenarios := []struct {
+		name    string
+		ownerID int
+	}{
+		{"zero_owner_id", 0},
+		{"negative_owner_id", -1},
+	}
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			_, err := NewListByOwnerInput(s.ownerID, 10, 0)
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, "owner_id", verr.Field)
+		})
+	}
+}
 
+func TestListByOwnerUseCase_Execute(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedLimit, capturedOffset, capturedUserID int
 		mock := &mockDogRepository{
@@ -52,7 +49,7 @@ func TestListByOwnerUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByOwnerUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByOwnerInput{OwnerID: 42, Limit: 20, Offset: 5})
+		out, err := uc.Execute(context.Background(), MustNewListByOwnerInput(42, 20, 5))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 2)
 		assert.Equal(t, 42, capturedUserID)
@@ -67,7 +64,7 @@ func TestListByOwnerUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByOwnerUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByOwnerInput{OwnerID: 42})
+		out, err := uc.Execute(context.Background(), MustNewListByOwnerInput(42, 0, 0))
 		assert.NoError(t, err)
 		assert.Empty(t, out.Dogs)
 	})
@@ -80,7 +77,7 @@ func TestListByOwnerUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByOwnerUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByOwnerInput{OwnerID: 42})
+		_, err := uc.Execute(context.Background(), MustNewListByOwnerInput(42, 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -94,7 +91,7 @@ func TestListByOwnerUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByOwnerUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByOwnerInput{OwnerID: 42})
+		_, err := uc.Execute(context.Background(), MustNewListByOwnerInput(42, 0, 0))
 		assert.NoError(t, err)
 		assert.Equal(t, 50, capturedLimit, "default page limit should be 50")
 	})
@@ -108,7 +105,7 @@ func TestListByOwnerUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByOwnerUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByOwnerInput{OwnerID: 42, Limit: 10000})
+		_, err := uc.Execute(context.Background(), MustNewListByOwnerInput(42, 10000, 0))
 		assert.NoError(t, err)
 		assert.Equal(t, 100, capturedLimit, "limit should cap at 100")
 	})
@@ -127,7 +124,7 @@ func TestListAllDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListAllDogsUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListAllDogsInput{Limit: 10, Offset: 0})
+		out, err := uc.Execute(context.Background(), MustNewListAllDogsInput(10, 0))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 3)
 		assert.False(t, capturedActiveOnly, "ListAllDogsUseCase must pass activeOnly=false")
@@ -142,7 +139,7 @@ func TestListAllDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListAllDogsUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListAllDogsInput{})
+		out, err := uc.Execute(context.Background(), MustNewListAllDogsInput(0, 0))
 		assert.NoError(t, err)
 		assert.Empty(t, out.Dogs)
 	})
@@ -155,7 +152,7 @@ func TestListAllDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListAllDogsUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListAllDogsInput{})
+		_, err := uc.Execute(context.Background(), MustNewListAllDogsInput(0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -169,7 +166,7 @@ func TestListAllDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListAllDogsUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListAllDogsInput{})
+		_, err := uc.Execute(context.Background(), MustNewListAllDogsInput(0, 0))
 		assert.NoError(t, err)
 		assert.Equal(t, 50, capturedLimit)
 	})
@@ -183,7 +180,7 @@ func TestListAllDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListAllDogsUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListAllDogsInput{Limit: 10000, Offset: -5})
+		_, err := uc.Execute(context.Background(), MustNewListAllDogsInput(10000, -5))
 		assert.NoError(t, err)
 		assert.Equal(t, 100, capturedLimit)
 	})
@@ -199,7 +196,7 @@ func TestListActiveDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListActiveDogsUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListActiveDogsInput{Limit: 20, Offset: 0})
+		out, err := uc.Execute(context.Background(), MustNewListActiveDogsInput(20, 0))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 2)
 		assert.True(t, capturedActiveOnly, "ListActiveDogsUseCase must pass activeOnly=true")
@@ -212,7 +209,7 @@ func TestListActiveDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListActiveDogsUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListActiveDogsInput{})
+		out, err := uc.Execute(context.Background(), MustNewListActiveDogsInput(0, 0))
 		assert.NoError(t, err)
 		assert.Empty(t, out.Dogs)
 	})
@@ -225,7 +222,7 @@ func TestListActiveDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListActiveDogsUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListActiveDogsInput{})
+		_, err := uc.Execute(context.Background(), MustNewListActiveDogsInput(0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -239,7 +236,7 @@ func TestListActiveDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListActiveDogsUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListActiveDogsInput{})
+		_, err := uc.Execute(context.Background(), MustNewListActiveDogsInput(0, 0))
 		assert.NoError(t, err)
 		assert.Equal(t, 50, capturedLimit)
 	})
@@ -253,35 +250,32 @@ func TestListActiveDogsUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListActiveDogsUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListActiveDogsInput{Limit: 10000})
+		_, err := uc.Execute(context.Background(), MustNewListActiveDogsInput(10000, 0))
 		assert.NoError(t, err)
 		assert.Equal(t, 100, capturedLimit)
 	})
 }
 
-func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         ListByIncompatibilityInput
-			expectedField string
-		}{
-			{"zero_incompatibility_id", ListByIncompatibilityInput{Limit: 10, Offset: 0}, "incompatibility_id"},
-			{"negative_incompatibility_id", ListByIncompatibilityInput{IncompatibilityID: -1, Limit: 10, Offset: 0}, "incompatibility_id"},
-		}
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewListByIncompatibilityUseCase(mock)
-				_, err := uc.Execute(context.Background(), s.input)
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr))
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
+func TestNewListByIncompatibilityInput(t *testing.T) {
+	scenarios := []struct {
+		name   string
+		incomp int
+	}{
+		{"zero_incompatibility_id", 0},
+		{"negative_incompatibility_id", -1},
+	}
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			_, err := NewListByIncompatibilityInput(s.incomp, 10, 0)
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, "incompatibility_id", verr.Field)
+		})
+	}
+}
 
+func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedIncompID, capturedLimit, capturedOffset int
 		mock := &mockDogRepository{
@@ -293,7 +287,7 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByIncompatibilityUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByIncompatibilityInput{IncompatibilityID: 7, Limit: 30, Offset: 10})
+		out, err := uc.Execute(context.Background(), MustNewListByIncompatibilityInput(7, 30, 10))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 2)
 		assert.Equal(t, 7, capturedIncompID)
@@ -308,7 +302,7 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByIncompatibilityUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByIncompatibilityInput{IncompatibilityID: 7})
+		out, err := uc.Execute(context.Background(), MustNewListByIncompatibilityInput(7, 0, 0))
 		assert.NoError(t, err)
 		assert.Empty(t, out.Dogs)
 	})
@@ -321,7 +315,7 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByIncompatibilityUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByIncompatibilityInput{IncompatibilityID: 7})
+		_, err := uc.Execute(context.Background(), MustNewListByIncompatibilityInput(7, 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -335,7 +329,7 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByIncompatibilityUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByIncompatibilityInput{IncompatibilityID: 7})
+		_, err := uc.Execute(context.Background(), MustNewListByIncompatibilityInput(7, 0, 0))
 		assert.NoError(t, err)
 		assert.Equal(t, 50, capturedLimit)
 	})
@@ -349,7 +343,7 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByIncompatibilityUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByIncompatibilityInput{IncompatibilityID: 7, Limit: 10000})
+		_, err := uc.Execute(context.Background(), MustNewListByIncompatibilityInput(7, 10000, 0))
 		assert.NoError(t, err)
 		assert.Equal(t, 100, capturedLimit)
 	})
@@ -357,50 +351,37 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 
 func TestNormalizePagination(t *testing.T) {
 	t.Run("defaults_when_zero", func(t *testing.T) {
-		limit, offset := NormalizePagination(0, 0)
+		limit, offset := normalizePagination(0, 0)
 		assert.Equal(t, 50, limit)
 		assert.Equal(t, 0, offset)
 	})
 
 	t.Run("negative_offset_clamps_to_zero", func(t *testing.T) {
-		_, offset := NormalizePagination(10, -5)
+		_, offset := normalizePagination(10, -5)
 		assert.Equal(t, 0, offset)
 	})
 
 	t.Run("limit_caps_at_max", func(t *testing.T) {
-		limit, _ := NormalizePagination(10000, 0)
+		limit, _ := normalizePagination(10000, 0)
 		assert.Equal(t, 100, limit)
 	})
 
 	t.Run("valid_values_pass_through", func(t *testing.T) {
-		limit, offset := NormalizePagination(25, 50)
+		limit, offset := normalizePagination(25, 50)
 		assert.Equal(t, 25, limit)
 		assert.Equal(t, 50, offset)
 	})
 }
 
-func TestListByBreedUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         ListByBreedInput
-			expectedField string
-		}{
-			{"empty_breed", ListByBreedInput{Limit: 10, Offset: 0}, "breed"},
-		}
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewListByBreedUseCase(mock)
-				_, err := uc.Execute(context.Background(), s.input)
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr))
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
+func TestNewListByBreedInput(t *testing.T) {
+	_, err := NewListByBreedInput("", 10, 0)
+	assert.Error(t, err)
+	var verr *ValidationError
+	assert.True(t, errors.As(err, &verr))
+	assert.Equal(t, "breed", verr.Field)
+}
 
+func TestListByBreedUseCase_Execute(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedBreed string
 		var capturedLimit, capturedOffset int
@@ -413,7 +394,7 @@ func TestListByBreedUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByBreedUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByBreedInput{Breed: "Labrador", Limit: 20, Offset: 5})
+		out, err := uc.Execute(context.Background(), MustNewListByBreedInput("Labrador", 20, 5))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 2)
 		assert.Equal(t, "Labrador", capturedBreed)
@@ -428,7 +409,7 @@ func TestListByBreedUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByBreedUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByBreedInput{Breed: "X"})
+		out, err := uc.Execute(context.Background(), MustNewListByBreedInput("X", 0, 0))
 		assert.NoError(t, err)
 		assert.Empty(t, out.Dogs)
 	})
@@ -441,7 +422,7 @@ func TestListByBreedUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByBreedUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByBreedInput{Breed: "X"})
+		_, err := uc.Execute(context.Background(), MustNewListByBreedInput("X", 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -455,7 +436,7 @@ func TestListByBreedUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByBreedUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByBreedInput{Breed: "X"})
+		_, _ = uc.Execute(context.Background(), MustNewListByBreedInput("X", 0, 0))
 		assert.Equal(t, 50, capturedLimit)
 	})
 
@@ -468,34 +449,21 @@ func TestListByBreedUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByBreedUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByBreedInput{Breed: "X", Limit: 9999})
+		_, _ = uc.Execute(context.Background(), MustNewListByBreedInput("X", 9999, 0))
 		assert.Equal(t, 100, capturedLimit)
 	})
 }
 
-func TestListBySexUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         ListBySexInput
-			expectedField string
-		}{
-			{"empty_sex", ListBySexInput{Limit: 10, Offset: 0}, "sex"},
-			{"invalid_sex", ListBySexInput{Sex: domain.Sex("UNKNOWN"), Limit: 10, Offset: 0}, "sex"},
-		}
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewListBySexUseCase(mock)
-				_, err := uc.Execute(context.Background(), s.input)
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr))
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
+func TestNewListBySexInput(t *testing.T) {
+	// empty sex is invalid (zero value)
+	_, err := NewListBySexInput(domain.Sex(""), 10, 0)
+	assert.Error(t, err)
+	// invalid sex value
+	_, err = NewListBySexInput(domain.Sex("UNKNOWN"), 10, 0)
+	assert.Error(t, err)
+}
 
+func TestListBySexUseCase_Execute(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedSex domain.Sex
 		mock := &mockDogRepository{
@@ -505,7 +473,7 @@ func TestListBySexUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySexUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListBySexInput{Sex: domain.SexFemale, Limit: 10, Offset: 0})
+		out, err := uc.Execute(context.Background(), MustNewListBySexInput(domain.SexFemale, 10, 0))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 1)
 		assert.Equal(t, domain.SexFemale, capturedSex)
@@ -518,7 +486,7 @@ func TestListBySexUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySexUseCase(mock)
-		out, _ := uc.Execute(context.Background(), ListBySexInput{Sex: domain.SexMale})
+		out, _ := uc.Execute(context.Background(), MustNewListBySexInput(domain.SexMale, 0, 0))
 		assert.Empty(t, out.Dogs)
 	})
 
@@ -530,7 +498,7 @@ func TestListBySexUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySexUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListBySexInput{Sex: domain.SexMale})
+		_, err := uc.Execute(context.Background(), MustNewListBySexInput(domain.SexMale, 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -544,7 +512,7 @@ func TestListBySexUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySexUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListBySexInput{Sex: domain.SexMale})
+		_, _ = uc.Execute(context.Background(), MustNewListBySexInput(domain.SexMale, 0, 0))
 		assert.Equal(t, 50, capturedLimit)
 	})
 
@@ -557,7 +525,7 @@ func TestListBySexUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySexUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListBySexInput{Sex: domain.SexMale, Limit: 9999})
+		_, _ = uc.Execute(context.Background(), MustNewListBySexInput(domain.SexMale, 9999, 0))
 		assert.Equal(t, 100, capturedLimit)
 	})
 }
@@ -572,7 +540,7 @@ func TestListByNeuteredUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByNeuteredUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByNeuteredInput{Neutered: true, Limit: 10, Offset: 0})
+		out, err := uc.Execute(context.Background(), MustNewListByNeuteredInput(true, 10, 0))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 1)
 		assert.True(t, capturedNeutered)
@@ -587,7 +555,7 @@ func TestListByNeuteredUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByNeuteredUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByNeuteredInput{Neutered: false})
+		_, _ = uc.Execute(context.Background(), MustNewListByNeuteredInput(false, 0, 0))
 		assert.False(t, capturedNeutered)
 	})
 
@@ -598,7 +566,7 @@ func TestListByNeuteredUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByNeuteredUseCase(mock)
-		out, _ := uc.Execute(context.Background(), ListByNeuteredInput{})
+		out, _ := uc.Execute(context.Background(), MustNewListByNeuteredInput(false, 0, 0))
 		assert.Empty(t, out.Dogs)
 	})
 
@@ -610,7 +578,7 @@ func TestListByNeuteredUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByNeuteredUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByNeuteredInput{})
+		_, err := uc.Execute(context.Background(), MustNewListByNeuteredInput(false, 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -624,7 +592,7 @@ func TestListByNeuteredUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByNeuteredUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByNeuteredInput{})
+		_, _ = uc.Execute(context.Background(), MustNewListByNeuteredInput(false, 0, 0))
 		assert.Equal(t, 50, capturedLimit)
 	})
 
@@ -637,7 +605,7 @@ func TestListByNeuteredUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByNeuteredUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByNeuteredInput{Limit: 9999})
+		_, _ = uc.Execute(context.Background(), MustNewListByNeuteredInput(false, 9999, 0))
 		assert.Equal(t, 100, capturedLimit)
 	})
 }
@@ -652,7 +620,7 @@ func TestListByHeatUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByHeatUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByHeatInput{Heat: true, Limit: 10, Offset: 0})
+		out, err := uc.Execute(context.Background(), MustNewListByHeatInput(true, 10, 0))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 1)
 		assert.True(t, capturedHeat)
@@ -665,7 +633,7 @@ func TestListByHeatUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByHeatUseCase(mock)
-		out, _ := uc.Execute(context.Background(), ListByHeatInput{})
+		out, _ := uc.Execute(context.Background(), MustNewListByHeatInput(false, 0, 0))
 		assert.Empty(t, out.Dogs)
 	})
 
@@ -677,7 +645,7 @@ func TestListByHeatUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByHeatUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByHeatInput{})
+		_, err := uc.Execute(context.Background(), MustNewListByHeatInput(false, 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -691,7 +659,7 @@ func TestListByHeatUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByHeatUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByHeatInput{})
+		_, _ = uc.Execute(context.Background(), MustNewListByHeatInput(false, 0, 0))
 		assert.Equal(t, 50, capturedLimit)
 	})
 
@@ -704,34 +672,21 @@ func TestListByHeatUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByHeatUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByHeatInput{Limit: 9999})
+		_, _ = uc.Execute(context.Background(), MustNewListByHeatInput(false, 9999, 0))
 		assert.Equal(t, 100, capturedLimit)
 	})
 }
 
-func TestListByAgeBracketUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         ListByAgeBracketInput
-			expectedField string
-		}{
-			{"empty_bracket", ListByAgeBracketInput{Limit: 10, Offset: 0}, "age_bracket"},
-			{"invalid_bracket", ListByAgeBracketInput{AgeBracket: domain.AgeBracket("BOGUS"), Limit: 10, Offset: 0}, "age_bracket"},
-		}
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewListByAgeBracketUseCase(mock)
-				_, err := uc.Execute(context.Background(), s.input)
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr))
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
+func TestNewListByAgeBracketInput(t *testing.T) {
+	// empty bracket
+	_, err := NewListByAgeBracketInput(domain.AgeBracket(""), 10, 0)
+	assert.Error(t, err)
+	// invalid bracket
+	_, err = NewListByAgeBracketInput(domain.AgeBracket("BOGUS"), 10, 0)
+	assert.Error(t, err)
+}
 
+func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedBracket domain.AgeBracket
 		mock := &mockDogRepository{
@@ -741,7 +696,7 @@ func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByAgeBracketUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListByAgeBracketInput{AgeBracket: domain.AgeBracketTeenager, Limit: 10, Offset: 0})
+		out, err := uc.Execute(context.Background(), MustNewListByAgeBracketInput(domain.AgeBracketTeenager, 10, 0))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 1)
 		assert.Equal(t, domain.AgeBracketTeenager, capturedBracket)
@@ -756,7 +711,7 @@ func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByAgeBracketUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByAgeBracketInput{AgeBracket: domain.AgeBracketUnknown})
+		_, _ = uc.Execute(context.Background(), MustNewListByAgeBracketInput(domain.AgeBracketUnknown, 0, 0))
 		assert.Equal(t, domain.AgeBracketUnknown, capturedBracket)
 	})
 
@@ -767,7 +722,7 @@ func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByAgeBracketUseCase(mock)
-		out, _ := uc.Execute(context.Background(), ListByAgeBracketInput{AgeBracket: domain.AgeBracketAdult})
+		out, _ := uc.Execute(context.Background(), MustNewListByAgeBracketInput(domain.AgeBracketAdult, 0, 0))
 		assert.Empty(t, out.Dogs)
 	})
 
@@ -779,7 +734,7 @@ func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByAgeBracketUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListByAgeBracketInput{AgeBracket: domain.AgeBracketAdult})
+		_, err := uc.Execute(context.Background(), MustNewListByAgeBracketInput(domain.AgeBracketAdult, 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -793,7 +748,7 @@ func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByAgeBracketUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByAgeBracketInput{AgeBracket: domain.AgeBracketAdult})
+		_, _ = uc.Execute(context.Background(), MustNewListByAgeBracketInput(domain.AgeBracketAdult, 0, 0))
 		assert.Equal(t, 50, capturedLimit)
 	})
 
@@ -806,34 +761,21 @@ func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListByAgeBracketUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListByAgeBracketInput{AgeBracket: domain.AgeBracketAdult, Limit: 9999})
+		_, _ = uc.Execute(context.Background(), MustNewListByAgeBracketInput(domain.AgeBracketAdult, 9999, 0))
 		assert.Equal(t, 100, capturedLimit)
 	})
 }
 
-func TestListBySizeBracketUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         ListBySizeBracketInput
-			expectedField string
-		}{
-			{"empty_bracket", ListBySizeBracketInput{Limit: 10, Offset: 0}, "size_bracket"},
-			{"invalid_bracket", ListBySizeBracketInput{SizeBracket: domain.SizeBracket("BOGUS"), Limit: 10, Offset: 0}, "size_bracket"},
-		}
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewListBySizeBracketUseCase(mock)
-				_, err := uc.Execute(context.Background(), s.input)
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr))
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
+func TestNewListBySizeBracketInput(t *testing.T) {
+	// empty bracket
+	_, err := NewListBySizeBracketInput(domain.SizeBracket(""), 10, 0)
+	assert.Error(t, err)
+	// invalid bracket
+	_, err = NewListBySizeBracketInput(domain.SizeBracket("BOGUS"), 10, 0)
+	assert.Error(t, err)
+}
 
+func TestListBySizeBracketUseCase_Execute(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedBracket domain.SizeBracket
 		mock := &mockDogRepository{
@@ -843,7 +785,7 @@ func TestListBySizeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySizeBracketUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListBySizeBracketInput{SizeBracket: domain.SizeBracketLarge, Limit: 10, Offset: 0})
+		out, err := uc.Execute(context.Background(), MustNewListBySizeBracketInput(domain.SizeBracketLarge, 10, 0))
 		assert.NoError(t, err)
 		assert.Len(t, out.Dogs, 1)
 		assert.Equal(t, domain.SizeBracketLarge, capturedBracket)
@@ -858,7 +800,7 @@ func TestListBySizeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySizeBracketUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListBySizeBracketInput{SizeBracket: domain.SizeBracketUnknown})
+		_, _ = uc.Execute(context.Background(), MustNewListBySizeBracketInput(domain.SizeBracketUnknown, 0, 0))
 		assert.Equal(t, domain.SizeBracketUnknown, capturedBracket)
 	})
 
@@ -869,7 +811,7 @@ func TestListBySizeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySizeBracketUseCase(mock)
-		out, _ := uc.Execute(context.Background(), ListBySizeBracketInput{SizeBracket: domain.SizeBracketMini})
+		out, _ := uc.Execute(context.Background(), MustNewListBySizeBracketInput(domain.SizeBracketMini, 0, 0))
 		assert.Empty(t, out.Dogs)
 	})
 
@@ -881,7 +823,7 @@ func TestListBySizeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySizeBracketUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListBySizeBracketInput{SizeBracket: domain.SizeBracketMini})
+		_, err := uc.Execute(context.Background(), MustNewListBySizeBracketInput(domain.SizeBracketMini, 0, 0))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -895,7 +837,7 @@ func TestListBySizeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySizeBracketUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListBySizeBracketInput{SizeBracket: domain.SizeBracketMini})
+		_, _ = uc.Execute(context.Background(), MustNewListBySizeBracketInput(domain.SizeBracketMini, 0, 0))
 		assert.Equal(t, 50, capturedLimit)
 	})
 
@@ -908,7 +850,7 @@ func TestListBySizeBracketUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListBySizeBracketUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ListBySizeBracketInput{SizeBracket: domain.SizeBracketMini, Limit: 9999})
+		_, _ = uc.Execute(context.Background(), MustNewListBySizeBracketInput(domain.SizeBracketMini, 9999, 0))
 		assert.Equal(t, 100, capturedLimit)
 	})
 }

@@ -30,3 +30,27 @@ func IsValidationError(err error) bool {
 // ErrNotFound is returned by use cases when the requested activity
 // does not exist.
 var ErrNotFound = errors.New("not found")
+
+// ErrNotFinished is returned by CloseActivity when the activity's
+// date + duration is at or after now (the activity has not ended
+// yet). Maps to 400 activity_not_finished.
+var ErrNotFinished = errors.New("activity has not finished yet")
+
+// ErrAlreadyClosed is returned by CloseActivity when the activity
+// is already closed. Maps to 409 already_closed.
+var ErrAlreadyClosed = errors.New("activity is already closed")
+
+// ErrReservationNotFound is returned by CloseActivity when a
+// no_show_reservation_id does not resolve to an existing CONFIRMED
+// reservation for this activity. Maps to 400 invalid_reservation_id.
+var ErrReservationNotFound = errors.New("reservation not found for this activity")
+
+// ErrReservationNotInActivity is returned by CloseActivity when a
+// no_show_reservation_id belongs to a different activity. Maps to
+// 400 invalid_reservation_id.
+var ErrReservationNotInActivity = errors.New("reservation belongs to a different activity")
+
+// ErrReservationNotConfirmed is returned by CloseActivity when a
+// reservation in the no_show list is not in CONFIRMED status.
+// Maps to 409 reservation_not_confirmed.
+var ErrReservationNotConfirmed = errors.New("reservation is not in CONFIRMED status")

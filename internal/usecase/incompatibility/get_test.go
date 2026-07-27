@@ -10,32 +10,31 @@ import (
 	"dogpaw/internal/domain"
 )
 
+func TestNewGetIncompatibilityInput(t *testing.T) {
+	t.Run("zero_id", func(t *testing.T) {
+		_, err := NewGetIncompatibilityInput(0)
+		assert.Error(t, err)
+		var verr *ValidationError
+		assert.True(t, errors.As(err, &verr))
+		assert.Equal(t, "id", verr.Field)
+	})
+
+	t.Run("negative_id", func(t *testing.T) {
+		_, err := NewGetIncompatibilityInput(-1)
+		assert.Error(t, err)
+		var verr *ValidationError
+		assert.True(t, errors.As(err, &verr))
+		assert.Equal(t, "id", verr.Field)
+	})
+}
+
 func TestGetIncompatibilityUseCase_Execute(t *testing.T) {
-	t.Run("validation_zero_id", func(t *testing.T) {
-		uc := NewGetIncompatibilityUseCase(&mockIncompatibilityRepository{})
-		_, err := uc.Execute(context.Background(), GetIncompatibilityInput{})
-		assert.Error(t, err)
-		var verr *ValidationError
-		assert.True(t, errors.As(err, &verr))
-		assert.Equal(t, "id", verr.Field)
-	})
-
-	t.Run("validation_negative_id", func(t *testing.T) {
-		uc := NewGetIncompatibilityUseCase(&mockIncompatibilityRepository{})
-		_, err := uc.Execute(context.Background(), GetIncompatibilityInput{ID: -1})
-		assert.Error(t, err)
-		var verr *ValidationError
-		assert.True(t, errors.As(err, &verr))
-		assert.Equal(t, "id", verr.Field)
-	})
-
 	t.Run("not_found", func(t *testing.T) {
 		mock := &mockIncompatibilityRepository{
 			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) { return nil, nil },
 		}
 		uc := NewGetIncompatibilityUseCase(mock)
-		_, err := uc.Execute(context.Background(), GetIncompatibilityInput{ID: 999})
-		assert.Error(t, err)
+		_, err := uc.Execute(context.Background(), MustNewGetIncompatibilityInput(999))
 		assert.True(t, errors.Is(err, ErrNotFound))
 	})
 
@@ -48,7 +47,7 @@ func TestGetIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewGetIncompatibilityUseCase(mock)
-		out, err := uc.Execute(context.Background(), GetIncompatibilityInput{ID: 3})
+		out, err := uc.Execute(context.Background(), MustNewGetIncompatibilityInput(3))
 		assert.NoError(t, err)
 		assert.Same(t, want, out.Incompatibility)
 	})
@@ -61,7 +60,7 @@ func TestGetIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewGetIncompatibilityUseCase(mock)
-		_, err := uc.Execute(context.Background(), GetIncompatibilityInput{ID: 1})
+		_, err := uc.Execute(context.Background(), MustNewGetIncompatibilityInput(1))
 		assert.True(t, errors.Is(err, repoErr))
 	})
 }

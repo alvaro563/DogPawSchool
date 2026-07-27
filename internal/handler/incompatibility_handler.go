@@ -69,10 +69,12 @@ func (h *IncompatibilityHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	output, err := h.register.Execute(c.Request.Context(), incompatuc.RegisterIncompatibilityInput{
-		Name:  request.Name,
-		Level: domain.IncompatibilityLevel(request.Level),
-	})
+	in, err := incompatuc.NewRegisterIncompatibilityInput(request.Name, domain.IncompatibilityLevel(request.Level))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.register.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -96,7 +98,12 @@ func (h *IncompatibilityHandler) List(c *gin.Context) {
 		parsedLevel := domain.IncompatibilityLevel(levelString)
 		levelPtr = &parsedLevel
 	}
-	output, err := h.list.Execute(c.Request.Context(), incompatuc.ListIncompatibilitiesInput{Level: levelPtr})
+	in, err := incompatuc.NewListIncompatibilitiesInput(levelPtr)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.list.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -125,7 +132,12 @@ func (h *IncompatibilityHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
-	output, err := h.get.Execute(c.Request.Context(), incompatuc.GetIncompatibilityInput{ID: id})
+	in, err := incompatuc.NewGetIncompatibilityInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.get.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -163,7 +175,12 @@ func (h *IncompatibilityHandler) Modify(c *gin.Context) {
 		levelValue := domain.IncompatibilityLevel(*request.Level)
 		patch.Level = &levelValue
 	}
-	output, err := h.modify.Execute(c.Request.Context(), incompatuc.ModifyIncompatibilityInput{ID: id, Patch: patch})
+	in, err := incompatuc.NewModifyIncompatibilityInput(id, patch)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.modify.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -189,7 +206,12 @@ func (h *IncompatibilityHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
-	_, err = h.delete.Execute(c.Request.Context(), incompatuc.DeleteIncompatibilityInput{ID: id})
+	in, err := incompatuc.NewDeleteIncompatibilityInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	_, err = h.delete.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -198,8 +220,8 @@ func (h *IncompatibilityHandler) Delete(c *gin.Context) {
 }
 
 type registerIncompatibilityRequest struct {
-	Name  string `json:"name" binding:"required,min=1,max=120" example:"Reacciona mal al transportin"`
-	Level string `json:"level" binding:"required,oneof=ABSOLUTA MEDIA BAJA" example:"MEDIA"`
+	Name  string `json:"name" example:"Reacciona mal al transportin"`
+	Level string `json:"level" example:"MEDIA"`
 }
 
 type registerIncompatibilityResponse struct {
@@ -211,17 +233,13 @@ type listIncompatibilitiesResponse struct {
 	Count             int                  `json:"count" example:"3"`
 }
 
-type incompatibilityResponse struct {
-	ID    int    `json:"id" example:"3"`
-	Name  string `json:"name" example:"Miedo a petardos"`
-	Level string `json:"level" example:"BAJA"`
-}
-
 type modifyIncompatibilityRequest struct {
 	Name  *string `json:"name,omitempty" example:"Miedo a petardos y cohetes"`
 	Level *string `json:"level,omitempty" example:"ABSOLUTA"`
 }
 
-type incompatibilityDTOAlias = incompatibilityDTO
-
-type _ = incompatibilityDTOAlias
+type incompatibilityResponse struct {
+	ID    int    `json:"id" example:"3"`
+	Name  string `json:"name" example:"Miedo a petardos"`
+	Level string `json:"level" example:"BAJA"`
+}

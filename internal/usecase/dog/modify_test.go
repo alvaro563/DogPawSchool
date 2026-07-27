@@ -24,40 +24,25 @@ func validPatch() domain.DogPatch {
 	return domain.DogPatch{Name: &name}
 }
 
+func TestNewModifyDogInput(t *testing.T) {
+	t.Run("zero_id", func(t *testing.T) {
+		_, err := NewModifyDogInput(0, validPatch())
+		assert.Error(t, err)
+		var verr *ValidationError
+		assert.True(t, errors.As(err, &verr))
+		assert.Equal(t, "id", verr.Field)
+	})
+
+	t.Run("negative_id", func(t *testing.T) {
+		_, err := NewModifyDogInput(-1, validPatch())
+		assert.Error(t, err)
+		var verr *ValidationError
+		assert.True(t, errors.As(err, &verr))
+		assert.Equal(t, "id", verr.Field)
+	})
+}
+
 func TestModifyDogUseCase_Execute(t *testing.T) {
-	t.Run("validation_zero_id", func(t *testing.T) {
-		mock := &mockDogRepository{}
-		uc := NewModifyDogUseCase(mock)
-		_, err := uc.Execute(context.Background(), ModifyDogInput{ID: 0, Patch: validPatch()})
-		assert.Error(t, err)
-		var verr *ValidationError
-		assert.True(t, errors.As(err, &verr))
-		assert.Equal(t, "id", verr.Field)
-	})
-
-	t.Run("validation_negative_id", func(t *testing.T) {
-		mock := &mockDogRepository{}
-		uc := NewModifyDogUseCase(mock)
-		_, err := uc.Execute(context.Background(), ModifyDogInput{ID: -1, Patch: validPatch()})
-		assert.Error(t, err)
-		var verr *ValidationError
-		assert.True(t, errors.As(err, &verr))
-		assert.Equal(t, "id", verr.Field)
-	})
-
-	t.Run("validation_does_not_call_repo", func(t *testing.T) {
-		called := false
-		mock := &mockDogRepository{
-			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
-				called = true
-				return nil, nil
-			},
-		}
-		uc := NewModifyDogUseCase(mock)
-		_, _ = uc.Execute(context.Background(), ModifyDogInput{ID: 0})
-		assert.False(t, called)
-	})
-
 	t.Run("empty_patch_is_noop", func(t *testing.T) {
 		existingDog := newTestDogForModify(t)
 		updateCalled := false
@@ -66,7 +51,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			update:  func(ctx context.Context, dog *domain.Dog) error { updateCalled = true; return nil },
 		}
 		uc := NewModifyDogUseCase(mock)
-		out, err := uc.Execute(context.Background(), ModifyDogInput{ID: 42, Patch: domain.DogPatch{}})
+		out, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, domain.DogPatch{}))
 		assert.NoError(t, err)
 		assert.Equal(t, 42, out.ID)
 		assert.False(t, updateCalled, "empty patch must not call repo.Update")
@@ -80,7 +65,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			update:  func(ctx context.Context, dog *domain.Dog) error { updatedDog = dog; return nil },
 		}
 		uc := NewModifyDogUseCase(mock)
-		out, err := uc.Execute(context.Background(), ModifyDogInput{ID: 42, Patch: validPatch()})
+		out, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.NoError(t, err)
 		assert.Equal(t, 42, out.ID)
 		assert.NotNil(t, updatedDog)
@@ -102,14 +87,11 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		newName := "Luna"
 		newBreed := "Husky"
 		neutered := true
-		_, err := uc.Execute(context.Background(), ModifyDogInput{
-			ID: 42,
-			Patch: domain.DogPatch{
-				Name:     &newName,
-				Breed:    &newBreed,
-				Neutered: &neutered,
-			},
-		})
+		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, domain.DogPatch{
+			Name:     &newName,
+			Breed:    &newBreed,
+			Neutered: &neutered,
+		}))
 		assert.NoError(t, err)
 		assert.Equal(t, "Luna", existingDog.Name())
 		assert.Equal(t, "Husky", existingDog.Breed())
@@ -124,10 +106,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		}
 		uc := NewModifyDogUseCase(mock)
 		empty := ""
-		_, err := uc.Execute(context.Background(), ModifyDogInput{
-			ID:    42,
-			Patch: domain.DogPatch{Name: &empty},
-		})
+		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, domain.DogPatch{Name: &empty}))
 		assert.Error(t, err)
 		var verr *ValidationError
 		assert.True(t, errors.As(err, &verr))
@@ -141,10 +120,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		}
 		uc := NewModifyDogUseCase(mock)
 		invalidSex := domain.Sex("OTHER")
-		_, err := uc.Execute(context.Background(), ModifyDogInput{
-			ID:    42,
-			Patch: domain.DogPatch{Sex: &invalidSex},
-		})
+		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, domain.DogPatch{Sex: &invalidSex}))
 		assert.Error(t, err)
 		var verr *ValidationError
 		assert.True(t, errors.As(err, &verr))
@@ -157,7 +133,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return nil, repoErr },
 		}
 		uc := NewModifyDogUseCase(mock)
-		_, err := uc.Execute(context.Background(), ModifyDogInput{ID: 42, Patch: validPatch()})
+		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})
@@ -167,7 +143,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return nil, nil },
 		}
 		uc := NewModifyDogUseCase(mock)
-		_, err := uc.Execute(context.Background(), ModifyDogInput{ID: 42, Patch: validPatch()})
+		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrNotFound), "expected ErrNotFound, got %T", err)
 	})
@@ -179,7 +155,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			update:  func(ctx context.Context, dog *domain.Dog) error { return repoErr },
 		}
 		uc := NewModifyDogUseCase(mock)
-		_, err := uc.Execute(context.Background(), ModifyDogInput{ID: 42, Patch: validPatch()})
+		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
 	})

@@ -2,6 +2,10 @@ package incompatibility
 
 import (
 	"context"
+	"errors"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	"dogpaw/internal/domain"
 )
@@ -55,4 +59,19 @@ func mustNewIncompatibility(id int, name string, level domain.IncompatibilityLev
 		panic(err)
 	}
 	return in
+}
+
+// sentinelErr is a small, import-free error used in tests across this
+// package to verify that repository errors are wrapped correctly.
+var sentinelErr = errors.New("repo failure")
+
+// assertValidationError is shared by every use case test in this
+// package. It asserts err is a *ValidationError with the expected
+// field name.
+func assertValidationError(t *testing.T, err error, wantField string) {
+	t.Helper()
+	var validationErr *ValidationError
+	if assert.True(t, errors.As(err, &validationErr), "expected ValidationError, got %T (%v)", err, err) {
+		assert.Equal(t, wantField, validationErr.Field)
+	}
 }

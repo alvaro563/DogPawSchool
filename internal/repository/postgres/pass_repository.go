@@ -12,12 +12,15 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// These sentinels alias the domain-level persistence errors so callers
+// match them via errors.Is(err, domain.ErrX) without importing this
+// package.
 var (
 	// ErrInvalidPassUser is returned by Create when the user_id foreign
 	// key does not resolve to an existing user.
-	ErrInvalidPassUser = errors.New("postgres: pass user_id does not exist")
+	ErrInvalidPassUser = domain.ErrInvalidUserReference
 	// ErrPassNotFound is returned by GetByID/Update when no row matches.
-	ErrPassNotFound = errors.New("postgres: pass not found")
+	ErrPassNotFound = domain.ErrNotFound
 )
 
 // passSelectClause is the 9-column projection reused by every read
@@ -37,17 +40,18 @@ func NewPassRepository(db *sql.DB) *PassRepository {
 // Create inserts a new pass and returns the assigned id. A
 // foreign-key violation on user_id (SQLSTATE 23503) is mapped to
 // ErrInvalidPassUser so the handler can respond with 400. The
-// remaining_sessions column is set to num_of_sessions so the
-// CHECK constraint `passes_remaining_le_total` is satisfied.
+// remaining_sessions column is persisted from the aggregate state
+// (pass.RemainingSessions()); the domain constructor guarantees the
+// CHECK constraint `passes_remaining_le_total` holds.
 func (repo *PassRepository) Create(ctx context.Context, pass *domain.Pass) (int, error) {
 	const query = `
 		INSERT INTO passes (num_of_sessions, remaining_sessions, price, pass_type, user_id, expires_at)
-		VALUES ($1, $1, $2, $3, $4, $5)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`
 	var newPassID int64
 	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
-		pass.NumOfSessions(), pass.Price(), string(pass.Type()),
+		pass.NumOfSessions(), pass.RemainingSessions(), pass.Price(), string(pass.Type()),
 		pass.UserID(), nullTimePtr(pass.ExpiresAt()),
 	).Scan(&newPassID)
 	if err != nil {

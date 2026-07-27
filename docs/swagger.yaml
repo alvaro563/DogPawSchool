@@ -52,8 +52,6 @@ definitions:
       incompatibility_id:
         example: 3
         type: integer
-    required:
-    - incompatibility_id
     type: object
   handler.addIncompatibilityResponse:
     properties:
@@ -75,6 +73,26 @@ definitions:
         type: integer
       status:
         example: CANCELLED_IN_TIME
+        type: string
+    type: object
+  handler.closeActivityRequest:
+    type: object
+  handler.closeActivityResponse:
+    properties:
+      closed:
+        example: true
+        type: boolean
+      id:
+        example: 42
+        type: integer
+    type: object
+  handler.completeReservationResponse:
+    properties:
+      id:
+        example: 99
+        type: integer
+      status:
+        example: COMPLETED
         type: string
     type: object
   handler.dogDTO:
@@ -233,6 +251,15 @@ definitions:
           $ref: '#/definitions/handler.reservationViewDTO'
         type: array
     type: object
+  handler.markNoShowResponse:
+    properties:
+      id:
+        example: 99
+        type: integer
+      status:
+        example: NO_SHOW
+        type: string
+    type: object
   handler.modifyActivityRequest:
     properties:
       activity_type:
@@ -314,9 +341,6 @@ definitions:
         example: "2027-06-30T23:59:59Z"
         type: string
       pass_type:
-        enum:
-        - GENERICO
-        - ESPECIFICO
         example: ESPECIFICO
         type: string
       price:
@@ -387,11 +411,6 @@ definitions:
   handler.registerActivityRequest:
     properties:
       activity_type:
-        enum:
-        - SOCIALIZATION_GROUP
-        - ROUTE
-        - INDIVIDUAL_CLASS
-        - EXTRA
         example: ROUTE
         type: string
       date:
@@ -402,24 +421,13 @@ definitions:
         type: integer
       location:
         example: Parking Central
-        maxLength: 200
-        minLength: 1
         type: string
       max_capacity:
         example: 8
         type: integer
       name:
         example: Paseo Río
-        maxLength: 200
-        minLength: 1
         type: string
-    required:
-    - activity_type
-    - date
-    - duration_in_hours
-    - location
-    - max_capacity
-    - name
     type: object
   handler.registerActivityResponse:
     properties:
@@ -434,23 +442,14 @@ definitions:
         type: integer
       breed:
         example: Labrador
-        maxLength: 120
-        minLength: 1
         type: string
       name:
         example: Luna
-        maxLength: 120
-        minLength: 1
         type: string
       passport:
         example: ES-12345
-        maxLength: 64
-        minLength: 1
         type: string
       sex:
-        enum:
-        - MALE
-        - FEMALE
         example: FEMALE
         type: string
       user_id:
@@ -459,14 +458,6 @@ definitions:
       weight_kg:
         example: 22.5
         type: number
-    required:
-    - age_in_months
-    - breed
-    - name
-    - passport
-    - sex
-    - user_id
-    - weight_kg
     type: object
   handler.registerDogResponse:
     properties:
@@ -477,20 +468,11 @@ definitions:
   handler.registerIncompatibilityRequest:
     properties:
       level:
-        enum:
-        - ABSOLUTA
-        - MEDIA
-        - BAJA
         example: MEDIA
         type: string
       name:
         example: Reacciona mal al transportin
-        maxLength: 120
-        minLength: 1
         type: string
-    required:
-    - level
-    - name
     type: object
   handler.registerIncompatibilityResponse:
     properties:
@@ -507,18 +489,11 @@ definitions:
         example: 10
         type: integer
       pass_type:
-        enum:
-        - GENERICO
-        - ESPECIFICO
         example: GENERICO
         type: string
       price:
         example: 12000
-        minimum: 0
         type: integer
-    required:
-    - num_of_sessions
-    - pass_type
     type: object
   handler.registerPassResponse:
     properties:
@@ -537,10 +512,6 @@ definitions:
       pass_id:
         example: 3
         type: integer
-    required:
-    - activity_id
-    - dog_id
-    - pass_id
     type: object
   handler.registerReservationResponse:
     properties:
@@ -772,6 +743,54 @@ paths:
       summary: Patch an activity
       tags:
       - activities
+  /api/v1/activities/{id}/close:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Closes an activity after it has finished. Batch-
+        processes every CONFIRMED reservation: those whose
+        id appears in no_show_reservation_ids are marked as
+        NO_SHOW, the rest are marked as COMPLETED. Then
+        the activity is marked as closed and persisted.
+        The entire flow runs in a single transaction.
+      parameters:
+      - description: Activity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Optional no-show reservation IDs
+        in: body
+        name: activity
+        schema:
+          $ref: '#/definitions/handler.closeActivityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Activity closed
+          schema:
+            $ref: '#/definitions/handler.closeActivityResponse'
+        "400":
+          description: Invalid id, activity not finished, or invalid reservation IDs
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Activity not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Activity already closed or reservation not confirmed
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Close an activity
+      tags:
+      - activities
   /api/v1/activities/{id}/reservations:
     get:
       description: |-
@@ -788,7 +807,7 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Number of reservations to skip (default 0)
+      - description: Number of reservations to skip for pagination (default 0)
         in: query
         name: offset
         type: integer
@@ -914,7 +933,7 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Number of reservations to skip (default 0)
+      - description: Number of reservations to skip for pagination (default 0)
         in: query
         name: offset
         type: integer
@@ -1821,7 +1840,7 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Number of reservations to skip (default 0)
+      - description: Number of reservations to skip for pagination (default 0)
         in: query
         name: offset
         type: integer
@@ -1944,7 +1963,7 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Number of reservations to skip (default 0)
+      - description: Number of reservations to skip for pagination (default 0)
         in: query
         name: offset
         type: integer
@@ -2106,6 +2125,103 @@ paths:
       summary: Cancel a reservation
       tags:
       - reservations
+  /api/v1/users/{user_id}/reservations/{id}/complete:
+    post:
+      description: |-
+        Transitions a CONFIRMED reservation to COMPLETED.
+        The activity must have already finished
+        (date + duration < now). Does not refund the pass
+        session because the session was consumed at
+        registration and the activity has been delivered.
+        Owner-only: the user_id in the path must own the
+        dog. Returns 404 if the reservation does not exist
+        OR belongs to a different user (no leak).
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reservation marked completed
+          schema:
+            $ref: '#/definitions/handler.completeReservationResponse'
+        "400":
+          description: Invalid user_id / reservation_id, or activity has not finished
+            yet
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Reservation or activity not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Reservation not in CONFIRMED state (not_completable)
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Mark a reservation as completed
+      tags:
+      - reservations
+  /api/v1/users/{user_id}/reservations/{id}/no-show:
+    post:
+      description: |-
+        Transitions a CONFIRMED reservation to NO_SHOW.
+        The activity must have already started
+        (date < now). Does not refund the pass session
+        because the slot is past. Owner-only: the
+        user_id in the path must own the dog. Returns 404
+        if the reservation does not exist OR belongs to
+        a different user (no leak).
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reservation marked no-show
+          schema:
+            $ref: '#/definitions/handler.markNoShowResponse'
+        "400":
+          description: Invalid user_id / reservation_id, or activity has not started
+            yet
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Reservation or activity not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Reservation not in CONFIRMED state (not_cancellable)
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Mark a reservation as no-show
+      tags:
+      - reservations
   /api/v1/users/{user_id}/reservations/upcoming:
     get:
       description: |-
@@ -2122,7 +2238,7 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Number of reservations to skip (default 0)
+      - description: Number of reservations to skip for pagination (default 0)
         in: query
         name: offset
         type: integer

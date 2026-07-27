@@ -8,15 +8,44 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// ModifyDogInput is the validated command to apply a partial update
+// to an existing dog. Fields are private: only NewModifyDogInput
+// can construct one. The patch *values* are validated by the domain
+// (domain.Dog.ApplyPatch) — defense in depth.
 type ModifyDogInput struct {
-	ID    int
-	Patch domain.DogPatch
+	id    int
+	patch domain.DogPatch
 }
 
+func (in ModifyDogInput) ID() int                { return in.id }
+func (in ModifyDogInput) Patch() domain.DogPatch { return in.patch }
+
+// NewModifyDogInput validates id > 0 and stores the patch. An empty
+// patch is allowed (Execute short-circuits to a no-op, preserving
+// the current behavior).
+func NewModifyDogInput(id int, patch domain.DogPatch) (ModifyDogInput, error) {
+	if id <= 0 {
+		return ModifyDogInput{}, &ValidationError{Field: "id"}
+	}
+	return ModifyDogInput{id: id, patch: patch}, nil
+}
+
+// MustNewModifyDogInput panics on validation error. For tests.
+func MustNewModifyDogInput(id int, patch domain.DogPatch) ModifyDogInput {
+	in, err := NewModifyDogInput(id, patch)
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
+// ModifyDogOutput carries the post-mutation dog id.
 type ModifyDogOutput struct {
 	ID int
 }
 
+// ModifyDogUseCase applies a partial update to a dog. An empty patch
+// is a no-op and returns the unmodified dog without touching the DB.
 type ModifyDogUseCase struct {
 	repo domain.DogRepository
 }
@@ -26,19 +55,16 @@ func NewModifyDogUseCase(repo domain.DogRepository) *ModifyDogUseCase {
 }
 
 func (uc *ModifyDogUseCase) Execute(ctx context.Context, input ModifyDogInput) (ModifyDogOutput, error) {
-	if input.ID <= 0 {
-		return ModifyDogOutput{}, &ValidationError{Field: "id"}
-	}
-
-	dog, err := uc.repo.GetByID(ctx, input.ID)
+	dog, err := uc.repo.GetByID(ctx, input.ID())
 	if err != nil {
-		return ModifyDogOutput{}, fmt.Errorf("get dog %d: %w", input.ID, err)
+		return ModifyDogOutput{}, fmt.Errorf("get dog %d: %w", input.ID(), err)
 	}
 	if dog == nil {
 		return ModifyDogOutput{}, ErrNotFound
 	}
 
-	if err := dog.ApplyPatch(input.Patch); err != nil {
+	patch := input.Patch()
+	if err := dog.ApplyPatch(patch); err != nil {
 		var validationErr *domain.DogValidationError
 		if errors.As(err, &validationErr) {
 			return ModifyDogOutput{}, &ValidationError{Field: validationErr.Field}
@@ -46,14 +72,13 @@ func (uc *ModifyDogUseCase) Execute(ctx context.Context, input ModifyDogInput) (
 		return ModifyDogOutput{}, err
 	}
 
-	if isEmptyPatch(input.Patch) {
+	if isEmptyPatch(patch) {
 		return ModifyDogOutput{ID: dog.ID()}, nil
 	}
 
 	if err := uc.repo.Update(ctx, dog); err != nil {
-		return ModifyDogOutput{}, fmt.Errorf("update dog %d: %w", input.ID, err)
+		return ModifyDogOutput{}, fmt.Errorf("update dog %d: %w", input.ID(), err)
 	}
-
 	return ModifyDogOutput{ID: dog.ID()}, nil
 }
 

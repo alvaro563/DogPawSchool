@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func validListByUserInput() ListByUserReservationsInput {
-	return ListByUserReservationsInput{UserID: 1, Limit: 50, Offset: 0}
+	return MustNewListByUserReservationsInput(1, nil, nil, nil, 50, 0)
 }
 
 func TestListByUserReservationsUseCase_Success(t *testing.T) {
@@ -54,53 +55,34 @@ func TestListByUserReservationsUseCase_WithFilters(t *testing.T) {
 		},
 	}
 	uc := NewListByUserReservationsUseCase(repo)
-	_, err := uc.Execute(context.Background(), ListByUserReservationsInput{
-		UserID: 1, Status: &status, From: &from, To: &to, Limit: 50, Offset: 0,
-	})
+	_, err := uc.Execute(context.Background(), MustNewListByUserReservationsInput(1, &status, &from, &to, 50, 0))
 	require.NoError(t, err)
 }
 
-func TestListByUserReservationsUseCase_ValidationErrors(t *testing.T) {
-	base := validListByUserInput()
-	tests := []struct {
-		name      string
-		mutate    func(*ListByUserReservationsInput)
-		wantField string
+func TestNewListByUserReservationsInput(t *testing.T) {
+	from := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	bad := domain.ReservationStatus("BOGUS")
+
+	scenarios := []struct {
+		name   string
+		userID int
+		status *domain.ReservationStatus
+		from   *time.Time
+		to     *time.Time
+		field  string
 	}{
-		{
-			name:      "zero_user_id",
-			mutate:    func(i *ListByUserReservationsInput) { i.UserID = 0 },
-			wantField: "user_id",
-		},
-		{
-			name:      "invalid_status",
-			mutate:    func(i *ListByUserReservationsInput) { bad := domain.ReservationStatus("BOGUS"); i.Status = &bad },
-			wantField: "status",
-		},
-		{
-			name: "from_after_to",
-			mutate: func(i *ListByUserReservationsInput) {
-				from := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
-				to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-				i.From = &from
-				i.To = &to
-			},
-			wantField: "from",
-		},
+		{"zero_user_id", 0, nil, nil, nil, "user_id"},
+		{"invalid_status", 1, &bad, nil, nil, "status"},
+		{"from_after_to", 1, nil, &from, &to, "from"},
 	}
-	for _, tt := range tests {
+	for _, tt := range scenarios {
 		t.Run(tt.name, func(t *testing.T) {
-			input := base
-			tt.mutate(&input)
-			repo := &mockReservationRepository{
-				listByUserView: func(context.Context, int, *domain.ReservationStatus, *time.Time, *time.Time, int, int) ([]*domain.ReservationView, error) {
-					t.Fatal("ListByUserView should not be called on validation error")
-					return nil, nil
-				},
-			}
-			uc := NewListByUserReservationsUseCase(repo)
-			_, err := uc.Execute(context.Background(), input)
-			assertValidationError(t, err, tt.wantField)
+			_, err := NewListByUserReservationsInput(tt.userID, tt.status, tt.from, tt.to, 50, 0)
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, tt.field, verr.Field)
 		})
 	}
 }

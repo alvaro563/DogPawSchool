@@ -27,7 +27,8 @@ func TestListAllActivitiesUseCase_Success(t *testing.T) {
 		},
 	}
 	uc := NewListAllActivitiesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListAllActivitiesInput{})
+	in := MustNewListAllActivitiesInput(0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, output.Activities)
 }
@@ -39,7 +40,8 @@ func TestListAllActivitiesUseCase_Empty(t *testing.T) {
 		},
 	}
 	uc := NewListAllActivitiesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListAllActivitiesInput{})
+	in := MustNewListAllActivitiesInput(0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(output.Activities))
 }
@@ -69,7 +71,8 @@ func TestListAllActivitiesUseCase_PaginationNormalization(t *testing.T) {
 				},
 			}
 			uc := NewListAllActivitiesUseCase(repo)
-			_, err := uc.Execute(context.Background(), ListAllActivitiesInput{Limit: tt.inputLimit, Offset: tt.inputOffset})
+			in := MustNewListAllActivitiesInput(tt.inputLimit, tt.inputOffset)
+			_, err := uc.Execute(context.Background(), in)
 			assert.NoError(t, err)
 		})
 	}
@@ -82,7 +85,8 @@ func TestListAllActivitiesUseCase_RepoError(t *testing.T) {
 		},
 	}
 	uc := NewListAllActivitiesUseCase(repo)
-	_, err := uc.Execute(context.Background(), ListAllActivitiesInput{})
+	in := MustNewListAllActivitiesInput(0, 0)
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "list all activities")

@@ -93,10 +93,10 @@ func validRegisterPassBody() string {
 func TestPassRegister_Success(t *testing.T) {
 	stub := &stubPassRegisterer{fn: func(ctx context.Context, in passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		// user_id comes from the path param, not the body.
-		assert.Equal(t, 1, in.UserID)
-		assert.Equal(t, 10, in.NumOfSessions)
-		assert.Equal(t, 12000, in.Price)
-		assert.Equal(t, domain.PassGeneric, in.PassType)
+		assert.Equal(t, 1, in.UserID())
+		assert.Equal(t, 10, in.NumOfSessions())
+		assert.Equal(t, 12000, in.Price())
+		assert.Equal(t, domain.PassGeneric, in.PassType())
 		return passuc.RegisterPassOutput{ID: 42}, nil
 	}}
 	h := newPassHandlerReg(stub)
@@ -218,9 +218,9 @@ func TestPassModify_Success_AllFields(t *testing.T) {
 	updatedExpiry := time.Date(2027, 12, 31, 23, 59, 59, 0, time.UTC)
 	updated.ApplyPatch(domain.PassPatch{Price: &updatedPrice, PassType: &updatedType, ExpiresAt: &updatedExpiry})
 	stub := &stubPassModifier{fn: func(ctx context.Context, in passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
-		assert.Equal(t, 1, in.ID)
-		requireNotNilHandler(t, in.Patch.Price)
-		assert.Equal(t, 15000, *in.Patch.Price)
+		assert.Equal(t, 1, in.ID())
+		requireNotNilHandler(t, in.Patch().Price)
+		assert.Equal(t, 15000, *in.Patch().Price)
 		return passuc.ModifyPassOutput{Pass: updated}, nil
 	}}
 	h := newPassHandlerMod(stub)
@@ -290,13 +290,17 @@ func TestPassModify_InvalidJSON(t *testing.T) {
 
 func TestPassModify_BindingInvalidPassType(t *testing.T) {
 	h := newPassHandlerMod(&stubPassModifier{fn: func(context.Context, passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
-		t.Fatal("use case should not be invoked for invalid pass_type")
-		return passuc.ModifyPassOutput{}, nil
+		// The factory is the sole validator (Q2). An invalid patch
+		// value (BOGUS pass_type) is caught by the domain's
+		// ApplyPatch, which the real use case translates into a
+		// ValidationError. We mirror that here.
+		return passuc.ModifyPassOutput{}, &passuc.ValidationError{Field: "pass_type"}
 	}})
 	c, w := setupCtx(http.MethodPatch, "/api/v1/passes/1", `{"pass_type":"BOGUS"}`)
 	c.Params = gin.Params{{Key: "id", Value: "1"}}
 	h.Modify(c)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"pass_type"`)
 }
 
 func TestPassModify_UseCaseValidation(t *testing.T) {
@@ -346,7 +350,7 @@ func requireNotNilHandler(t *testing.T, v any) {
 func TestPassGetByID_Success(t *testing.T) {
 	want := newTestPassForHandler(7)
 	stub := &stubPassGetter{fn: func(ctx context.Context, in passuc.GetPassInput) (passuc.GetPassOutput, error) {
-		assert.Equal(t, 7, in.ID)
+		assert.Equal(t, 7, in.ID())
 		return passuc.GetPassOutput{Pass: want}, nil
 	}}
 	h := newPassHandlerGet(stub)
@@ -413,8 +417,10 @@ func TestPassList_Success(t *testing.T) {
 		newTestPassForHandler(2),
 	}
 	stub := &stubPassLister{fn: func(ctx context.Context, in passuc.ListAllPassesInput) (passuc.ListAllPassesOutput, error) {
-		assert.Equal(t, 0, in.Limit)
-		assert.Equal(t, 0, in.Offset)
+		// The factory normalizes the raw query values (0/0 here) to
+		// the defaults (50/0) before the use case sees them.
+		assert.Equal(t, 50, in.Limit())
+		assert.Equal(t, 0, in.Offset())
 		return passuc.ListAllPassesOutput{Passes: passes}, nil
 	}}
 	h := newPassHandlerLst(stub)
@@ -442,8 +448,8 @@ func TestPassList_Empty(t *testing.T) {
 
 func TestPassList_PaginationPassesThrough(t *testing.T) {
 	stub := &stubPassLister{fn: func(ctx context.Context, in passuc.ListAllPassesInput) (passuc.ListAllPassesOutput, error) {
-		assert.Equal(t, 25, in.Limit)
-		assert.Equal(t, 10, in.Offset)
+		assert.Equal(t, 25, in.Limit())
+		assert.Equal(t, 10, in.Offset())
 		return passuc.ListAllPassesOutput{}, nil
 	}}
 	h := newPassHandlerLst(stub)
@@ -468,7 +474,7 @@ func TestPassList_InternalError(t *testing.T) {
 func TestPassListByUser_Success(t *testing.T) {
 	passes := []*domain.Pass{newTestPassForHandler(1)}
 	stub := &stubPassByUserLister{fn: func(ctx context.Context, in passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
-		assert.Equal(t, 1, in.UserID)
+		assert.Equal(t, 1, in.UserID())
 		return passuc.ListByUserPassesOutput{Passes: passes}, nil
 	}}
 	h := newPassHandlerByUser(stub)

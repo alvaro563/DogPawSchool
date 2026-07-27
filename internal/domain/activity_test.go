@@ -90,6 +90,37 @@ func TestActivity_IsInThePast_IsUpcoming(t *testing.T) {
 	assert.True(t, af.IsUpcoming(now))
 }
 
+func TestActivity_IsFinished(t *testing.T) {
+	// Activity starts at 10:00, duration 2h → ends at 12:00.
+	start := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 2, start)
+
+	t.Run("not_started", func(t *testing.T) {
+		now := time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC)
+		assert.False(t, a.IsFinished(now), "before start → not finished")
+	})
+
+	t.Run("started_not_finished", func(t *testing.T) {
+		now := time.Date(2026, 7, 27, 11, 0, 0, 0, time.UTC)
+		assert.False(t, a.IsFinished(now), "mid-activity → not finished")
+	})
+
+	t.Run("exactly_at_end", func(t *testing.T) {
+		now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+		assert.False(t, a.IsFinished(now), "at exact end → not finished (strict)")
+	})
+
+	t.Run("finished", func(t *testing.T) {
+		now := time.Date(2026, 7, 27, 12, 0, 1, 0, time.UTC)
+		assert.True(t, a.IsFinished(now), "1s after end → finished")
+	})
+
+	t.Run("long_ago", func(t *testing.T) {
+		now := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
+		assert.True(t, a.IsFinished(now), "next day → finished")
+	})
+}
+
 func TestActivity_TypePredicates(t *testing.T) {
 	date := time.Now()
 	individual, _ := domain.NewActivity(1, "n", "l", domain.TypeIndividual, 1, 1, date)
@@ -205,4 +236,29 @@ func TestActivity_ApplyPatch(t *testing.T) {
 func TestActivityValidationError_Error(t *testing.T) {
 	err := &domain.ActivityValidationError{Field: "name"}
 	assert.Equal(t, "activity: invalid value for name", err.Error())
+}
+
+func TestActivity_Close(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, time.Now())
+		assert.False(t, a.IsClosed())
+		assert.NoError(t, a.Close())
+		assert.True(t, a.IsClosed())
+	})
+
+	t.Run("already_closed", func(t *testing.T) {
+		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, time.Now())
+		assert.NoError(t, a.Close())
+		assert.Error(t, a.Close(), "second Close should fail")
+		assert.True(t, a.IsClosed())
+	})
+}
+
+func TestActivity_SetClosed(t *testing.T) {
+	a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, time.Now())
+	assert.False(t, a.IsClosed())
+	a.SetClosed(true)
+	assert.True(t, a.IsClosed())
+	a.SetClosed(false)
+	assert.False(t, a.IsClosed())
 }

@@ -8,19 +8,36 @@ import (
 )
 
 // ListAllActivitiesInput is the paginated request for listing every
-// activity in the system.
+// activity. The pagination is already normalized by the factory.
 type ListAllActivitiesInput struct {
-	Limit  int
-	Offset int
+	limit  int
+	offset int
 }
 
-// ListAllActivitiesOutput carries the result page.
+func (in ListAllActivitiesInput) Limit() int  { return in.limit }
+func (in ListAllActivitiesInput) Offset() int { return in.offset }
+
+// NewListAllActivitiesInput normalizes pagination. Error is always
+// nil for pure-pagination inputs; it is returned to keep the
+// factory signature uniform.
+func NewListAllActivitiesInput(limit, offset int) (ListAllActivitiesInput, error) {
+	limit, offset = normalizePagination(limit, offset)
+	return ListAllActivitiesInput{limit: limit, offset: offset}, nil
+}
+
+// MustNewListAllActivitiesInput panics on error. For tests.
+func MustNewListAllActivitiesInput(limit, offset int) ListAllActivitiesInput {
+	in, err := NewListAllActivitiesInput(limit, offset)
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
 type ListAllActivitiesOutput struct {
 	Activities []*domain.Activity
 }
 
-// ListAllActivitiesUseCase returns a paginated list of all
-// activities, most recent first.
 type ListAllActivitiesUseCase struct {
 	repo domain.ActivityRepository
 }
@@ -30,8 +47,7 @@ func NewListAllActivitiesUseCase(repo domain.ActivityRepository) *ListAllActivit
 }
 
 func (uc *ListAllActivitiesUseCase) Execute(ctx context.Context, input ListAllActivitiesInput) (ListAllActivitiesOutput, error) {
-	limit, offset := NormalizePagination(input.Limit, input.Offset)
-	activities, err := uc.repo.List(ctx, limit, offset)
+	activities, err := uc.repo.List(ctx, input.Limit(), input.Offset())
 	if err != nil {
 		return ListAllActivitiesOutput{}, fmt.Errorf("list all activities: %w", err)
 	}

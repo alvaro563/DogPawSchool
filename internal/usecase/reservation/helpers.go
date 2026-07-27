@@ -1,14 +1,12 @@
 package reservation
 
-// NormalizePagination clamps a (limit, offset) pair to the bounds
-// used by every list endpoint in this module: limit defaults to
-// 50, offset to 0, limit is capped at 100. The same rules are
-// used by the pass and activity packages; the duplication is
-// tracked as a follow-up to extract a shared package.
-//
-// Negative inputs are treated as the default (the standard "missing
-// query param" semantics for an Atoi that returns 0 on empty).
-func NormalizePagination(limit, offset int) (int, int) {
+// normalizePagination clamps a (limit, offset) pair to the bounds
+// used by every list input in this package. A non-positive limit
+// falls back to 50, a limit above 100 is capped, and a negative
+// offset is reset to 0. Pagination normalization is the only place
+// where these rules live: every list input factory calls this so
+// the use case can trust the values it gets.
+func normalizePagination(limit, offset int) (int, int) {
 	if limit <= 0 {
 		limit = 50
 	}

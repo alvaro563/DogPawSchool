@@ -36,7 +36,8 @@ func TestModifyActivityUseCase_Success(t *testing.T) {
 		Name:        &newName,
 		MaxCapacity: &newCapacity,
 	}
-	output, err := uc.Execute(context.Background(), ModifyActivityInput{ID: 1, Patch: patch})
+	in := MustNewModifyActivityInput(1, patch)
+	output, err := uc.Execute(context.Background(), in)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "Paseo Largo", output.Activity.Name())
@@ -57,7 +58,8 @@ func TestModifyActivityUseCase_EmptyPatchIsNoOp(t *testing.T) {
 		},
 	}
 	uc := NewModifyActivityUseCase(repo)
-	output, err := uc.Execute(context.Background(), ModifyActivityInput{ID: 1, Patch: domain.ActivityPatch{}})
+	in := MustNewModifyActivityInput(1, domain.ActivityPatch{})
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, "Paseo", output.Activity.Name())
 }
@@ -73,15 +75,15 @@ func TestModifyActivityUseCase_NotFound(t *testing.T) {
 		},
 	}
 	uc := NewModifyActivityUseCase(repo)
-	_, err := uc.Execute(context.Background(), ModifyActivityInput{ID: 99, Patch: domain.ActivityPatch{}})
+	in := MustNewModifyActivityInput(99, domain.ActivityPatch{})
+	_, err := uc.Execute(context.Background(), in)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestModifyActivityUseCase_InvalidID(t *testing.T) {
-	uc := NewModifyActivityUseCase(&mockActivityRepository{})
-	_, err := uc.Execute(context.Background(), ModifyActivityInput{ID: 0, Patch: domain.ActivityPatch{}})
+func TestNewModifyActivityInput_InvalidID(t *testing.T) {
+	_, err := NewModifyActivityInput(0, domain.ActivityPatch{})
 	assertValidationError(t, err, "id")
-	_, err = uc.Execute(context.Background(), ModifyActivityInput{ID: -1, Patch: domain.ActivityPatch{}})
+	_, err = NewModifyActivityInput(-1, domain.ActivityPatch{})
 	assertValidationError(t, err, "id")
 }
 
@@ -119,7 +121,8 @@ func TestModifyActivityUseCase_PatchValidationErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := uc.Execute(context.Background(), ModifyActivityInput{ID: 1, Patch: tt.patch})
+			in := MustNewModifyActivityInput(1, tt.patch)
+			_, err := uc.Execute(context.Background(), in)
 			assertValidationError(t, err, tt.wantField)
 		})
 	}
@@ -141,7 +144,8 @@ func TestModifyActivityUseCase_RepoError(t *testing.T) {
 	}
 	uc := NewModifyActivityUseCase(repo)
 	newName := "Whatever"
-	_, err := uc.Execute(context.Background(), ModifyActivityInput{ID: 1, Patch: domain.ActivityPatch{Name: &newName}})
+	in := MustNewModifyActivityInput(1, domain.ActivityPatch{Name: &newName})
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, sentinelErr))
 	assert.Contains(t, err.Error(), "update activity 1")

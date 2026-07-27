@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"dogpaw/internal/domain"
-	"dogpaw/internal/repository/postgres"
 	activityuc "dogpaw/internal/usecase/activity"
 	doguc "dogpaw/internal/usecase/dog"
 	incompatuc "dogpaw/internal/usecase/incompatibility"
@@ -21,6 +20,10 @@ import (
 
 type DogRegistrar interface {
 	Execute(ctx context.Context, input doguc.RegisterDogInput) (doguc.RegisterDogOutput, error)
+}
+
+type DogGetter interface {
+	Execute(ctx context.Context, input doguc.GetDogInput) (doguc.GetDogOutput, error)
 }
 
 type DogLister interface {
@@ -93,6 +96,7 @@ type DogHeatSetter interface {
 
 type DogHandler struct {
 	register              DogRegistrar
+	get                   DogGetter
 	list                  DogLister
 	listByOwner           DogListerByOwner
 	listActive            DogActiveLister
@@ -114,6 +118,7 @@ type DogHandler struct {
 
 func NewDogHandler(
 	register DogRegistrar,
+	get DogGetter,
 	list DogLister,
 	listByOwner DogListerByOwner,
 	listActive DogActiveLister,
@@ -134,6 +139,7 @@ func NewDogHandler(
 ) *DogHandler {
 	return &DogHandler{
 		register:              register,
+		get:                   get,
 		list:                  list,
 		listByOwner:           listByOwner,
 		listActive:            listActive,
@@ -159,7 +165,7 @@ func NewDogHandler(
 // @Description  Creates a new dog record owned by a user. The new resource URL is returned in the Location header.
 // @Tags         dogs
 // @Accept       json
-// @Produce      json
+// @Produce       json
 // @Param        dog  body      registerDogRequest  true  "Dog to register"
 // @Success      201  {object}  registerDogResponse  "Dog created successfully"
 // @Failure      400  {object}  errorResponse         "Invalid request body, missing fields, validation error, or invalid user_id"
@@ -176,15 +182,17 @@ func (h *DogHandler) Register(c *gin.Context) {
 		return
 	}
 
-	output, err := h.register.Execute(c.Request.Context(), doguc.RegisterDogInput{
-		Name:        request.Name,
-		Breed:       request.Breed,
-		AgeInMonths: request.AgeInMonths,
-		Sex:         domain.Sex(request.Sex),
-		WeightKg:    request.WeightKg,
-		Passport:    request.Passport,
-		UserID:      request.UserID,
-	})
+	in, err := doguc.NewRegisterDogInput(
+		request.Name, request.Breed, request.Passport,
+		request.AgeInMonths, domain.Sex(request.Sex),
+		request.WeightKg, request.UserID,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.register.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -192,6 +200,36 @@ func (h *DogHandler) Register(c *gin.Context) {
 
 	c.Header("Location", fmt.Sprintf("/api/v1/dogs/%d", output.ID))
 	c.JSON(http.StatusCreated, registerDogResponse{ID: output.ID})
+}
+
+// GetByID godoc
+// @Summary      Get a dog by ID
+// @Description  Returns the full dog record including incompatibilities.
+// @Tags         dogs
+// @Produce      json
+// @Param        id   path  int  true  "Dog ID"
+// @Success      200  {object}  dogDTO
+// @Failure      400  {object}  errorResponse  "Invalid id"
+// @Failure      404  {object}  errorResponse  "Dog not found"
+// @Failure      500  {object}  errorResponse  "Internal server error"
+// @Router       /api/v1/dogs/{id} [get]
+func (h *DogHandler) GetByID(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
+		return
+	}
+	in, err := doguc.NewGetDogInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.get.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toDogDTO(output.Dog))
 }
 
 // List godoc
@@ -208,27 +246,13 @@ func (h *DogHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.list.Execute(c.Request.Context(), doguc.ListAllDogsInput{
-		Limit:  limit,
-		Offset: offset,
-	})
+	in, _ := doguc.NewListAllDogsInput(limit, offset)
+	output, err := h.list.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-
-	dtos := make([]dogDTO, len(output.Dogs))
-	for i, dog := range output.Dogs {
-		dtos[i] = toDogDTO(dog)
-	}
-
-	normalizedLimit, normalizedOffset := doguc.NormalizePagination(limit, offset)
-	c.JSON(http.StatusOK, listDogsResponse{
-		Dogs:   dtos,
-		Limit:  normalizedLimit,
-		Offset: normalizedOffset,
-		Count:  len(dtos),
-	})
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListByOwner godoc
@@ -256,28 +280,18 @@ func (h *DogHandler) ListByOwner(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listByOwner.Execute(c.Request.Context(), doguc.ListByOwnerInput{
-		OwnerID: ownerID,
-		Limit:   limit,
-		Offset:  offset,
-	})
+	in, err := doguc.NewListByOwnerInput(ownerID, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	dtos := make([]dogDTO, len(output.Dogs))
-	for i, dog := range output.Dogs {
-		dtos[i] = toDogDTO(dog)
+	output, err := h.listByOwner.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
 	}
-
-	normalizedLimit, normalizedOffset := doguc.NormalizePagination(limit, offset)
-	c.JSON(http.StatusOK, listDogsResponse{
-		Dogs:   dtos,
-		Limit:  normalizedLimit,
-		Offset: normalizedOffset,
-		Count:  len(dtos),
-	})
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // Modify godoc
@@ -331,10 +345,13 @@ func (h *DogHandler) Modify(c *gin.Context) {
 		patch.Sex = &sexValue
 	}
 
-	output, err := h.modify.Execute(c.Request.Context(), doguc.ModifyDogInput{
-		ID:    id,
-		Patch: patch,
-	})
+	in, err := doguc.NewModifyDogInput(id, patch)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.modify.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -376,10 +393,13 @@ func (h *DogHandler) AddIncompatibility(c *gin.Context) {
 		return
 	}
 
-	output, err := h.addIncompat.Execute(c.Request.Context(), doguc.AddDogIncompatibilityInput{
-		DogID:             dogID,
-		IncompatibilityID: request.IncompatibilityID,
-	})
+	in, err := doguc.NewAddDogIncompatibilityInput(dogID, request.IncompatibilityID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.addIncompat.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -427,10 +447,13 @@ func (h *DogHandler) RemoveIncompatibility(c *gin.Context) {
 		return
 	}
 
-	output, err := h.removeIncompat.Execute(c.Request.Context(), doguc.RemoveDogIncompatibilityInput{
-		DogID:             dogID,
-		IncompatibilityID: incompatID,
-	})
+	in, err := doguc.NewRemoveDogIncompatibilityInput(dogID, incompatID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.removeIncompat.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -457,14 +480,13 @@ func (h *DogHandler) ListActive(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listActive.Execute(c.Request.Context(), doguc.ListActiveDogsInput{
-		Limit: limit, Offset: offset,
-	})
+	in, _ := doguc.NewListActiveDogsInput(limit, offset)
+	output, err := h.listActive.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListByIsActive godoc
@@ -488,14 +510,13 @@ func (h *DogHandler) ListByIsActive(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listByIsActive.Execute(c.Request.Context(), doguc.ListByIsActiveInput{
-		IsActive: value, Limit: limit, Offset: offset,
-	})
+	in, _ := doguc.NewListByIsActiveInput(value, limit, offset)
+	output, err := h.listByIsActive.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListByIncompatibility godoc
@@ -519,14 +540,18 @@ func (h *DogHandler) ListByIncompatibility(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listByIncompatibility.Execute(c.Request.Context(), doguc.ListByIncompatibilityInput{
-		IncompatibilityID: incompatID, Limit: limit, Offset: offset,
-	})
+	in, err := doguc.NewListByIncompatibilityInput(incompatID, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+
+	output, err := h.listByIncompatibility.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListByBreed godoc
@@ -550,14 +575,18 @@ func (h *DogHandler) ListByBreed(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listByBreed.Execute(c.Request.Context(), doguc.ListByBreedInput{
-		Breed: breed, Limit: limit, Offset: offset,
-	})
+	in, err := doguc.NewListByBreedInput(breed, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+
+	output, err := h.listByBreed.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListBySex godoc
@@ -581,14 +610,18 @@ func (h *DogHandler) ListBySex(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listBySex.Execute(c.Request.Context(), doguc.ListBySexInput{
-		Sex: sex, Limit: limit, Offset: offset,
-	})
+	in, err := doguc.NewListBySexInput(sex, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+
+	output, err := h.listBySex.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListByNeutered godoc
@@ -612,14 +645,13 @@ func (h *DogHandler) ListByNeutered(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listByNeutered.Execute(c.Request.Context(), doguc.ListByNeuteredInput{
-		Neutered: value, Limit: limit, Offset: offset,
-	})
+	in, _ := doguc.NewListByNeuteredInput(value, limit, offset)
+	output, err := h.listByNeutered.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListByHeat godoc
@@ -643,14 +675,13 @@ func (h *DogHandler) ListByHeat(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listByHeat.Execute(c.Request.Context(), doguc.ListByHeatInput{
-		Heat: value, Limit: limit, Offset: offset,
-	})
+	in, _ := doguc.NewListByHeatInput(value, limit, offset)
+	output, err := h.listByHeat.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListByAgeBracket godoc
@@ -674,14 +705,18 @@ func (h *DogHandler) ListByAgeBracket(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listByAgeBracket.Execute(c.Request.Context(), doguc.ListByAgeBracketInput{
-		AgeBracket: bracket, Limit: limit, Offset: offset,
-	})
+	in, err := doguc.NewListByAgeBracketInput(bracket, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+
+	output, err := h.listByAgeBracket.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // ListBySizeBracket godoc
@@ -705,14 +740,18 @@ func (h *DogHandler) ListBySizeBracket(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	output, err := h.listBySizeBracket.Execute(c.Request.Context(), doguc.ListBySizeBracketInput{
-		SizeBracket: bracket, Limit: limit, Offset: offset,
-	})
+	in, err := doguc.NewListBySizeBracketInput(bracket, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	h.writeList(c, output.Dogs, limit, offset)
+
+	output, err := h.listBySizeBracket.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
 }
 
 // Delete godoc
@@ -732,7 +771,12 @@ func (h *DogHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
-	if _, err := h.delete.Execute(c.Request.Context(), doguc.DeleteDogInput{ID: id}); err != nil {
+	in, err := doguc.NewDeleteDogInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if _, err := h.delete.Execute(c.Request.Context(), in); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -763,10 +807,12 @@ func (h *DogHandler) SetNeutered(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	output, err := h.setNeutered.Execute(c.Request.Context(), doguc.SetDogNeuteredInput{
-		ID:       id,
-		Neutered: request.Neutered,
-	})
+	in, err := doguc.NewSetDogNeuteredInput(id, request.Neutered)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.setNeutered.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -802,10 +848,12 @@ func (h *DogHandler) SetHeat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	output, err := h.setHeat.Execute(c.Request.Context(), doguc.SetDogHeatInput{
-		ID:   id,
-		Heat: request.Heat,
-	})
+	in, err := doguc.NewSetDogHeatInput(id, request.Heat)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.setHeat.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -817,21 +865,42 @@ func (h *DogHandler) SetHeat(c *gin.Context) {
 	})
 }
 
-// writeList serializes a slice of dogs to the standard listDogsResponse.
-// Shared by every list method to keep the response shape and the
-// NormalizePagination call consistent.
-func (h *DogHandler) writeList(c *gin.Context, dogs []*domain.Dog, limit, offset int) {
+// listDogsResponse is the wire format for every dog list endpoint.
+// Defined here as a private type because it was previously embedded in
+// the response envelope; we now build it via the toListDogsResponse
+// helper that reads the (already normalized) limit/offset from the
+// validated input.
+type listDogsResponse struct {
+	Dogs   []dogDTO `json:"dogs"`
+	Limit  int      `json:"limit" example:"50"`
+	Offset int      `json:"offset" example:"0"`
+	Count  int      `json:"count" example:"1"`
+}
+
+// pagination is a tiny contract used by toListDogsResponse to read
+// the normalized limit/offset from any validated list input. Every
+// dog list input has a Limit() and Offset() method.
+type pagination interface {
+	Limit() int
+	Offset() int
+}
+
+// toListDogsResponse serializes a slice of dogs to the standard
+// listDogsResponse, reading the (already normalized) limit/offset
+// from the validated input. This is the single point where the
+// response envelope is built: every list handler in this file ends
+// with `c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))`.
+func toListDogsResponse(dogs []*domain.Dog, in pagination) listDogsResponse {
 	dtos := make([]dogDTO, len(dogs))
 	for i, dog := range dogs {
 		dtos[i] = toDogDTO(dog)
 	}
-	normalizedLimit, normalizedOffset := doguc.NormalizePagination(limit, offset)
-	c.JSON(http.StatusOK, listDogsResponse{
+	return listDogsResponse{
 		Dogs:   dtos,
-		Limit:  normalizedLimit,
-		Offset: normalizedOffset,
+		Limit:  in.Limit(),
+		Offset: in.Offset(),
 		Count:  len(dtos),
-	})
+	}
 }
 
 func writeError(c *gin.Context, err error) {
@@ -860,11 +929,11 @@ func writeError(c *gin.Context, err error) {
 		})
 		return
 	}
-	if errors.Is(err, doguc.ErrNotFound) || errors.Is(err, incompatuc.ErrNotFound) || errors.Is(err, activityuc.ErrNotFound) || errors.Is(err, passuc.ErrNotFound) || errors.Is(err, reservationuc.ErrNotFound) || errors.Is(err, reservationuc.ErrInvalidReservation) || errors.Is(err, reservationuc.ErrReservationNotOwned) || errors.Is(err, postgres.ErrNotFound) || errors.Is(err, postgres.ErrActivityNotFound) || errors.Is(err, postgres.ErrPassNotFound) || errors.Is(err, postgres.ErrReservationNotFound) {
+	if errors.Is(err, doguc.ErrNotFound) || errors.Is(err, incompatuc.ErrNotFound) || errors.Is(err, activityuc.ErrNotFound) || errors.Is(err, passuc.ErrNotFound) || errors.Is(err, reservationuc.ErrNotFound) || errors.Is(err, reservationuc.ErrInvalidReservation) || errors.Is(err, reservationuc.ErrReservationNotOwned) || errors.Is(err, domain.ErrNotFound) {
 		c.JSON(http.StatusNotFound, errorResponse{Error: "not_found"})
 		return
 	}
-	if errors.Is(err, postgres.ErrInvalidUser) || errors.Is(err, postgres.ErrInvalidPassUser) || errors.Is(err, passuc.ErrInvalidUserID) {
+	if errors.Is(err, domain.ErrInvalidUserReference) || errors.Is(err, passuc.ErrInvalidUserID) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user_id"})
 		return
 	}
@@ -876,12 +945,28 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "activity_in_past"})
 		return
 	}
+	if errors.Is(err, reservationuc.ErrActivityNotStarted) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "activity_not_started"})
+		return
+	}
 	if errors.Is(err, reservationuc.ErrActivityFull) || errors.Is(err, reservationuc.ErrDuplicateReservationForDog) || errors.Is(err, reservationuc.ErrAlreadyCancelled) {
 		c.JSON(http.StatusConflict, errorResponse{Error: mapReservationConflictError(err)})
 		return
 	}
 	if errors.Is(err, reservationuc.ErrInvalidDog) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_dog_id"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrNotCancellable) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "not_cancellable"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrActivityNotFinished) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "activity_not_finished"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrNotCompletable) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "not_completable"})
 		return
 	}
 	if errors.Is(err, reservationuc.ErrInvalidPass) {
@@ -896,11 +981,23 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "pass_expired"})
 		return
 	}
-	if errors.Is(err, postgres.ErrDuplicatePassport) {
+	if errors.Is(err, activityuc.ErrNotFinished) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "activity_not_finished"})
+		return
+	}
+	if errors.Is(err, activityuc.ErrAlreadyClosed) || errors.Is(err, activityuc.ErrReservationNotConfirmed) {
+		c.JSON(http.StatusConflict, errorResponse{Error: mapActivityCloseError(err)})
+		return
+	}
+	if errors.Is(err, activityuc.ErrReservationNotFound) || errors.Is(err, activityuc.ErrReservationNotInActivity) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_reservation_id"})
+		return
+	}
+	if errors.Is(err, domain.ErrDuplicatePassport) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "duplicate_passport"})
 		return
 	}
-	if errors.Is(err, postgres.ErrIncompatibilityInUse) {
+	if errors.Is(err, domain.ErrIncompatibilityInUse) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "incompatibility_in_use"})
 		return
 	}
@@ -936,14 +1033,23 @@ func mapReservationConflictError(err error) string {
 	}
 }
 
+func mapActivityCloseError(err error) string {
+	switch {
+	case errors.Is(err, activityuc.ErrAlreadyClosed):
+		return "already_closed"
+	default:
+		return "reservation_not_confirmed"
+	}
+}
+
 type registerDogRequest struct {
-	Name        string  `json:"name" binding:"required,min=1,max=120" example:"Luna"`
-	Breed       string  `json:"breed" binding:"required,min=1,max=120" example:"Labrador"`
-	AgeInMonths int     `json:"age_in_months" binding:"required,gt=0" example:"24"`
-	Sex         string  `json:"sex" binding:"required,oneof=MALE FEMALE" example:"FEMALE"`
-	WeightKg    float64 `json:"weight_kg" binding:"required,gt=0" example:"22.5"`
-	Passport    string  `json:"passport" binding:"required,min=1,max=64" example:"ES-12345"`
-	UserID      int     `json:"user_id" binding:"required,gt=0" example:"1"`
+	Name        string  `json:"name" example:"Luna"`
+	Breed       string  `json:"breed" example:"Labrador"`
+	AgeInMonths int     `json:"age_in_months" example:"24"`
+	Sex         string  `json:"sex" example:"FEMALE"`
+	WeightKg    float64 `json:"weight_kg" example:"22.5"`
+	Passport    string  `json:"passport" example:"ES-12345"`
+	UserID      int     `json:"user_id" example:"1"`
 }
 
 type registerDogResponse struct {
@@ -968,13 +1074,6 @@ type dogDTO struct {
 	Incompatibilities []incompatibilityDTO `json:"incompatibilities"`
 }
 
-type listDogsResponse struct {
-	Dogs   []dogDTO `json:"dogs"`
-	Limit  int      `json:"limit" example:"50"`
-	Offset int      `json:"offset" example:"0"`
-	Count  int      `json:"count" example:"1"`
-}
-
 type modifyDogRequest struct {
 	Name          *string  `json:"name,omitempty" example:"Buddie"`
 	Breed         *string  `json:"breed,omitempty" example:"Labrador"`
@@ -995,7 +1094,7 @@ type modifyDogResponse struct {
 }
 
 type addIncompatibilityRequest struct {
-	IncompatibilityID int `json:"incompatibility_id" binding:"required,gt=0" example:"3"`
+	IncompatibilityID int `json:"incompatibility_id" example:"3"`
 }
 
 type addIncompatibilityResponse struct {

@@ -7,9 +7,29 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// GetPassInput is the input for fetching a single pass by id.
+// GetPassInput is the validated input for fetching a single pass
+// by id.
 type GetPassInput struct {
-	ID int
+	id int
+}
+
+func (in GetPassInput) ID() int { return in.id }
+
+// NewGetPassInput validates id > 0.
+func NewGetPassInput(id int) (GetPassInput, error) {
+	if id <= 0 {
+		return GetPassInput{}, &ValidationError{Field: "id"}
+	}
+	return GetPassInput{id: id}, nil
+}
+
+// MustNewGetPassInput panics on validation error. For tests.
+func MustNewGetPassInput(id int) GetPassInput {
+	in, err := NewGetPassInput(id)
+	if err != nil {
+		panic(err)
+	}
+	return in
 }
 
 // GetPassOutput carries the requested pass.
@@ -27,12 +47,9 @@ func NewGetPassUseCase(repo domain.PassRepository) *GetPassUseCase {
 }
 
 func (uc *GetPassUseCase) Execute(ctx context.Context, input GetPassInput) (GetPassOutput, error) {
-	if input.ID <= 0 {
-		return GetPassOutput{}, &ValidationError{Field: "id"}
-	}
-	pass, err := uc.repo.GetByID(ctx, input.ID)
+	pass, err := uc.repo.GetByID(ctx, input.ID())
 	if err != nil {
-		return GetPassOutput{}, fmt.Errorf("get pass %d: %w", input.ID, err)
+		return GetPassOutput{}, fmt.Errorf("get pass %d: %w", input.ID(), err)
 	}
 	if pass == nil {
 		return GetPassOutput{}, ErrNotFound

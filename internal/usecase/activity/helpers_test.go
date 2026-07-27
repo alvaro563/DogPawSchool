@@ -2,7 +2,11 @@ package activity
 
 import (
 	"context"
+	"errors"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"dogpaw/internal/domain"
 )
@@ -66,4 +70,18 @@ func (m *mockActivityRepository) ListUpcoming(ctx context.Context, limit, offset
 // Use it inside tests where the input is known to be valid.
 func mustNewActivity(id int, name, location string, activityType domain.ActivityType, maxCapacity, durationInHours int, date time.Time) *domain.Activity {
 	return domain.MustNewActivity(id, name, location, activityType, maxCapacity, durationInHours, date)
+}
+
+// sentinelErr is a small, import-free error used in tests to verify
+// that repository errors are wrapped correctly.
+var sentinelErr = errors.New("repo failure")
+
+// assertValidationError is a small helper shared by all use case
+// tests: it asserts err is a *ValidationError with the expected field.
+func assertValidationError(t *testing.T, err error, wantField string) {
+	t.Helper()
+	var validationErr *ValidationError
+	if assert.True(t, errors.As(err, &validationErr), "expected ValidationError, got %T (%v)", err, err) {
+		assert.Equal(t, wantField, validationErr.Field)
+	}
 }

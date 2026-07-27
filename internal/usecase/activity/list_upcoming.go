@@ -10,17 +10,33 @@ import (
 // ListUpcomingActivitiesInput is the paginated request for listing
 // activities scheduled at or after the current time.
 type ListUpcomingActivitiesInput struct {
-	Limit  int
-	Offset int
+	limit  int
+	offset int
 }
 
-// ListUpcomingActivitiesOutput carries the result page, soonest first.
+func (in ListUpcomingActivitiesInput) Limit() int  { return in.limit }
+func (in ListUpcomingActivitiesInput) Offset() int { return in.offset }
+
+// NewListUpcomingActivitiesInput normalizes pagination. Error is
+// always nil; the factory exists for uniform signature.
+func NewListUpcomingActivitiesInput(limit, offset int) (ListUpcomingActivitiesInput, error) {
+	limit, offset = normalizePagination(limit, offset)
+	return ListUpcomingActivitiesInput{limit: limit, offset: offset}, nil
+}
+
+// MustNewListUpcomingActivitiesInput panics on error. For tests.
+func MustNewListUpcomingActivitiesInput(limit, offset int) ListUpcomingActivitiesInput {
+	in, err := NewListUpcomingActivitiesInput(limit, offset)
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
 type ListUpcomingActivitiesOutput struct {
 	Activities []*domain.Activity
 }
 
-// ListUpcomingActivitiesUseCase returns a paginated list of upcoming
-// activities, soonest first.
 type ListUpcomingActivitiesUseCase struct {
 	repo domain.ActivityRepository
 }
@@ -30,8 +46,7 @@ func NewListUpcomingActivitiesUseCase(repo domain.ActivityRepository) *ListUpcom
 }
 
 func (uc *ListUpcomingActivitiesUseCase) Execute(ctx context.Context, input ListUpcomingActivitiesInput) (ListUpcomingActivitiesOutput, error) {
-	limit, offset := NormalizePagination(input.Limit, input.Offset)
-	activities, err := uc.repo.ListUpcoming(ctx, limit, offset)
+	activities, err := uc.repo.ListUpcoming(ctx, input.Limit(), input.Offset())
 	if err != nil {
 		return ListUpcomingActivitiesOutput{}, fmt.Errorf("list upcoming activities: %w", err)
 	}

@@ -31,6 +31,22 @@ func (s *stubReservationCanceler) Execute(ctx context.Context, in reservationuc.
 	return s.fn(ctx, in)
 }
 
+type stubReservationNoShower struct {
+	fn func(ctx context.Context, in reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error)
+}
+
+func (s *stubReservationNoShower) Execute(ctx context.Context, in reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+	return s.fn(ctx, in)
+}
+
+type stubReservationCompleter struct {
+	fn func(ctx context.Context, in reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error)
+}
+
+func (s *stubReservationCompleter) Execute(ctx context.Context, in reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+	return s.fn(ctx, in)
+}
+
 func newReservationHandler(
 	reg ReservationRegisterer,
 	cancel ReservationCanceler,
@@ -40,16 +56,18 @@ func newReservationHandler(
 	listByDog ReservationListerByDog,
 	listByPass ReservationListerByPass,
 	listByActivity ReservationListerByActivity,
+	noShow ReservationNoShower,
+	complete ReservationCompleter,
 ) *ReservationHandler {
-	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity)
+	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity, noShow, complete)
 }
 
 func newReservationHandlerReg(reg ReservationRegisterer) *ReservationHandler {
-	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerCancel(cancel ReservationCanceler) *ReservationHandler {
-	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // newCancelledReservation builds a domain.Reservation in the given
@@ -73,10 +91,10 @@ func validRegisterReservationBody() string {
 func TestReservationRegister_Success(t *testing.T) {
 	stub := &stubReservationRegisterer{
 		fn: func(_ context.Context, in reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
-			assert.Equal(t, 1, in.UserID, "user_id comes from the path, not the body")
-			assert.Equal(t, 42, in.ActivityID)
-			assert.Equal(t, 7, in.DogID)
-			assert.Equal(t, 3, in.PassID)
+			assert.Equal(t, 1, in.UserID(), "user_id comes from the path, not the body")
+			assert.Equal(t, 42, in.ActivityID())
+			assert.Equal(t, 7, in.DogID())
+			assert.Equal(t, 3, in.PassID())
 			return reservationuc.RegisterReservationOutput{ID: 99}, nil
 		},
 	}
@@ -156,7 +174,11 @@ func TestReservationRegister_MissingFields(t *testing.T) {
 	h.Register(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), `"error":"invalid_request"`)
+	// The factory is the sole validator (Q2). Zero ids in the body
+	// are caught by NewRegisterReservationInput, not by gin binding,
+	// so the response is the standard validation envelope with the
+	// field name.
+	assert.Contains(t, w.Body.String(), `"field":"activity_id"`)
 }
 
 // TestReservationRegister_UseCaseValidation verifies that a
@@ -290,8 +312,8 @@ func TestReservationCancel_SuccessInTime(t *testing.T) {
 	reservation := newCancelledReservation(99, domain.StatusCancelledInTime)
 	stub := &stubReservationCanceler{
 		fn: func(_ context.Context, in reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
-			assert.Equal(t, 1, in.UserID, "user_id comes from the path, not the body")
-			assert.Equal(t, 99, in.ReservationID)
+			assert.Equal(t, 1, in.UserID(), "user_id comes from the path, not the body")
+			assert.Equal(t, 99, in.ReservationID())
 			return reservationuc.CancelReservationOutput{Reservation: reservation}, nil
 		},
 	}
@@ -512,27 +534,35 @@ func (s *stubReservationListerByActivity) Execute(ctx context.Context, in reserv
 }
 
 func newReservationHandlerGet(get ReservationGetter) *ReservationHandler {
-	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByUser(l ReservationListerByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListUpcoming(l ReservationListerUpcomingByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByDog(l ReservationListerByDog) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByPass(l ReservationListerByPass) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil, nil, nil)
 }
 
 func newReservationHandlerListByActivity(l ReservationListerByActivity) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l, nil, nil)
+}
+
+func newReservationHandlerNoShow(noShow ReservationNoShower) *ReservationHandler {
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, noShow, nil)
+}
+
+func newReservationHandlerComplete(complete ReservationCompleter) *ReservationHandler {
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, complete)
 }
 
 func sampleViewOwnedBy(userID int) *domain.ReservationView {
@@ -581,8 +611,8 @@ func mustSampleReservationView(
 func TestListByUser_Success(t *testing.T) {
 	stub := &stubReservationListerByUser{
 		fn: func(_ context.Context, in reservationuc.ListByUserReservationsInput) (reservationuc.ListByUserReservationsOutput, error) {
-			assert.Equal(t, 1, in.UserID)
-			assert.Equal(t, 50, in.Limit)
+			assert.Equal(t, 1, in.UserID())
+			assert.Equal(t, 50, in.Limit())
 			return reservationuc.ListByUserReservationsOutput{Views: []*domain.ReservationView{sampleViewOwnedBy(1)}}, nil
 		},
 	}
@@ -597,6 +627,7 @@ func TestListByUser_Success(t *testing.T) {
 	assert.Equal(t, 1, len(body.Reservations))
 	assert.Equal(t, "Luna", body.Reservations[0].DogName)
 	assert.Equal(t, "Paseo Río", body.Reservations[0].ActivityName)
+	assert.False(t, body.Reservations[0].ActivityClosed)
 }
 
 func TestListByUser_InvalidUserID(t *testing.T) {
@@ -642,7 +673,7 @@ func TestListByUser_InvalidTimeFilter(t *testing.T) {
 func TestListUpcomingByUser_Success(t *testing.T) {
 	stub := &stubReservationListerUpcomingByUser{
 		fn: func(_ context.Context, in reservationuc.ListUpcomingByUserInput) (reservationuc.ListUpcomingByUserOutput, error) {
-			assert.Equal(t, 1, in.UserID)
+			assert.Equal(t, 1, in.UserID())
 			return reservationuc.ListUpcomingByUserOutput{Views: []*domain.ReservationView{sampleViewOwnedBy(1)}}, nil
 		},
 	}
@@ -654,6 +685,7 @@ func TestListUpcomingByUser_Success(t *testing.T) {
 	var body listReservationsResponse
 	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, 1, body.Count)
+	assert.False(t, body.Reservations[0].ActivityClosed)
 }
 
 func TestListUpcomingByUser_InvalidUserID(t *testing.T) {
@@ -672,8 +704,8 @@ func TestListUpcomingByUser_InvalidUserID(t *testing.T) {
 func TestGetByID_Success(t *testing.T) {
 	stub := &stubReservationGetter{
 		fn: func(_ context.Context, in reservationuc.GetReservationInput) (reservationuc.GetReservationOutput, error) {
-			assert.Equal(t, 1, in.UserID)
-			assert.Equal(t, 99, in.ReservationID)
+			assert.Equal(t, 1, in.UserID())
+			assert.Equal(t, 99, in.ReservationID())
 			return reservationuc.GetReservationOutput{View: sampleViewOwnedBy(1)}, nil
 		},
 	}
@@ -686,6 +718,7 @@ func TestGetByID_Success(t *testing.T) {
 	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, 42, body.Reservation.ID)
 	assert.Equal(t, "Luna", body.Reservation.DogName)
+	assert.False(t, body.Reservation.ActivityClosed)
 }
 
 func TestGetByID_NotFound(t *testing.T) {
@@ -715,7 +748,7 @@ func TestGetByID_NotOwned(t *testing.T) {
 func TestListByDog_Success(t *testing.T) {
 	stub := &stubReservationListerByDog{
 		fn: func(_ context.Context, in reservationuc.ListByDogReservationsInput) (reservationuc.ListByDogReservationsOutput, error) {
-			assert.Equal(t, 20, in.DogID)
+			assert.Equal(t, 20, in.DogID())
 			return reservationuc.ListByDogReservationsOutput{Views: []*domain.ReservationView{sampleViewOwnedBy(1)}}, nil
 		},
 	}
@@ -742,7 +775,7 @@ func TestListByDog_InvalidDogID(t *testing.T) {
 func TestListByPass_Success(t *testing.T) {
 	stub := &stubReservationListerByPass{
 		fn: func(_ context.Context, in reservationuc.ListByPassReservationsInput) (reservationuc.ListByPassReservationsOutput, error) {
-			assert.Equal(t, 30, in.PassID)
+			assert.Equal(t, 30, in.PassID())
 			return reservationuc.ListByPassReservationsOutput{Views: []*domain.ReservationView{sampleViewOwnedBy(1)}}, nil
 		},
 	}
@@ -756,7 +789,7 @@ func TestListByPass_Success(t *testing.T) {
 func TestListByActivity_Success(t *testing.T) {
 	stub := &stubReservationListerByActivity{
 		fn: func(_ context.Context, in reservationuc.ListByActivityReservationsInput) (reservationuc.ListByActivityReservationsOutput, error) {
-			assert.Equal(t, 10, in.ActivityID)
+			assert.Equal(t, 10, in.ActivityID())
 			return reservationuc.ListByActivityReservationsOutput{Views: []*domain.ReservationView{sampleViewOwnedBy(1)}}, nil
 		},
 	}
@@ -765,4 +798,343 @@ func TestListByActivity_Success(t *testing.T) {
 	c.Params = gin.Params{{Key: "id", Value: "10"}}
 	h.ListByActivity(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// ============================================================================
+// MarkNoShow endpoint tests
+// ============================================================================
+
+// newNoShowReservation builds a domain.Reservation in StatusNoShow.
+// The UC's runInTx calls reservation.MarkNoShow() which transitions
+// StatusConfirmed → StatusNoShow; the handler only serialises the
+// result, so the stub returns the post-transition state.
+func newNoShowReservation(id int) *domain.Reservation {
+	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, domain.StatusNoShow, time.Now())
+	if err != nil {
+		panic(err)
+	}
+	return reservation
+}
+
+// TestReservationMarkNoShow_Success verifies the happy-path POST
+// returns 200 with StatusNoShow.
+func TestReservationMarkNoShow_Success(t *testing.T) {
+	reservation := newNoShowReservation(99)
+	stub := &stubReservationNoShower{
+		fn: func(_ context.Context, in reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+			assert.Equal(t, 1, in.UserID())
+			assert.Equal(t, 99, in.ReservationID())
+			return reservationuc.MarkReservationNoShowOutput{Reservation: reservation}, nil
+		},
+	}
+	h := newReservationHandlerNoShow(stub)
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.MarkNoShow(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body markNoShowResponse
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 99, body.ID)
+	assert.Equal(t, "NO_SHOW", body.Status)
+}
+
+// TestReservationMarkNoShow_InvalidUserID verifies that a
+// non-numeric or non-positive path user_id yields 400 validation.
+func TestReservationMarkNoShow_InvalidUserID(t *testing.T) {
+	tests := []struct {
+		name   string
+		pathID string
+	}{
+		{"non_numeric", "abc"},
+		{"zero", "0"},
+		{"negative", "-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newReservationHandlerNoShow(&stubReservationNoShower{
+				fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+					t.Fatal("use case should not be called on bad user_id")
+					return reservationuc.MarkReservationNoShowOutput{}, nil
+				},
+			})
+			c, w := setupCtx(http.MethodPost, "/api/v1/users/"+tt.pathID+"/reservations/99/no-show", "")
+			c.Params = gin.Params{{Key: "user_id", Value: tt.pathID}, {Key: "id", Value: "99"}}
+
+			h.MarkNoShow(c)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), `"field":"user_id"`)
+		})
+	}
+}
+
+// TestReservationMarkNoShow_InvalidReservationID verifies that a
+// non-numeric or non-positive path reservation id yields 400
+// validation.
+func TestReservationMarkNoShow_InvalidReservationID(t *testing.T) {
+	tests := []struct {
+		name   string
+		pathID string
+	}{
+		{"non_numeric", "xyz"},
+		{"zero", "0"},
+		{"negative", "-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newReservationHandlerNoShow(&stubReservationNoShower{
+				fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+					t.Fatal("use case should not be called on bad reservation_id")
+					return reservationuc.MarkReservationNoShowOutput{}, nil
+				},
+			})
+			c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/no-show", "")
+			c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: tt.pathID}}
+
+			h.MarkNoShow(c)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), `"field":"reservation_id"`)
+		})
+	}
+}
+
+// TestReservationMarkNoShow_ActivityNotStarted verifies
+// ErrActivityNotStarted maps to 400 activity_not_started.
+func TestReservationMarkNoShow_ActivityNotStarted(t *testing.T) {
+	h := newReservationHandlerNoShow(&stubReservationNoShower{
+		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrActivityNotStarted
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.MarkNoShow(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"activity_not_started"`)
+}
+
+// TestReservationMarkNoShow_NotFound verifies ErrInvalidReservation
+// maps to 404.
+func TestReservationMarkNoShow_NotFound(t *testing.T) {
+	h := newReservationHandlerNoShow(&stubReservationNoShower{
+		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrInvalidReservation
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.MarkNoShow(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
+}
+
+// TestReservationMarkNoShow_NotCancellable verifies ErrNotCancellable
+// maps to 409 not_cancellable.
+func TestReservationMarkNoShow_NotCancellable(t *testing.T) {
+	h := newReservationHandlerNoShow(&stubReservationNoShower{
+		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrNotCancellable
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.MarkNoShow(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_cancellable"`)
+}
+
+// TestReservationMarkNoShow_InternalError verifies that an unknown
+// error maps to 500 internal.
+func TestReservationMarkNoShow_InternalError(t *testing.T) {
+	h := newReservationHandlerNoShow(&stubReservationNoShower{
+		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
+			return reservationuc.MarkReservationNoShowOutput{}, errors.New("db connection lost")
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.MarkNoShow(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"internal"`)
+}
+
+// ============================================================================
+// CompleteReservation endpoint tests
+// ============================================================================
+
+// newCompletedReservation builds a domain.Reservation in
+// StatusCompleted. The UC's runInTx calls reservation.Complete()
+// which transitions StatusConfirmed → StatusCompleted; the handler
+// only serialises the result, so the stub returns the
+// post-transition state.
+func newCompletedReservation(id int) *domain.Reservation {
+	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, domain.StatusCompleted, time.Now())
+	if err != nil {
+		panic(err)
+	}
+	return reservation
+}
+
+// TestReservationComplete_Success verifies the happy-path POST
+// returns 200 with StatusCompleted.
+func TestReservationComplete_Success(t *testing.T) {
+	reservation := newCompletedReservation(99)
+	stub := &stubReservationCompleter{
+		fn: func(_ context.Context, in reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+			assert.Equal(t, 1, in.UserID())
+			assert.Equal(t, 99, in.ReservationID())
+			return reservationuc.CompleteReservationOutput{Reservation: reservation}, nil
+		},
+	}
+	h := newReservationHandlerComplete(stub)
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.CompleteReservation(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body completeReservationResponse
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 99, body.ID)
+	assert.Equal(t, "COMPLETED", body.Status)
+}
+
+// TestReservationComplete_InvalidUserID verifies that a non-numeric
+// or non-positive path user_id yields 400 validation.
+func TestReservationComplete_InvalidUserID(t *testing.T) {
+	tests := []struct {
+		name   string
+		pathID string
+	}{
+		{"non_numeric", "abc"},
+		{"zero", "0"},
+		{"negative", "-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newReservationHandlerComplete(&stubReservationCompleter{
+				fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+					t.Fatal("use case should not be called on bad user_id")
+					return reservationuc.CompleteReservationOutput{}, nil
+				},
+			})
+			c, w := setupCtx(http.MethodPost, "/api/v1/users/"+tt.pathID+"/reservations/99/complete", "")
+			c.Params = gin.Params{{Key: "user_id", Value: tt.pathID}, {Key: "id", Value: "99"}}
+
+			h.CompleteReservation(c)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), `"field":"user_id"`)
+		})
+	}
+}
+
+// TestReservationComplete_InvalidReservationID verifies that a
+// non-numeric or non-positive path reservation id yields 400
+// validation.
+func TestReservationComplete_InvalidReservationID(t *testing.T) {
+	tests := []struct {
+		name   string
+		pathID string
+	}{
+		{"non_numeric", "xyz"},
+		{"zero", "0"},
+		{"negative", "-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newReservationHandlerComplete(&stubReservationCompleter{
+				fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+					t.Fatal("use case should not be called on bad reservation_id")
+					return reservationuc.CompleteReservationOutput{}, nil
+				},
+			})
+			c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/complete", "")
+			c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: tt.pathID}}
+
+			h.CompleteReservation(c)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), `"field":"reservation_id"`)
+		})
+	}
+}
+
+// TestReservationComplete_ActivityNotFinished verifies
+// ErrActivityNotFinished maps to 400 activity_not_finished.
+func TestReservationComplete_ActivityNotFinished(t *testing.T) {
+	h := newReservationHandlerComplete(&stubReservationCompleter{
+		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrActivityNotFinished
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.CompleteReservation(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"activity_not_finished"`)
+}
+
+// TestReservationComplete_NotFound verifies ErrInvalidReservation
+// maps to 404.
+func TestReservationComplete_NotFound(t *testing.T) {
+	h := newReservationHandlerComplete(&stubReservationCompleter{
+		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrInvalidReservation
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.CompleteReservation(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
+}
+
+// TestReservationComplete_NotCompletable verifies ErrNotCompletable
+// maps to 409 not_completable.
+func TestReservationComplete_NotCompletable(t *testing.T) {
+	h := newReservationHandlerComplete(&stubReservationCompleter{
+		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrNotCompletable
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.CompleteReservation(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_completable"`)
+}
+
+// TestReservationComplete_InternalError verifies that an unknown
+// error maps to 500 internal.
+func TestReservationComplete_InternalError(t *testing.T) {
+	h := newReservationHandlerComplete(&stubReservationCompleter{
+		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
+			return reservationuc.CompleteReservationOutput{}, errors.New("db connection lost")
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.CompleteReservation(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"internal"`)
 }

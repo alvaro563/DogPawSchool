@@ -12,14 +12,17 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// ErrActivityNotFound aliases the domain not-found sentinel so callers
+// match it via errors.Is(err, domain.ErrNotFound) without importing this
+// package.
 var (
-	ErrActivityNotFound = errors.New("postgres: activity not found")
+	ErrActivityNotFound = domain.ErrNotFound
 )
 
-// activitySelectClause is the 9-column projection reused by every read
+// activitySelectClause is the 8-column projection reused by every read
 // method. Keep the column order in lockstep with scanActivity.
 const activitySelectClause = `SELECT id, name, activity_type, max_capacity,
-	       location, duration_in_hours, date
+	       location, duration_in_hours, date, closed
 	FROM activities`
 
 type ActivityRepository struct {
@@ -74,12 +77,13 @@ func (repo *ActivityRepository) Update(ctx context.Context, activity *domain.Act
 	const query = `
 		UPDATE activities
 		SET name = $1, activity_type = $2, max_capacity = $3,
-		    location = $4, duration_in_hours = $5, date = $6
-		WHERE id = $7
+		    location = $4, duration_in_hours = $5, date = $6, closed = $7
+		WHERE id = $8
 	`
 	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
 		activity.Name(), string(activity.Type()), activity.MaxCapacity(),
 		activity.Location(), activity.DurationInHours(), activity.Date(),
+		activity.IsClosed(),
 		activity.ID(),
 	)
 	if err != nil {
@@ -173,17 +177,23 @@ func scanActivity(row scanner) (*domain.Activity, error) {
 		location        string
 		durationInHours int
 		activityDate    time.Time
+		closed          bool
 	)
 	if err := row.Scan(
 		&activityID, &activityName, &activityType, &maxCapacity,
-		&location, &durationInHours, &activityDate,
+		&location, &durationInHours, &activityDate, &closed,
 	); err != nil {
 		return nil, err
 	}
-	return domain.NewActivity(
+	activity, err := domain.NewActivity(
 		activityID, activityName, location,
 		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate,
 	)
+	if err != nil {
+		return nil, err
+	}
+	activity.SetClosed(closed)
+	return activity, nil
 }
 
 func mapActivityCreateError(err error) error {

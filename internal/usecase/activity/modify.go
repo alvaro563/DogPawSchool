@@ -8,22 +8,42 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// ModifyActivityInput is the input for a partial update of an
-// existing activity.
+// ModifyActivityInput is the validated command to apply a partial
+// update to an existing activity. The patch *values* are validated
+// by domain.Activity.ApplyPatch — defense in depth.
 type ModifyActivityInput struct {
-	ID    int
-	Patch domain.ActivityPatch
+	id    int
+	patch domain.ActivityPatch
 }
 
-// ModifyActivityOutput carries the post-mutation activity. The full
-// domain object is returned so the handler can serialize it
-// directly.
+func (in ModifyActivityInput) ID() int                     { return in.id }
+func (in ModifyActivityInput) Patch() domain.ActivityPatch { return in.patch }
+
+// NewModifyActivityInput validates id > 0. Empty patch is allowed
+// (Execute short-circuits to a no-op, preserving the current
+// behavior).
+func NewModifyActivityInput(id int, patch domain.ActivityPatch) (ModifyActivityInput, error) {
+	if id <= 0 {
+		return ModifyActivityInput{}, &ValidationError{Field: "id"}
+	}
+	return ModifyActivityInput{id: id, patch: patch}, nil
+}
+
+// MustNewModifyActivityInput panics on validation error. For tests.
+func MustNewModifyActivityInput(id int, patch domain.ActivityPatch) ModifyActivityInput {
+	in, err := NewModifyActivityInput(id, patch)
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
+// ModifyActivityOutput carries the post-mutation activity.
 type ModifyActivityOutput struct {
 	Activity *domain.Activity
 }
 
-// ModifyActivityUseCase applies a partial update to an activity. An
-// empty patch is a no-op and returns the unmodified activity.
+// ModifyActivityUseCase applies a partial update to an activity.
 type ModifyActivityUseCase struct {
 	repo domain.ActivityRepository
 }
@@ -33,19 +53,16 @@ func NewModifyActivityUseCase(repo domain.ActivityRepository) *ModifyActivityUse
 }
 
 func (uc *ModifyActivityUseCase) Execute(ctx context.Context, input ModifyActivityInput) (ModifyActivityOutput, error) {
-	if input.ID <= 0 {
-		return ModifyActivityOutput{}, &ValidationError{Field: "id"}
-	}
-
-	activity, err := uc.repo.GetByID(ctx, input.ID)
+	activity, err := uc.repo.GetByID(ctx, input.ID())
 	if err != nil {
-		return ModifyActivityOutput{}, fmt.Errorf("get activity %d: %w", input.ID, err)
+		return ModifyActivityOutput{}, fmt.Errorf("get activity %d: %w", input.ID(), err)
 	}
 	if activity == nil {
 		return ModifyActivityOutput{}, ErrNotFound
 	}
 
-	if err := activity.ApplyPatch(input.Patch); err != nil {
+	patch := input.Patch()
+	if err := activity.ApplyPatch(patch); err != nil {
 		var validationErr *domain.ActivityValidationError
 		if errors.As(err, &validationErr) {
 			return ModifyActivityOutput{}, &ValidationError{Field: validationErr.Field}
@@ -53,19 +70,16 @@ func (uc *ModifyActivityUseCase) Execute(ctx context.Context, input ModifyActivi
 		return ModifyActivityOutput{}, err
 	}
 
-	if isEmptyActivityPatch(input.Patch) {
+	if isEmptyActivityPatch(patch) {
 		return ModifyActivityOutput{Activity: activity}, nil
 	}
 
 	if err := uc.repo.Update(ctx, activity); err != nil {
-		return ModifyActivityOutput{}, fmt.Errorf("update activity %d: %w", input.ID, err)
+		return ModifyActivityOutput{}, fmt.Errorf("update activity %d: %w", input.ID(), err)
 	}
 	return ModifyActivityOutput{Activity: activity}, nil
 }
 
-// isEmptyActivityPatch reports whether the patch contains no fields
-// to mutate. An empty patch is a no-op and the use case short-circuits
-// before touching the database.
 func isEmptyActivityPatch(patch domain.ActivityPatch) bool {
 	return patch.Name == nil &&
 		patch.Location == nil &&

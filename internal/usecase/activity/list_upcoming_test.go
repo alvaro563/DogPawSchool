@@ -25,7 +25,8 @@ func TestListUpcomingActivitiesUseCase_Success(t *testing.T) {
 		},
 	}
 	uc := NewListUpcomingActivitiesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListUpcomingActivitiesInput{})
+	in := MustNewListUpcomingActivitiesInput(0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, output.Activities)
 }
@@ -37,7 +38,8 @@ func TestListUpcomingActivitiesUseCase_Empty(t *testing.T) {
 		},
 	}
 	uc := NewListUpcomingActivitiesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListUpcomingActivitiesInput{})
+	in := MustNewListUpcomingActivitiesInput(0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(output.Activities))
 }
@@ -49,7 +51,8 @@ func TestListUpcomingActivitiesUseCase_RepoError(t *testing.T) {
 		},
 	}
 	uc := NewListUpcomingActivitiesUseCase(repo)
-	_, err := uc.Execute(context.Background(), ListUpcomingActivitiesInput{})
+	in := MustNewListUpcomingActivitiesInput(0, 0)
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "list upcoming activities")

@@ -8,17 +8,45 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// SetDogHeatInput is the validated command to flip the heat flag of a
+// dog. Only NewSetDogHeatInput can construct one.
 type SetDogHeatInput struct {
-	ID   int
-	Heat bool
+	id   int
+	heat bool
 }
 
+func (in SetDogHeatInput) ID() int    { return in.id }
+func (in SetDogHeatInput) Heat() bool { return in.heat }
+
+// NewSetDogHeatInput validates id > 0. The "heat only on female dogs"
+// invariant is enforced inside domain.Dog.SetHeat, not here.
+func NewSetDogHeatInput(id int, heat bool) (SetDogHeatInput, error) {
+	if id <= 0 {
+		return SetDogHeatInput{}, &ValidationError{Field: "id"}
+	}
+	return SetDogHeatInput{id: id, heat: heat}, nil
+}
+
+// MustNewSetDogHeatInput panics on validation error. For tests.
+func MustNewSetDogHeatInput(id int, heat bool) SetDogHeatInput {
+	in, err := NewSetDogHeatInput(id, heat)
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
+// SetDogHeatOutput is the post-mutation snapshot of the dog.
 type SetDogHeatOutput struct {
 	ID   int
 	Heat bool
 	Sex  domain.Sex
 }
 
+// SetDogHeatUseCase toggles the heat flag through the aggregate. The
+// "heat only on female dogs" invariant lives in the entity
+// (dog.SetHeat); a DogValidationError from the entity is translated
+// into the use-case-facing ErrInvalidHeatForSex sentinel.
 type SetDogHeatUseCase struct {
 	repo domain.DogRepository
 }
@@ -28,29 +56,26 @@ func NewSetDogHeatUseCase(repo domain.DogRepository) *SetDogHeatUseCase {
 }
 
 func (uc *SetDogHeatUseCase) Execute(ctx context.Context, input SetDogHeatInput) (SetDogHeatOutput, error) {
-	if input.ID <= 0 {
-		return SetDogHeatOutput{}, &ValidationError{Field: "id"}
-	}
-	dog, err := uc.repo.GetByID(ctx, input.ID)
+	dog, err := uc.repo.GetByID(ctx, input.ID())
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return SetDogHeatOutput{}, ErrNotFound
+		}
 		return SetDogHeatOutput{}, fmt.Errorf("set dog heat: %w", err)
 	}
-	// Business rule: heat=true is only valid for female dogs. The DB does
-	// not enforce this (the column is just a bool) so the use case is
-	// the gate. heat=false is always allowed.
-	if input.Heat && dog.Sex() != domain.SexFemale {
-		return SetDogHeatOutput{}, ErrInvalidHeatForSex
+	if err := dog.SetHeat(input.Heat()); err != nil {
+		var validationErr *domain.DogValidationError
+		if errors.As(err, &validationErr) && validationErr.Field == "heat" {
+			return SetDogHeatOutput{}, ErrInvalidHeatForSex
+		}
+		return SetDogHeatOutput{}, fmt.Errorf("set dog heat: %w", err)
 	}
-	if err := uc.repo.SetDogHeat(ctx, input.ID, input.Heat); err != nil {
+	if err := uc.repo.Update(ctx, dog); err != nil {
 		return SetDogHeatOutput{}, fmt.Errorf("set dog heat: %w", err)
 	}
 	return SetDogHeatOutput{
-		ID:   input.ID,
-		Heat: input.Heat,
+		ID:   dog.ID(),
+		Heat: dog.Heat(),
 		Sex:  dog.Sex(),
 	}, nil
 }
-
-// Compile-time check that ErrInvalidHeatForSex is the kind of error the
-// handler can map to 400 via errors.Is.
-var _ = errors.Is(ErrInvalidHeatForSex, ErrInvalidHeatForSex)

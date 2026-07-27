@@ -199,9 +199,7 @@ func (s *stubDogRepository) ListByAgeBracket(ctx context.Context, _ domain.AgeBr
 func (s *stubDogRepository) ListBySizeBracket(ctx context.Context, _ domain.SizeBracket, _, _ int) ([]*domain.Dog, error) {
 	return nil, nil
 }
-func (s *stubDogRepository) SetDogNeutered(ctx context.Context, _ int, _ bool) error { return nil }
-func (s *stubDogRepository) SetDogHeat(ctx context.Context, _ int, _ bool) error     { return nil }
-func (s *stubDogRepository) Delete(ctx context.Context, _ int) error                 { return nil }
+func (s *stubDogRepository) Delete(ctx context.Context, _ int) error { return nil }
 
 // stubPassRepository is the local mock for the pass repo. The use
 // case calls GetByID, Update, and AddMovement.

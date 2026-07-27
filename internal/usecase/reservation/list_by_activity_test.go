@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,18 +20,15 @@ func TestListByActivityReservationsUseCase_Success(t *testing.T) {
 		},
 	}
 	uc := NewListByActivityReservationsUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListByActivityReservationsInput{ActivityID: 10, Limit: 50, Offset: 0})
+	output, err := uc.Execute(context.Background(), MustNewListByActivityReservationsInput(10, 50, 0))
 	require.NoError(t, err)
 	assert.Len(t, output.Views, 1)
 }
 
-func TestListByActivityReservationsUseCase_ZeroActivityID(t *testing.T) {
-	uc := NewListByActivityReservationsUseCase(&mockReservationRepository{
-		listByActivityView: func(context.Context, int, int, int) ([]*domain.ReservationView, error) {
-			t.Fatal("ListByActivityView should not be called on validation error")
-			return nil, nil
-		},
-	})
-	_, err := uc.Execute(context.Background(), ListByActivityReservationsInput{ActivityID: 0, Limit: 50, Offset: 0})
-	assertValidationError(t, err, "activity_id")
+func TestNewListByActivityReservationsInput_ZeroActivityID(t *testing.T) {
+	_, err := NewListByActivityReservationsInput(0, 50, 0)
+	assert.Error(t, err)
+	var verr *ValidationError
+	assert.True(t, errors.As(err, &verr))
+	assert.Equal(t, "activity_id", verr.Field)
 }

@@ -10,11 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dogpaw/internal/domain"
-	"dogpaw/internal/repository/postgres"
 )
 
 func validGetInput() GetReservationInput {
-	return GetReservationInput{UserID: 1, ReservationID: 99}
+	return MustNewGetReservationInput(1, 99)
 }
 
 // makeOwnedView returns a ReservationView whose dog is owned by
@@ -26,6 +25,28 @@ func makeOwnedView(id, userID int) *domain.ReservationView {
 		"Paseo", "Park", time.Now().Add(7*24*time.Hour),
 		"Luna", 5,
 	)
+}
+
+func TestNewGetReservationInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		user  int
+		resID int
+		field string
+	}{
+		{"zero_user_id", 0, 99, "user_id"},
+		{"zero_reservation_id", 1, 0, "reservation_id"},
+		{"negative_reservation_id", 1, -1, "reservation_id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewGetReservationInput(tt.user, tt.resID)
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, tt.field, verr.Field)
+		})
+	}
 }
 
 func TestGetReservationUseCase_Success(t *testing.T) {
@@ -42,49 +63,10 @@ func TestGetReservationUseCase_Success(t *testing.T) {
 	assert.Same(t, view, output.View)
 }
 
-func TestGetReservationUseCase_ValidationErrors(t *testing.T) {
-	tests := []struct {
-		name      string
-		mutate    func(input *GetReservationInput)
-		wantField string
-	}{
-		{
-			name:      "zero_user_id",
-			mutate:    func(i *GetReservationInput) { i.UserID = 0 },
-			wantField: "user_id",
-		},
-		{
-			name:      "zero_reservation_id",
-			mutate:    func(i *GetReservationInput) { i.ReservationID = 0 },
-			wantField: "reservation_id",
-		},
-		{
-			name:      "negative_reservation_id",
-			mutate:    func(i *GetReservationInput) { i.ReservationID = -1 },
-			wantField: "reservation_id",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			input := validGetInput()
-			tt.mutate(&input)
-			repo := &mockReservationRepository{
-				getView: func(context.Context, int) (*domain.ReservationView, error) {
-					t.Fatal("GetView should not be called on validation error")
-					return nil, nil
-				},
-			}
-			uc := NewGetReservationUseCase(repo)
-			_, err := uc.Execute(context.Background(), input)
-			assertValidationError(t, err, tt.wantField)
-		})
-	}
-}
-
 func TestGetReservationUseCase_NotFound(t *testing.T) {
 	repo := &mockReservationRepository{
 		getView: func(context.Context, int) (*domain.ReservationView, error) {
-			return nil, postgres.ErrReservationNotFound
+			return nil, domain.ErrNotFound
 		},
 	}
 	uc := NewGetReservationUseCase(repo)

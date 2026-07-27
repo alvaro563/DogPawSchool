@@ -10,16 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dogpaw/internal/domain"
-	"dogpaw/internal/repository/postgres"
 )
 
-// validCancelInput returns a known-good input. Tests mutate one
-// field at a time to cover the negative cases.
+var fixedNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
 func validCancelInput() CancelReservationInput {
-	return CancelReservationInput{
-		UserID:        1,
-		ReservationID: 10,
-	}
+	return MustNewCancelReservationInput(1, 10, func() time.Time { return fixedNow })
 }
 
 // validConfirmedReservation returns a confirmed reservation at the
@@ -30,22 +26,23 @@ func validConfirmedReservation(id, activityID, dogID, passID int) *domain.Reserv
 }
 
 // farFutureActivity returns an activity 7 days in the future, with
-// room for at least one more booking.
+// room for at least one more booking. Anchored to fixedNow so the
+// test is deterministic regardless of the wall clock.
 func farFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, time.Now().Add(7*24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
 }
 
 // nearFutureActivity returns an activity 1 hour in the future. The
 // cancellation late window is 2h, so this counts as a LATE cancel
-// when the use case runs "now".
+// when the use case runs at fixedNow.
 func nearFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, time.Now().Add(1*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(1*time.Hour))
 }
 
-// pastActivity returns an activity 24h in the past. Used to verify
-// the activity-in-past guard.
+// pastActivity returns an activity 24h in the past relative to
+// fixedNow. Used to verify the activity-in-past guard.
 func pastActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, time.Now().Add(-24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour))
 }
 
 // newCancelUseCase wires the use case with default no-op mocks for
@@ -61,15 +58,36 @@ func newCancelUseCase(
 	if transactor == nil {
 		transactor = &stubTransactor{}
 	}
-	return NewCancelReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo)
+	return NewCancelReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo, func() time.Time { return fixedNow })
+}
+
+func TestNewCancelReservationInput(t *testing.T) {
+	scenarios := []struct {
+		name   string
+		userID int
+		resID  int
+		field  string
+	}{
+		{"zero_user_id", 0, 10, "user_id"},
+		{"negative_user_id", -1, 10, "user_id"},
+		{"zero_reservation_id", 1, 0, "reservation_id"},
+		{"negative_reservation_id", 1, -5, "reservation_id"},
+	}
+	for _, tt := range scenarios {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewCancelReservationInput(tt.userID, tt.resID, func() time.Time { return fixedNow })
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, tt.field, verr.Field)
+		})
+	}
 }
 
 func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
 	userID := 1
 	activity := farFutureActivity(10)
 	dog := validDog(20, userID)
-	// Start with a pass whose remainingSessions is 1 less than
-	// numOfSessions (so CanRefund() returns true).
 	pass := validPass(30, userID, 1)
 	originalPassRemaining := pass.RemainingSessions()
 	originalMovementCount := len(pass.Movements())
@@ -141,7 +159,6 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Pass, error) { return pass, nil },
-		// No Update or AddMovement should be called for a late cancel.
 		update: func(_ context.Context, _ *domain.Pass) error {
 			t.Fatal("pass Update should not be called for a late cancel")
 			return nil
@@ -170,56 +187,10 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 		"late cancel must NOT add a new movement")
 }
 
-func TestCancelReservationUseCase_ValidationErrors(t *testing.T) {
-	base := validCancelInput()
-	tests := []struct {
-		name      string
-		mutate    func(input *CancelReservationInput)
-		wantField string
-	}{
-		{
-			name:      "zero_user_id",
-			mutate:    func(i *CancelReservationInput) { i.UserID = 0 },
-			wantField: "user_id",
-		},
-		{
-			name:      "negative_user_id",
-			mutate:    func(i *CancelReservationInput) { i.UserID = -1 },
-			wantField: "user_id",
-		},
-		{
-			name:      "zero_reservation_id",
-			mutate:    func(i *CancelReservationInput) { i.ReservationID = 0 },
-			wantField: "reservation_id",
-		},
-		{
-			name:      "negative_reservation_id",
-			mutate:    func(i *CancelReservationInput) { i.ReservationID = -5 },
-			wantField: "reservation_id",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			input := base
-			tt.mutate(&input)
-			// All repos should not be called on validation error.
-			reservationRepo := &mockReservationRepository{
-				getByID: func(context.Context, int) (*domain.Reservation, error) {
-					t.Fatal("reservationRepo.GetByID should not be called")
-					return nil, nil
-				},
-			}
-			uc := newCancelUseCase(nil, nil, nil, reservationRepo, nil)
-			_, err := uc.Execute(context.Background(), input)
-			assertValidationError(t, err, tt.wantField)
-		})
-	}
-}
-
 func TestCancelReservationUseCase_ReservationNotFound(t *testing.T) {
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
-			return nil, postgres.ErrReservationNotFound
+			return nil, domain.ErrNotFound
 		},
 	}
 	uc := newCancelUseCase(nil, nil, nil, reservationRepo, nil)
@@ -246,7 +217,6 @@ func TestCancelReservationUseCase_AlreadyCancelled(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			// Re-capture for closure safety.
 			r := tt.reservation
 			reservationRepo := &mockReservationRepository{
 				getByID: func(context.Context, int) (*domain.Reservation, error) { return r, nil },
@@ -294,7 +264,7 @@ func TestCancelReservationUseCase_DogNotFound(t *testing.T) {
 	}
 	dogRepo := &stubDogRepository{
 		getByID: func(context.Context, int) (*domain.Dog, error) {
-			return nil, postgres.ErrNotFound
+			return nil, domain.ErrNotFound
 		},
 	}
 	reservationRepo := &mockReservationRepository{
@@ -338,7 +308,7 @@ func TestCancelReservationUseCase_PassNotFound(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) {
-			return nil, postgres.ErrPassNotFound
+			return nil, domain.ErrNotFound
 		},
 	}
 	reservationRepo := &mockReservationRepository{
@@ -374,10 +344,6 @@ func TestCancelReservationUseCase_PassNotOwnedByUser(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_TransactorRollsBackOnMovementFailure(t *testing.T) {
-	// The pass AddMovement step fails. The transactor must roll
-	// back so the reservation status is NOT persisted as
-	// CANCELLED_IN_TIME. Use case returns the underlying error
-	// wrapped.
 	userID := 1
 	activity := farFutureActivity(10)
 	dog := validDog(20, userID)
@@ -400,8 +366,6 @@ func TestCancelReservationUseCase_TransactorRollsBackOnMovementFailure(t *testin
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		// Update should not be called because the tx rolls back
-		// before the reservation is updated.
 		update: func(context.Context, *domain.Reservation) error {
 			t.Fatal("reservation Update should not be called after AddMovement fails")
 			return nil
@@ -414,8 +378,6 @@ func TestCancelReservationUseCase_TransactorRollsBackOnMovementFailure(t *testin
 }
 
 func TestCancelReservationUseCase_ReservationRepoErrorIsWrapped(t *testing.T) {
-	// Non-sentinel errors are wrapped (no mapping), so the
-	// handler surfaces them as 500.
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return nil, errors.New("db connection lost")
@@ -430,19 +392,14 @@ func TestCancelReservationUseCase_ReservationRepoErrorIsWrapped(t *testing.T) {
 
 func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
 	// The activity is far in the future (in-time cancel), but
-	// the pass is fully available (remaining == num) so
-	// CanRefund() returns false. The use case must NOT call
-	// RefundSession (which would refuse) and must NOT call
-	// Update or AddMovement on the pass. The reservation is
-	// still cancelled in time, just without a refund.
+	// the pass is fresh (remaining == num) so CanRefund() returns
+	// false. The use case must NOT call RefundSession and must
+	// NOT call Update/AddMovement on the pass. The reservation
+	// is still cancelled in time, just without a refund.
 	userID := 1
 	activity := farFutureActivity(10)
 	dog := validDog(20, userID)
-	// validPass(30, 1, 5) starts with 10, consumes 5 → remaining = 5 == num.
-	// Hmm, that's still refundable. To get a non-refundable
-	// pass, we need remaining == num, which means never consumed.
-	// Easiest: build with a custom constructor.
-	now := time.Now()
+	now := fixedNow
 	pass := domain.MustNewPass(30, 5, 5, 5, domain.PassGeneric, userID, now, now, nil)
 	require.Equal(t, 5, pass.RemainingSessions())
 	require.False(t, pass.CanRefund(), "fresh pass should not be refundable")
@@ -477,7 +434,6 @@ func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
 	output, err := uc.Execute(context.Background(), validCancelInput())
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusCancelledInTime, output.Reservation.Status())
-	// In-memory pass state is unchanged (no refund applied).
 	assert.Equal(t, 5, pass.RemainingSessions())
 	assert.Empty(t, pass.Movements())
 }

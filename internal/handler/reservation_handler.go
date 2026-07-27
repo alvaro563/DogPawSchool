@@ -12,60 +12,50 @@ import (
 	reservationuc "dogpaw/internal/usecase/reservation"
 )
 
-// ReservationRegisterer is the minimal interface the handler needs
-// from the reservation use case. The interface keeps the handler
-// testable in isolation (a stub satisfies it without dragging the
-// real transactor / repos).
 type ReservationRegisterer interface {
 	Execute(ctx context.Context, input reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error)
 }
 
-// ReservationCanceler is the minimal interface the handler needs
-// from the cancel use case. Mirrors the registerer pattern.
 type ReservationCanceler interface {
 	Execute(ctx context.Context, input reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error)
 }
 
-// ReservationGetter is the minimal interface the handler needs
-// from the get-by-id use case.
 type ReservationGetter interface {
 	Execute(ctx context.Context, input reservationuc.GetReservationInput) (reservationuc.GetReservationOutput, error)
 }
 
-// ReservationListerByUser is the minimal interface for the
-// list-by-user use case (with optional status/from/to filters).
 type ReservationListerByUser interface {
 	Execute(ctx context.Context, input reservationuc.ListByUserReservationsInput) (reservationuc.ListByUserReservationsOutput, error)
 }
 
-// ReservationListerUpcomingByUser is the minimal interface for the
-// upcoming-by-user use case.
 type ReservationListerUpcomingByUser interface {
 	Execute(ctx context.Context, input reservationuc.ListUpcomingByUserInput) (reservationuc.ListUpcomingByUserOutput, error)
 }
 
-// ReservationListerByDog is the minimal interface for the
-// list-by-dog use case.
 type ReservationListerByDog interface {
 	Execute(ctx context.Context, input reservationuc.ListByDogReservationsInput) (reservationuc.ListByDogReservationsOutput, error)
 }
 
-// ReservationListerByPass is the minimal interface for the
-// list-by-pass use case.
 type ReservationListerByPass interface {
 	Execute(ctx context.Context, input reservationuc.ListByPassReservationsInput) (reservationuc.ListByPassReservationsOutput, error)
 }
 
-// ReservationListerByActivity is the minimal interface for the
-// list-by-activity use case.
 type ReservationListerByActivity interface {
 	Execute(ctx context.Context, input reservationuc.ListByActivityReservationsInput) (reservationuc.ListByActivityReservationsOutput, error)
 }
 
+type ReservationNoShower interface {
+	Execute(ctx context.Context, input reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error)
+}
+
+type ReservationCompleter interface {
+	Execute(ctx context.Context, input reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error)
+}
+
 // ReservationHandler owns the HTTP entry points for reservation
-// use cases. It exposes 8 use cases (Register, Cancel, Get,
+// use cases. It exposes 10 use cases (Register, Cancel, Get,
 // ListByUser, ListUpcomingByUser, ListByDog, ListByPass,
-// ListByActivity).
+// ListByActivity, MarkNoShow, CompleteReservation).
 type ReservationHandler struct {
 	register       ReservationRegisterer
 	cancel         ReservationCanceler
@@ -75,6 +65,8 @@ type ReservationHandler struct {
 	listByDog      ReservationListerByDog
 	listByPass     ReservationListerByPass
 	listByActivity ReservationListerByActivity
+	noShow         ReservationNoShower
+	complete       ReservationCompleter
 }
 
 func NewReservationHandler(
@@ -86,6 +78,8 @@ func NewReservationHandler(
 	listByDog ReservationListerByDog,
 	listByPass ReservationListerByPass,
 	listByActivity ReservationListerByActivity,
+	noShow ReservationNoShower,
+	complete ReservationCompleter,
 ) *ReservationHandler {
 	return &ReservationHandler{
 		register:       register,
@@ -96,6 +90,8 @@ func NewReservationHandler(
 		listByDog:      listByDog,
 		listByPass:     listByPass,
 		listByActivity: listByActivity,
+		noShow:         noShow,
+		complete:       complete,
 	}
 }
 
@@ -121,7 +117,10 @@ func NewReservationHandler(
 func (h *ReservationHandler) Register(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
 	if err != nil || userID <= 0 {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
+		c.JSON(http.StatusBadRequest, errorResponse{
+			Error: "validation",
+			Field: "user_id",
+		})
 		return
 	}
 	var request registerReservationRequest
@@ -132,12 +131,14 @@ func (h *ReservationHandler) Register(c *gin.Context) {
 		})
 		return
 	}
-	output, err := h.register.Execute(c.Request.Context(), reservationuc.RegisterReservationInput{
-		UserID:     userID,
-		ActivityID: request.ActivityID,
-		DogID:      request.DogID,
-		PassID:     request.PassID,
-	})
+
+	in, err := reservationuc.NewRegisterReservationInput(userID, request.ActivityID, request.DogID, request.PassID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.register.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -150,9 +151,9 @@ func (h *ReservationHandler) Register(c *gin.Context) {
 // reservation. The owner user_id is taken from the URL path; only
 // the cross-aggregate ids (activity, dog, pass) are in the body.
 type registerReservationRequest struct {
-	ActivityID int `json:"activity_id" binding:"required,gt=0" example:"42"`
-	DogID      int `json:"dog_id"      binding:"required,gt=0" example:"7"`
-	PassID     int `json:"pass_id"     binding:"required,gt=0" example:"3"`
+	ActivityID int `json:"activity_id" example:"42"`
+	DogID      int `json:"dog_id"      example:"7"`
+	PassID     int `json:"pass_id"     example:"3"`
 }
 
 type registerReservationResponse struct {
@@ -174,8 +175,8 @@ type registerReservationResponse struct {
 // @Description  admin can later call Forgive to refund it).
 // @Tags         reservations
 // @Produce      json
-// @Param        user_id        path      int                          true  "Owner user ID"
-// @Param        id             path      int                          true  "Reservation ID"
+// @Param        user_id        path      int                          true   "Owner user ID"
+// @Param        id             path      int                          true   "Reservation ID"
 // @Success      200            {object}  cancelReservationResponse    "Reservation cancelled"
 // @Failure      400            {object}  errorResponse                "Invalid user_id or reservation_id"
 // @Failure      404            {object}  errorResponse                "Reservation not found"
@@ -193,10 +194,12 @@ func (h *ReservationHandler) Cancel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
 		return
 	}
-	output, err := h.cancel.Execute(c.Request.Context(), reservationuc.CancelReservationInput{
-		UserID:        userID,
-		ReservationID: reservationID,
-	})
+	in, err := reservationuc.NewCancelReservationInput(userID, reservationID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.cancel.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -216,6 +219,115 @@ type cancelReservationResponse struct {
 	Status string `json:"status" example:"CANCELLED_IN_TIME"`
 }
 
+// markNoShowResponse is the wire format for a successful
+// no-show mark. Same shape as cancelReservationResponse (id +
+// status); the status field will be NO_SHOW.
+type markNoShowResponse struct {
+	ID     int    `json:"id"     example:"99"`
+	Status string `json:"status" example:"NO_SHOW"`
+}
+
+// MarkNoShow godoc
+// @Summary      Mark a reservation as no-show
+// @Description  Transitions a CONFIRMED reservation to NO_SHOW.
+// @Description  The activity must have already started
+// @Description  (date < now). Does not refund the pass session
+// @Description  because the slot is past. Owner-only: the
+// @Description  user_id in the path must own the dog. Returns 404
+// @Description  if the reservation does not exist OR belongs to
+// @Description  a different user (no leak).
+// @Tags         reservations
+// @Produce      json
+// @Param        user_id  path      int                         true   "Owner user ID"
+// @Param        id       path      int                         true   "Reservation ID"
+// @Success      200       {object}  markNoShowResponse         "Reservation marked no-show"
+// @Failure      400       {object}  errorResponse              "Invalid user_id / reservation_id, or activity has not started yet"
+// @Failure      404       {object}  errorResponse              "Reservation or activity not found"
+// @Failure      409       {object}  errorResponse              "Reservation not in CONFIRMED state (not_cancellable)"
+// @Failure      500       {object}  errorResponse              "Internal server error"
+// @Router       /api/v1/users/{user_id}/reservations/{id}/no-show [post]
+func (h *ReservationHandler) MarkNoShow(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil || userID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
+		return
+	}
+	reservationID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || reservationID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
+		return
+	}
+	in, err := reservationuc.NewMarkReservationNoShowInput(userID, reservationID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.noShow.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, markNoShowResponse{
+		ID:     output.Reservation.ID(),
+		Status: string(output.Reservation.Status()),
+	})
+}
+
+// completeReservationResponse is the wire format for a successful
+// reservation completion. Same shape as cancelReservationResponse
+// (id + status); the status field will be COMPLETED.
+type completeReservationResponse struct {
+	ID     int    `json:"id"     example:"99"`
+	Status string `json:"status" example:"COMPLETED"`
+}
+
+// CompleteReservation godoc
+// @Summary      Mark a reservation as completed
+// @Description  Transitions a CONFIRMED reservation to COMPLETED.
+// @Description  The activity must have already finished
+// @Description  (date + duration < now). Does not refund the pass
+// @Description  session because the session was consumed at
+// @Description  registration and the activity has been delivered.
+// @Description  Owner-only: the user_id in the path must own the
+// @Description  dog. Returns 404 if the reservation does not exist
+// @Description  OR belongs to a different user (no leak).
+// @Tags         reservations
+// @Produce      json
+// @Param        user_id  path      int                         true   "Owner user ID"
+// @Param        id       path      int                         true   "Reservation ID"
+// @Success      200       {object}  completeReservationResponse "Reservation marked completed"
+// @Failure      400       {object}  errorResponse              "Invalid user_id / reservation_id, or activity has not finished yet"
+// @Failure      404       {object}  errorResponse              "Reservation or activity not found"
+// @Failure      409       {object}  errorResponse              "Reservation not in CONFIRMED state (not_completable)"
+// @Failure      500       {object}  errorResponse              "Internal server error"
+// @Router       /api/v1/users/{user_id}/reservations/{id}/complete [post]
+func (h *ReservationHandler) CompleteReservation(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil || userID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
+		return
+	}
+	reservationID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || reservationID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
+		return
+	}
+	in, err := reservationuc.NewCompleteReservationInput(userID, reservationID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.complete.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, completeReservationResponse{
+		ID:     output.Reservation.ID(),
+		Status: string(output.Reservation.Status()),
+	})
+}
+
 // ============================================================================
 // Read endpoints
 // ============================================================================
@@ -233,7 +345,7 @@ type cancelReservationResponse struct {
 // @Param        from     query     string  false  "Filter by created_at >= from (RFC3339)"
 // @Param        to       query     string  false  "Filter by created_at <  to (RFC3339)"
 // @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
-// @Param        offset   query     int     false  "Number of reservations to skip (default 0)"
+// @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
@@ -246,7 +358,6 @@ func (h *ReservationHandler) ListByUser(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	normalizedLimit, normalizedOffset := reservationuc.NormalizePagination(limit, offset)
 	status, err := parseStatusFilter(c.Query("status"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "status", Details: err.Error()})
@@ -262,24 +373,17 @@ func (h *ReservationHandler) ListByUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "to", Details: err.Error()})
 		return
 	}
-	output, err := h.listByUser.Execute(c.Request.Context(), reservationuc.ListByUserReservationsInput{
-		UserID: userID, Status: status, From: from, To: to,
-		Limit: normalizedLimit, Offset: normalizedOffset,
-	})
+	in, err := reservationuc.NewListByUserReservationsInput(userID, status, from, to, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	dtos := make([]reservationViewDTO, len(output.Views))
-	for i, view := range output.Views {
-		dtos[i] = toReservationViewDTO(view)
+	output, err := h.listByUser.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
 	}
-	c.JSON(http.StatusOK, listReservationsResponse{
-		Reservations: dtos,
-		Limit:        normalizedLimit,
-		Offset:       normalizedOffset,
-		Count:        len(dtos),
-	})
+	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
 }
 
 // ListUpcomingByUser godoc
@@ -291,7 +395,7 @@ func (h *ReservationHandler) ListByUser(c *gin.Context) {
 // @Produce      json
 // @Param        user_id  path      int     true   "Owner user ID"
 // @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
-// @Param        offset   query     int     false  "Number of reservations to skip (default 0)"
+// @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
@@ -304,24 +408,17 @@ func (h *ReservationHandler) ListUpcomingByUser(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	normalizedLimit, normalizedOffset := reservationuc.NormalizePagination(limit, offset)
-	output, err := h.listUpcoming.Execute(c.Request.Context(), reservationuc.ListUpcomingByUserInput{
-		UserID: userID, Limit: normalizedLimit, Offset: normalizedOffset,
-	})
+	in, err := reservationuc.NewListUpcomingByUserInput(userID, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	dtos := make([]reservationViewDTO, len(output.Views))
-	for i, view := range output.Views {
-		dtos[i] = toReservationViewDTO(view)
+	output, err := h.listUpcoming.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
 	}
-	c.JSON(http.StatusOK, listReservationsResponse{
-		Reservations: dtos,
-		Limit:        normalizedLimit,
-		Offset:       normalizedOffset,
-		Count:        len(dtos),
-	})
+	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
 }
 
 // GetByID godoc
@@ -351,9 +448,12 @@ func (h *ReservationHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
 		return
 	}
-	output, err := h.get.Execute(c.Request.Context(), reservationuc.GetReservationInput{
-		UserID: userID, ReservationID: reservationID,
-	})
+	in, err := reservationuc.NewGetReservationInput(userID, reservationID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.get.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -369,7 +469,7 @@ func (h *ReservationHandler) GetByID(c *gin.Context) {
 // @Produce      json
 // @Param        dog_id   path      int     true   "Dog ID"
 // @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
-// @Param        offset   query     int     false  "Number of reservations to skip (default 0)"
+// @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
@@ -382,24 +482,17 @@ func (h *ReservationHandler) ListByDog(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	normalizedLimit, normalizedOffset := reservationuc.NormalizePagination(limit, offset)
-	output, err := h.listByDog.Execute(c.Request.Context(), reservationuc.ListByDogReservationsInput{
-		DogID: dogID, Limit: normalizedLimit, Offset: normalizedOffset,
-	})
+	in, err := reservationuc.NewListByDogReservationsInput(dogID, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	dtos := make([]reservationViewDTO, len(output.Views))
-	for i, view := range output.Views {
-		dtos[i] = toReservationViewDTO(view)
+	output, err := h.listByDog.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
 	}
-	c.JSON(http.StatusOK, listReservationsResponse{
-		Reservations: dtos,
-		Limit:        normalizedLimit,
-		Offset:       normalizedOffset,
-		Count:        len(dtos),
-	})
+	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
 }
 
 // ListByPass godoc
@@ -411,7 +504,7 @@ func (h *ReservationHandler) ListByDog(c *gin.Context) {
 // @Produce      json
 // @Param        id       path      int     true   "Pass ID"
 // @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
-// @Param        offset   query     int     false  "Number of reservations to skip (default 0)"
+// @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
@@ -424,24 +517,17 @@ func (h *ReservationHandler) ListByPass(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	normalizedLimit, normalizedOffset := reservationuc.NormalizePagination(limit, offset)
-	output, err := h.listByPass.Execute(c.Request.Context(), reservationuc.ListByPassReservationsInput{
-		PassID: passID, Limit: normalizedLimit, Offset: normalizedOffset,
-	})
+	in, err := reservationuc.NewListByPassReservationsInput(passID, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	dtos := make([]reservationViewDTO, len(output.Views))
-	for i, view := range output.Views {
-		dtos[i] = toReservationViewDTO(view)
+	output, err := h.listByPass.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
 	}
-	c.JSON(http.StatusOK, listReservationsResponse{
-		Reservations: dtos,
-		Limit:        normalizedLimit,
-		Offset:       normalizedOffset,
-		Count:        len(dtos),
-	})
+	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
 }
 
 // ListByActivity godoc
@@ -453,7 +539,7 @@ func (h *ReservationHandler) ListByPass(c *gin.Context) {
 // @Produce      json
 // @Param        id       path      int     true   "Activity ID"
 // @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
-// @Param        offset   query     int     false  "Number of reservations to skip (default 0)"
+// @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
@@ -466,24 +552,17 @@ func (h *ReservationHandler) ListByActivity(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	normalizedLimit, normalizedOffset := reservationuc.NormalizePagination(limit, offset)
-	output, err := h.listByActivity.Execute(c.Request.Context(), reservationuc.ListByActivityReservationsInput{
-		ActivityID: activityID, Limit: normalizedLimit, Offset: normalizedOffset,
-	})
+	in, err := reservationuc.NewListByActivityReservationsInput(activityID, limit, offset)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	dtos := make([]reservationViewDTO, len(output.Views))
-	for i, view := range output.Views {
-		dtos[i] = toReservationViewDTO(view)
+	output, err := h.listByActivity.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
 	}
-	c.JSON(http.StatusOK, listReservationsResponse{
-		Reservations: dtos,
-		Limit:        normalizedLimit,
-		Offset:       normalizedOffset,
-		Count:        len(dtos),
-	})
+	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
 }
 
 // ============================================================================
@@ -503,6 +582,7 @@ type reservationViewDTO struct {
 	ActivityName     string    `json:"activity_name"      example:"Paseo Río"`
 	ActivityDate     time.Time `json:"activity_date"      example:"2026-08-01T10:00:00Z"`
 	ActivityLocation string    `json:"activity_location"  example:"Parking Central"`
+	ActivityClosed   bool      `json:"activity_closed"    example:"false"`
 
 	DogID   int    `json:"dog_id"             example:"5"`
 	DogName string `json:"dog_name"           example:"Luna"`
@@ -523,12 +603,36 @@ type reservationViewResponse struct {
 // listReservationsResponse is the wire format for every list
 // endpoint. The pagination fields (limit, offset, count) are
 // always present and reflect the normalized values that the use
-// case actually used.
+// case actually used (read from the validated input).
 type listReservationsResponse struct {
 	Reservations []reservationViewDTO `json:"reservations"`
 	Limit        int                  `json:"limit"`
 	Offset       int                  `json:"offset"`
 	Count        int                  `json:"count"`
+}
+
+// reservationPagination is the contract every reservation list
+// input satisfies: it exposes the (already normalized) limit and
+// offset. Defined here as a tiny private interface so we can
+// build the response envelope from any list input uniformly.
+type reservationPagination interface {
+	Limit() int
+	Offset() int
+}
+
+// toListReservationsResponse serializes the views and reads the
+// (already normalized) limit/offset from the validated input.
+func toListReservationsResponse(views []*domain.ReservationView, in reservationPagination) listReservationsResponse {
+	dtos := make([]reservationViewDTO, len(views))
+	for i, view := range views {
+		dtos[i] = toReservationViewDTO(view)
+	}
+	return listReservationsResponse{
+		Reservations: dtos,
+		Limit:        in.Limit(),
+		Offset:       in.Offset(),
+		Count:        len(dtos),
+	}
 }
 
 // toReservationViewDTO converts a domain.ReservationView into the
@@ -542,6 +646,7 @@ func toReservationViewDTO(view *domain.ReservationView) reservationViewDTO {
 		ActivityName:     view.ActivityName(),
 		ActivityDate:     view.ActivityDate(),
 		ActivityLocation: view.ActivityLocation(),
+		ActivityClosed:   view.Activity().IsClosed(),
 		DogID:            view.DogID(),
 		DogName:          view.DogName(),
 		PassID:           view.PassID(),
@@ -552,28 +657,26 @@ func toReservationViewDTO(view *domain.ReservationView) reservationViewDTO {
 
 // parseStatusFilter converts an optional ?status= query param into
 // a *domain.ReservationStatus. Returns nil for empty (no filter).
-// Returns a ValidationError for non-empty but unrecognized values.
+// The factory validates the enum.
 func parseStatusFilter(raw string) (*domain.ReservationStatus, error) {
 	if raw == "" {
 		return nil, nil
 	}
 	status := domain.ReservationStatus(raw)
-	if !status.IsValid() {
-		return nil, &reservationuc.ValidationError{Field: "status"}
-	}
 	return &status, nil
 }
 
 // parseTimeFilter converts an optional ?from=/?to= query param
 // (RFC3339) into a *time.Time. Returns nil for empty (no filter).
-// Returns a ValidationError for non-empty but malformed values.
+// Returns an error for non-empty but malformed values. The
+// factory validates the from<=to range.
 func parseTimeFilter(raw string) (*time.Time, error) {
 	if raw == "" {
 		return nil, nil
 	}
 	t, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		return nil, &reservationuc.ValidationError{Field: "time"}
+		return nil, err
 	}
 	return &t, nil
 }

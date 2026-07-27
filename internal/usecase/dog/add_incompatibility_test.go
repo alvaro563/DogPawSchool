@@ -54,10 +54,7 @@ func (m *mockIncompatibilityRepository) Delete(ctx context.Context, id int) erro
 }
 
 func validAddInput() AddDogIncompatibilityInput {
-	return AddDogIncompatibilityInput{
-		DogID:             42,
-		IncompatibilityID: 1,
-	}
+	return MustNewAddDogIncompatibilityInput(42, 1)
 }
 
 func newAddUseCase(dogRepo domain.DogRepository, incompatRepo domain.IncompatibilityRepository) *AddDogIncompatibilityUseCase {
@@ -78,59 +75,30 @@ func newTestDogWithIncompatibilities(t *testing.T, incompats ...*domain.Incompat
 	return d
 }
 
+func TestNewAddDogIncompatibilityInput(t *testing.T) {
+	scenarios := []struct {
+		name          string
+		dogID         int
+		incompatID    int
+		expectedField string
+	}{
+		{"zero_dog_id", 0, 1, "dog_id"},
+		{"negative_dog_id", -1, 1, "dog_id"},
+		{"zero_incompatibility_id", 1, 0, "incompatibility_id"},
+		{"negative_incompatibility_id", 1, -5, "incompatibility_id"},
+	}
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			_, err := NewAddDogIncompatibilityInput(s.dogID, s.incompatID)
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr), "expected ValidationError, got %T", err)
+			assert.Equal(t, s.expectedField, verr.Field)
+		})
+	}
+}
+
 func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         AddDogIncompatibilityInput
-			expectedField string
-		}{
-			{"zero_dog_id", AddDogIncompatibilityInput{IncompatibilityID: 1}, "dog_id"},
-			{"negative_dog_id", AddDogIncompatibilityInput{DogID: -1, IncompatibilityID: 1}, "dog_id"},
-			{"zero_incompatibility_id", AddDogIncompatibilityInput{DogID: 1}, "incompatibility_id"},
-			{"negative_incompatibility_id", AddDogIncompatibilityInput{DogID: 1, IncompatibilityID: -5}, "incompatibility_id"},
-		}
-
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				dogMock := &mockDogRepository{}
-				incompatMock := &mockIncompatibilityRepository{}
-				uc := newAddUseCase(dogMock, incompatMock)
-
-				_, err := uc.Execute(context.Background(), s.input)
-
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr), "expected ValidationError, got %T", err)
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
-
-	t.Run("validation_does_not_call_repo", func(t *testing.T) {
-		dogCalled := false
-		incompatCalled := false
-		dogMock := &mockDogRepository{
-			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
-				dogCalled = true
-				return nil, nil
-			},
-		}
-		incompatMock := &mockIncompatibilityRepository{
-			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) {
-				incompatCalled = true
-				return nil, nil
-			},
-		}
-		uc := newAddUseCase(dogMock, incompatMock)
-
-		_, err := uc.Execute(context.Background(), AddDogIncompatibilityInput{DogID: 0, IncompatibilityID: 1})
-
-		assert.Error(t, err)
-		assert.False(t, dogCalled, "dog repo should not be called when validation fails")
-		assert.False(t, incompatCalled, "incompatibility repo should not be called when validation fails")
-	})
-
 	t.Run("happy_path_adds_when_not_present", func(t *testing.T) {
 		existingDog := newTestDogWithIncompatibilities(t,
 			newIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia),

@@ -56,34 +56,47 @@ func (s *stubActivityUpcomingLister) Execute(ctx context.Context, in activityuc.
 	return s.fn(ctx, in)
 }
 
+type stubActivityCloser struct {
+	fn func(ctx context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error)
+}
+
+func (s *stubActivityCloser) Execute(ctx context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
+	return s.fn(ctx, in)
+}
+
 func newActivityHandler(
 	reg ActivityRegisterer,
 	get ActivityGetter,
 	mod ActivityModifier,
 	lst ActivityLister,
 	upcoming ActivityUpcomingLister,
+	close ActivityCloser,
 ) *ActivityHandler {
-	return NewActivityHandler(reg, get, mod, lst, upcoming)
+	return NewActivityHandler(reg, get, mod, lst, upcoming, close)
 }
 
 func newActivityHandlerReg(reg ActivityRegisterer) *ActivityHandler {
-	return newActivityHandler(reg, nil, nil, nil, nil)
+	return newActivityHandler(reg, nil, nil, nil, nil, nil)
 }
 
 func newActivityHandlerGet(get ActivityGetter) *ActivityHandler {
-	return newActivityHandler(nil, get, nil, nil, nil)
+	return newActivityHandler(nil, get, nil, nil, nil, nil)
 }
 
 func newActivityHandlerMod(mod ActivityModifier) *ActivityHandler {
-	return newActivityHandler(nil, nil, mod, nil, nil)
+	return newActivityHandler(nil, nil, mod, nil, nil, nil)
 }
 
 func newActivityHandlerLst(lst ActivityLister) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, lst, nil)
+	return newActivityHandler(nil, nil, nil, lst, nil, nil)
 }
 
 func newActivityHandlerUp(up ActivityUpcomingLister) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, nil, up)
+	return newActivityHandler(nil, nil, nil, nil, up, nil)
+}
+
+func newActivityHandlerClose(close ActivityCloser) *ActivityHandler {
+	return newActivityHandler(nil, nil, nil, nil, nil, close)
 }
 
 func validRegisterActivityBody() string {
@@ -175,7 +188,7 @@ func TestActivityRegister_InternalError(t *testing.T) {
 func TestActivityGetByID_Success(t *testing.T) {
 	want := newTestActivity(7)
 	stub := &stubActivityGetter{fn: func(ctx context.Context, in activityuc.GetActivityInput) (activityuc.GetActivityOutput, error) {
-		assert.Equal(t, 7, in.ID)
+		assert.Equal(t, 7, in.ID())
 		return activityuc.GetActivityOutput{Activity: want}, nil
 	}}
 	h := newActivityHandlerGet(stub)
@@ -190,6 +203,7 @@ func TestActivityGetByID_Success(t *testing.T) {
 	assert.Equal(t, 7, body.ID)
 	assert.Equal(t, "Paseo", body.Name)
 	assert.Equal(t, "ROUTE", body.ActivityType)
+	assert.False(t, body.Closed)
 }
 
 // TestActivityGetByID_InvalidID verifies that non-integer or non-positive
@@ -238,11 +252,10 @@ func TestActivityList_Success(t *testing.T) {
 		domain.MustNewActivity(2, "b", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-02T10:00:00Z")),
 	}
 	stub := &stubActivityLister{fn: func(ctx context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
-		// The handler passes raw query string values (0 when absent);
-		// the use case normalizes them before calling the repo. We
-		// assert the raw values here.
-		assert.Equal(t, 0, in.Limit)
-		assert.Equal(t, 0, in.Offset)
+		// The factory normalizes the raw query values (0/0 here) to
+		// the defaults (50/0) before the use case sees them.
+		assert.Equal(t, 50, in.Limit())
+		assert.Equal(t, 0, in.Offset())
 		return activityuc.ListAllActivitiesOutput{Activities: activities}, nil
 	}}
 	h := newActivityHandlerLst(stub)
@@ -256,14 +269,16 @@ func TestActivityList_Success(t *testing.T) {
 	assert.Equal(t, 50, body.Limit)
 	assert.Equal(t, 0, body.Offset)
 	assert.Equal(t, 2, body.Count)
+	assert.False(t, body.Activities[0].Closed)
+	assert.False(t, body.Activities[1].Closed)
 }
 
 // TestActivityList_PaginationPassesThrough verifies that the
 // limit/offset query parameters are passed to the use case.
 func TestActivityList_PaginationPassesThrough(t *testing.T) {
 	stub := &stubActivityLister{fn: func(ctx context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
-		assert.Equal(t, 25, in.Limit)
-		assert.Equal(t, 10, in.Offset)
+		assert.Equal(t, 25, in.Limit())
+		assert.Equal(t, 10, in.Offset())
 		return activityuc.ListAllActivitiesOutput{}, nil
 	}}
 	h := newActivityHandlerLst(stub)
@@ -310,6 +325,7 @@ func TestActivityListUpcoming_Success(t *testing.T) {
 	var body listActivitiesResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Len(t, body.Activities, 1)
+	assert.False(t, body.Activities[0].Closed)
 }
 
 // TestActivityListUpcoming_Empty verifies the upcoming endpoint
@@ -330,11 +346,11 @@ func TestActivityModify_Success(t *testing.T) {
 	updated := domain.MustNewActivity(1, "Paseo Largo", "Central", domain.TypeRoute, 12, 2,
 		mustParseActivityTime("2026-08-01T10:00:00Z"))
 	stub := &stubActivityModifier{fn: func(ctx context.Context, in activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
-		assert.Equal(t, 1, in.ID)
-		require.NotNil(t, in.Patch.Name)
-		assert.Equal(t, "Paseo Largo", *in.Patch.Name)
-		require.NotNil(t, in.Patch.MaxCapacity)
-		assert.Equal(t, 12, *in.Patch.MaxCapacity)
+		assert.Equal(t, 1, in.ID())
+		require.NotNil(t, in.Patch().Name)
+		assert.Equal(t, "Paseo Largo", *in.Patch().Name)
+		require.NotNil(t, in.Patch().MaxCapacity)
+		assert.Equal(t, 12, *in.Patch().MaxCapacity)
 		return activityuc.ModifyActivityOutput{Activity: updated}, nil
 	}}
 	h := newActivityHandlerMod(stub)
@@ -349,6 +365,7 @@ func TestActivityModify_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, "Paseo Largo", body.Name)
 	assert.Equal(t, 12, body.MaxCapacity)
+	assert.False(t, body.Closed)
 }
 
 // TestActivityModify_InvalidID verifies that non-positive ids are
@@ -400,4 +417,63 @@ func TestActivityModify_NotFound(t *testing.T) {
 	c.Params = gin.Params{{Key: "id", Value: "99"}}
 	h.Modify(c)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestActivityClose_Success(t *testing.T) {
+	act := domain.MustNewActivity(42, "Paseo", "Río", domain.TypeRoute, 8, 2, time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
+	act.Close()
+	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
+		return activityuc.CloseActivityOutput{Activity: act}, nil
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/42/close", `{"no_show_reservation_ids":[1,2]}`)
+	c.Params = gin.Params{{Key: "id", Value: "42"}}
+	h.Close(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"closed":true`)
+	assert.Contains(t, w.Body.String(), `"id":42`)
+}
+
+func TestActivityClose_InvalidID(t *testing.T) {
+	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
+		t.Fatal("should not be called")
+		return activityuc.CloseActivityOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/abc/close", `{}`)
+	c.Params = gin.Params{{Key: "id", Value: "abc"}}
+	h.Close(c)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"validation"`)
+}
+
+func TestActivityClose_NotFinished(t *testing.T) {
+	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
+		return activityuc.CloseActivityOutput{}, activityuc.ErrNotFinished
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/5/close", `{}`)
+	c.Params = gin.Params{{Key: "id", Value: "5"}}
+	h.Close(c)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"activity_not_finished"`)
+}
+
+func TestActivityClose_AlreadyClosed(t *testing.T) {
+	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
+		return activityuc.CloseActivityOutput{}, activityuc.ErrAlreadyClosed
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/5/close", `{}`)
+	c.Params = gin.Params{{Key: "id", Value: "5"}}
+	h.Close(c)
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"already_closed"`)
+}
+
+func TestActivityClose_ReservationNotConfirmed(t *testing.T) {
+	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
+		return activityuc.CloseActivityOutput{}, activityuc.ErrReservationNotConfirmed
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/5/close", `{"no_show_reservation_ids":[3]}`)
+	c.Params = gin.Params{{Key: "id", Value: "5"}}
+	h.Close(c)
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"reservation_not_confirmed"`)
 }

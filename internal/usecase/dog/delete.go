@@ -7,18 +7,37 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// DeleteDogInput is the input for DeleteDogUseCase.
+// DeleteDogInput is the validated command to delete a dog. Only
+// NewDeleteDogInput can construct one.
 type DeleteDogInput struct {
-	ID int
+	id int
+}
+
+func (in DeleteDogInput) ID() int { return in.id }
+
+// NewDeleteDogInput validates id > 0.
+func NewDeleteDogInput(id int) (DeleteDogInput, error) {
+	if id <= 0 {
+		return DeleteDogInput{}, &ValidationError{Field: "id"}
+	}
+	return DeleteDogInput{id: id}, nil
+}
+
+// MustNewDeleteDogInput panics on validation error. For tests.
+func MustNewDeleteDogInput(id int) DeleteDogInput {
+	in, err := NewDeleteDogInput(id)
+	if err != nil {
+		panic(err)
+	}
+	return in
 }
 
 // DeleteDogOutput is empty: a successful delete returns no payload.
 type DeleteDogOutput struct{}
 
 // DeleteDogUseCase removes a dog aggregate by id. Cascades to the
-// associated dog_incompatibilities and reservations rows are handled at the
-// DB level by ON DELETE CASCADE foreign keys, so the use case does not need
-// to touch the dog_incompatibilities table directly.
+// associated dog_incompatibilities and reservations rows are handled
+// at the DB level by ON DELETE CASCADE foreign keys.
 type DeleteDogUseCase struct {
 	repo domain.DogRepository
 }
@@ -28,10 +47,7 @@ func NewDeleteDogUseCase(repo domain.DogRepository) *DeleteDogUseCase {
 }
 
 func (uc *DeleteDogUseCase) Execute(ctx context.Context, input DeleteDogInput) (DeleteDogOutput, error) {
-	if input.ID <= 0 {
-		return DeleteDogOutput{}, &ValidationError{Field: "id"}
-	}
-	if err := uc.repo.Delete(ctx, input.ID); err != nil {
+	if err := uc.repo.Delete(ctx, input.ID()); err != nil {
 		return DeleteDogOutput{}, fmt.Errorf("delete dog: %w", err)
 	}
 	return DeleteDogOutput{}, nil

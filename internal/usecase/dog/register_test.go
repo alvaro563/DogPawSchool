@@ -11,63 +11,41 @@ import (
 )
 
 func validRegisterInput() RegisterDogInput {
-	return RegisterDogInput{
-		Name:        "Buddy",
-		Breed:       "Labrador",
-		AgeInMonths: 24,
-		Sex:         domain.SexMale,
-		WeightKg:    25.0,
-		Passport:    "ES12345",
-		UserID:      1,
+	return MustNewRegisterDogInput("Buddy", "Labrador", "ES12345", 24, domain.SexMale, 25.0, 1)
+}
+
+func TestNewRegisterDogInput(t *testing.T) {
+	scenarios := []struct {
+		name          string
+		factory       func() (RegisterDogInput, error)
+		expectedField string
+	}{
+		{"empty_name", func() (RegisterDogInput, error) { return NewRegisterDogInput("", "x", "x", 1, domain.SexMale, 1, 1) }, "name"},
+		{"empty_breed", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "", "x", 1, domain.SexMale, 1, 1) }, "breed"},
+		{"zero_age", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 0, domain.SexMale, 1, 1) }, "age_in_months"},
+		{"empty_sex", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.Sex(""), 1, 1) }, "sex"},
+		{"zero_weight", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 0, 1) }, "weight_kg"},
+		{"empty_passport", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "", 1, domain.SexMale, 1, 1) }, "passport"},
+		{"zero_user_id", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 1, 0) }, "user_id"},
+		{"negative_user_id", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 1, -5) }, "user_id"},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			_, err := s.factory()
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr), "expected ValidationError, got %T", err)
+			assert.Equal(t, s.expectedField, verr.Field)
+		})
 	}
 }
 
 func TestRegisterDogUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         RegisterDogInput
-			expectedField string
-		}{
-			{"empty_name", RegisterDogInput{Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "name"},
-			{"empty_breed", RegisterDogInput{Name: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "breed"},
-			{"zero_age", RegisterDogInput{Name: "x", Breed: "x", Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: 1}, "age_in_months"},
-			{"empty_sex", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, WeightKg: 1, Passport: "x", UserID: 1}, "sex"},
-			{"zero_weight", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, Passport: "x", UserID: 1}, "weight_kg"},
-			{"empty_passport", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, UserID: 1}, "passport"},
-			{"zero_user_id", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x"}, "user_id"},
-			{"negative_user_id", RegisterDogInput{Name: "x", Breed: "x", AgeInMonths: 1, Sex: domain.SexMale, WeightKg: 1, Passport: "x", UserID: -5}, "user_id"},
-		}
-
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewRegisterDogUseCase(mock)
-
-				_, err := uc.Execute(context.Background(), s.input)
-
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr), "expected ValidationError, got %T", err)
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
-
-	t.Run("validation_does_not_call_repo", func(t *testing.T) {
-		called := false
-		mock := &mockDogRepository{
-			create: func(ctx context.Context, dog *domain.Dog) (int, error) {
-				called = true
-				return 0, nil
-			},
-		}
-		uc := NewRegisterDogUseCase(mock)
-
-		_, err := uc.Execute(context.Background(), RegisterDogInput{Name: ""})
-
+	t.Run("factory_blocks_invalid_before_use_case_runs", func(t *testing.T) {
+		// The factory rejects invalid input; the use case never sees it.
+		_, err := NewRegisterDogInput("", "", "", 0, domain.Sex(""), 0, 0)
 		assert.Error(t, err)
-		assert.False(t, called, "repo should not be called when validation fails")
 	})
 
 	t.Run("happy_path", func(t *testing.T) {

@@ -243,6 +243,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/activities/{id}/close": {
+            "post": {
+                "description": "Closes an activity after it has finished. Batch-\nprocesses every CONFIRMED reservation: those whose\nid appears in no_show_reservation_ids are marked as\nNO_SHOW, the rest are marked as COMPLETED. Then\nthe activity is marked as closed and persisted.\nThe entire flow runs in a single transaction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Close an activity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional no-show reservation IDs",
+                        "name": "activity",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.closeActivityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Activity closed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.closeActivityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, activity not finished, or invalid reservation IDs",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Activity already closed or reservation not confirmed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/activities/{id}/reservations": {
             "get": {
                 "description": "Returns the views of every reservation for the\ngiven activity, ordered by created_at ASC. Class\nroster view.",
@@ -269,7 +333,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Number of reservations to skip (default 0)",
+                        "description": "Number of reservations to skip for pagination (default 0)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -929,7 +993,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Number of reservations to skip (default 0)",
+                        "description": "Number of reservations to skip for pagination (default 0)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -1718,7 +1782,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Number of reservations to skip (default 0)",
+                        "description": "Number of reservations to skip for pagination (default 0)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -1893,7 +1957,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Number of reservations to skip (default 0)",
+                        "description": "Number of reservations to skip for pagination (default 0)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -2009,7 +2073,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Number of reservations to skip (default 0)",
+                        "description": "Number of reservations to skip for pagination (default 0)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -2149,6 +2213,126 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/v1/users/{user_id}/reservations/{id}/complete": {
+            "post": {
+                "description": "Transitions a CONFIRMED reservation to COMPLETED.\nThe activity must have already finished\n(date + duration \u003c now). Does not refund the pass\nsession because the session was consumed at\nregistration and the activity has been delivered.\nOwner-only: the user_id in the path must own the\ndog. Returns 404 if the reservation does not exist\nOR belongs to a different user (no leak).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Mark a reservation as completed",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reservation marked completed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.completeReservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user_id / reservation_id, or activity has not finished yet",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation or activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Reservation not in CONFIRMED state (not_completable)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/reservations/{id}/no-show": {
+            "post": {
+                "description": "Transitions a CONFIRMED reservation to NO_SHOW.\nThe activity must have already started\n(date \u003c now). Does not refund the pass session\nbecause the slot is past. Owner-only: the\nuser_id in the path must own the dog. Returns 404\nif the reservation does not exist OR belongs to\na different user (no leak).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Mark a reservation as no-show",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reservation marked no-show",
+                        "schema": {
+                            "$ref": "#/definitions/handler.markNoShowResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user_id / reservation_id, or activity has not started yet",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation or activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Reservation not in CONFIRMED state (not_cancellable)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -2220,9 +2404,6 @@ const docTemplate = `{
         },
         "handler.addIncompatibilityRequest": {
             "type": "object",
-            "required": [
-                "incompatibility_id"
-            ],
             "properties": {
                 "incompatibility_id": {
                     "type": "integer",
@@ -2259,6 +2440,35 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "example": "CANCELLED_IN_TIME"
+                }
+            }
+        },
+        "handler.closeActivityRequest": {
+            "type": "object"
+        },
+        "handler.closeActivityResponse": {
+            "type": "object",
+            "properties": {
+                "closed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "handler.completeReservationResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 99
+                },
+                "status": {
+                    "type": "string",
+                    "example": "COMPLETED"
                 }
             }
         },
@@ -2484,6 +2694,19 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.markNoShowResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 99
+                },
+                "status": {
+                    "type": "string",
+                    "example": "NO_SHOW"
+                }
+            }
+        },
         "handler.modifyActivityRequest": {
             "type": "object",
             "properties": {
@@ -2597,10 +2820,6 @@ const docTemplate = `{
                 },
                 "pass_type": {
                     "type": "string",
-                    "enum": [
-                        "GENERICO",
-                        "ESPECIFICO"
-                    ],
                     "example": "ESPECIFICO"
                 },
                 "price": {
@@ -2694,23 +2913,9 @@ const docTemplate = `{
         },
         "handler.registerActivityRequest": {
             "type": "object",
-            "required": [
-                "activity_type",
-                "date",
-                "duration_in_hours",
-                "location",
-                "max_capacity",
-                "name"
-            ],
             "properties": {
                 "activity_type": {
                     "type": "string",
-                    "enum": [
-                        "SOCIALIZATION_GROUP",
-                        "ROUTE",
-                        "INDIVIDUAL_CLASS",
-                        "EXTRA"
-                    ],
                     "example": "ROUTE"
                 },
                 "date": {
@@ -2723,8 +2928,6 @@ const docTemplate = `{
                 },
                 "location": {
                     "type": "string",
-                    "maxLength": 200,
-                    "minLength": 1,
                     "example": "Parking Central"
                 },
                 "max_capacity": {
@@ -2733,8 +2936,6 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 200,
-                    "minLength": 1,
                     "example": "Paseo Río"
                 }
             }
@@ -2750,15 +2951,6 @@ const docTemplate = `{
         },
         "handler.registerDogRequest": {
             "type": "object",
-            "required": [
-                "age_in_months",
-                "breed",
-                "name",
-                "passport",
-                "sex",
-                "user_id",
-                "weight_kg"
-            ],
             "properties": {
                 "age_in_months": {
                     "type": "integer",
@@ -2766,28 +2958,18 @@ const docTemplate = `{
                 },
                 "breed": {
                     "type": "string",
-                    "maxLength": 120,
-                    "minLength": 1,
                     "example": "Labrador"
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 120,
-                    "minLength": 1,
                     "example": "Luna"
                 },
                 "passport": {
                     "type": "string",
-                    "maxLength": 64,
-                    "minLength": 1,
                     "example": "ES-12345"
                 },
                 "sex": {
                     "type": "string",
-                    "enum": [
-                        "MALE",
-                        "FEMALE"
-                    ],
                     "example": "FEMALE"
                 },
                 "user_id": {
@@ -2811,24 +2993,13 @@ const docTemplate = `{
         },
         "handler.registerIncompatibilityRequest": {
             "type": "object",
-            "required": [
-                "level",
-                "name"
-            ],
             "properties": {
                 "level": {
                     "type": "string",
-                    "enum": [
-                        "ABSOLUTA",
-                        "MEDIA",
-                        "BAJA"
-                    ],
                     "example": "MEDIA"
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 120,
-                    "minLength": 1,
                     "example": "Reacciona mal al transportin"
                 }
             }
@@ -2844,10 +3015,6 @@ const docTemplate = `{
         },
         "handler.registerPassRequest": {
             "type": "object",
-            "required": [
-                "num_of_sessions",
-                "pass_type"
-            ],
             "properties": {
                 "expires_at": {
                     "type": "string",
@@ -2859,15 +3026,10 @@ const docTemplate = `{
                 },
                 "pass_type": {
                     "type": "string",
-                    "enum": [
-                        "GENERICO",
-                        "ESPECIFICO"
-                    ],
                     "example": "GENERICO"
                 },
                 "price": {
                     "type": "integer",
-                    "minimum": 0,
                     "example": 12000
                 }
             }
@@ -2883,11 +3045,6 @@ const docTemplate = `{
         },
         "handler.registerReservationRequest": {
             "type": "object",
-            "required": [
-                "activity_id",
-                "dog_id",
-                "pass_id"
-            ],
             "properties": {
                 "activity_id": {
                     "type": "integer",

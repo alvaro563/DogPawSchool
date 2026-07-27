@@ -122,7 +122,9 @@ func (validationError *DogValidationError) Error() string {
 
 // NewDog creates a Dog with the required invariants. Returns a
 // DogValidationError-equivalent error (plain fmt.Errorf) if any field is
-// invalid. A new dog starts as is_active=true.
+// invalid. A new dog starts as is_active=true. Age and weight must be
+// strictly positive: a registered dog is always a real animal with a
+// known (non-zero) age and weight.
 func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weightKg float64, userID int) (*Dog, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("dog: id must not be negative")
@@ -136,11 +138,11 @@ func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weig
 	if passport == "" {
 		return nil, fmt.Errorf("dog: passport must not be empty")
 	}
-	if ageInMonths < 0 {
-		return nil, fmt.Errorf("dog: ageInMonths must not be negative")
+	if ageInMonths <= 0 {
+		return nil, fmt.Errorf("dog: ageInMonths must be greater than 0")
 	}
-	if weightKg < 0 {
-		return nil, fmt.Errorf("dog: weightKg must not be negative")
+	if weightKg <= 0 {
+		return nil, fmt.Errorf("dog: weightKg must be greater than 0")
 	}
 	if !sex.IsValid() {
 		return nil, fmt.Errorf("dog: invalid sex %q", sex)
@@ -286,13 +288,13 @@ func (dog *Dog) ApplyPatch(patch DogPatch) error {
 		dog.passport = *patch.Passport
 	}
 	if patch.AgeInMonths != nil {
-		if *patch.AgeInMonths < 0 {
+		if *patch.AgeInMonths <= 0 {
 			return &DogValidationError{Field: "age_in_months"}
 		}
 		dog.ageInMonths = *patch.AgeInMonths
 	}
 	if patch.WeightKg != nil {
-		if *patch.WeightKg < 0 {
+		if *patch.WeightKg <= 0 {
 			return &DogValidationError{Field: "weight_kg"}
 		}
 		dog.weightKg = *patch.WeightKg
@@ -304,10 +306,12 @@ func (dog *Dog) ApplyPatch(patch DogPatch) error {
 		dog.sex = *patch.Sex
 	}
 	if patch.Neutered != nil {
-		dog.neutered = *patch.Neutered
+		dog.SetNeutered(*patch.Neutered)
 	}
 	if patch.Heat != nil {
-		dog.heat = *patch.Heat
+		if err := dog.SetHeat(*patch.Heat); err != nil {
+			return err
+		}
 	}
 	if patch.PhotoURL != nil {
 		dog.photoURL = *patch.PhotoURL
@@ -321,6 +325,23 @@ func (dog *Dog) ApplyPatch(patch DogPatch) error {
 	if patch.IsActive != nil {
 		dog.isActive = *patch.IsActive
 	}
+	return nil
+}
+
+// SetNeutered sets the neutered flag. Neutered carries no additional
+// invariant, so this never fails; it exists so every state change goes
+// through a domain method rather than a raw column write.
+func (dog *Dog) SetNeutered(neutered bool) { dog.neutered = neutered }
+
+// SetHeat sets the heat flag. Business invariant: only a female dog can
+// be in heat, so heat=true on a non-female dog is rejected. heat=false
+// is always allowed (any dog can leave heat). Centralizing the rule here
+// guarantees every write path (SetHeat, ApplyPatch) enforces it.
+func (dog *Dog) SetHeat(heat bool) error {
+	if heat && dog.sex != SexFemale {
+		return &DogValidationError{Field: "heat"}
+	}
+	dog.heat = heat
 	return nil
 }
 
@@ -347,7 +368,5 @@ type DogRepository interface {
 	ListByIsActive(ctx context.Context, isActive bool, limit, offset int) ([]*Dog, error)
 	ListByAgeBracket(ctx context.Context, bracket AgeBracket, limit, offset int) ([]*Dog, error)
 	ListBySizeBracket(ctx context.Context, bracket SizeBracket, limit, offset int) ([]*Dog, error)
-	SetDogNeutered(ctx context.Context, id int, neutered bool) error
-	SetDogHeat(ctx context.Context, id int, heat bool) error
 	Delete(ctx context.Context, id int) error
 }

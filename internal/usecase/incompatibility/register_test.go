@@ -11,42 +11,31 @@ import (
 )
 
 func validRegisterInput() RegisterIncompatibilityInput {
-	return RegisterIncompatibilityInput{
-		Name:  "Reacciona mal al transportin",
-		Level: domain.IncompatibilityLevelMedia,
-	}
+	return MustNewRegisterIncompatibilityInput("Reacciona mal al transportin", domain.IncompatibilityLevelMedia)
 }
 
-func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
-	t.Run("validation_empty_name", func(t *testing.T) {
-		uc := NewRegisterIncompatibilityUseCase(&mockIncompatibilityRepository{})
-		_, err := uc.Execute(context.Background(), RegisterIncompatibilityInput{Level: domain.IncompatibilityLevelMedia})
+func TestNewRegisterIncompatibilityInput(t *testing.T) {
+	t.Run("empty_name", func(t *testing.T) {
+		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia)
 		assert.Error(t, err)
 		var verr *ValidationError
 		assert.True(t, errors.As(err, &verr))
 		assert.Equal(t, "name", verr.Field)
 	})
 
-	t.Run("validation_invalid_level", func(t *testing.T) {
-		uc := NewRegisterIncompatibilityUseCase(&mockIncompatibilityRepository{})
-		_, err := uc.Execute(context.Background(), RegisterIncompatibilityInput{Name: "x", Level: "OTHER"})
+	t.Run("invalid_level", func(t *testing.T) {
+		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevel("OTHER"))
 		assert.Error(t, err)
 		var verr *ValidationError
 		assert.True(t, errors.As(err, &verr))
 		assert.Equal(t, "level", verr.Field)
 	})
+}
 
-	t.Run("validation_does_not_call_repo", func(t *testing.T) {
-		called := false
-		mock := &mockIncompatibilityRepository{
-			create: func(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
-				called = true
-				return 0, nil
-			},
-		}
-		uc := NewRegisterIncompatibilityUseCase(mock)
-		_, _ = uc.Execute(context.Background(), RegisterIncompatibilityInput{})
-		assert.False(t, called)
+func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
+	t.Run("factory_blocks_invalid_before_use_case_runs", func(t *testing.T) {
+		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia)
+		assert.Error(t, err)
 	})
 
 	t.Run("happy_path", func(t *testing.T) {
@@ -70,7 +59,7 @@ func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
 	t.Run("duplicate_name", func(t *testing.T) {
 		mock := &mockIncompatibilityRepository{
 			create: func(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
-				return 0, ErrDuplicateName
+				return 0, domain.ErrDuplicateIncompatibilityName
 			},
 		}
 		uc := NewRegisterIncompatibilityUseCase(mock)

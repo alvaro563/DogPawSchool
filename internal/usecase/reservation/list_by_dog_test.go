@@ -2,6 +2,7 @@ package reservation
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,18 +23,15 @@ func TestListByDogReservationsUseCase_Success(t *testing.T) {
 		},
 	}
 	uc := NewListByDogReservationsUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListByDogReservationsInput{DogID: 20, Limit: 50, Offset: 0})
+	output, err := uc.Execute(context.Background(), MustNewListByDogReservationsInput(20, 50, 0))
 	require.NoError(t, err)
 	assert.Len(t, output.Views, 1)
 }
 
-func TestListByDogReservationsUseCase_ZeroDogID(t *testing.T) {
-	uc := NewListByDogReservationsUseCase(&mockReservationRepository{
-		listByDogView: func(context.Context, int, int, int) ([]*domain.ReservationView, error) {
-			t.Fatal("ListByDogView should not be called on validation error")
-			return nil, nil
-		},
-	})
-	_, err := uc.Execute(context.Background(), ListByDogReservationsInput{DogID: 0, Limit: 50, Offset: 0})
-	assertValidationError(t, err, "dog_id")
+func TestNewListByDogReservationsInput_ZeroDogID(t *testing.T) {
+	_, err := NewListByDogReservationsInput(0, 50, 0)
+	assert.Error(t, err)
+	var verr *ValidationError
+	assert.True(t, errors.As(err, &verr))
+	assert.Equal(t, "dog_id", verr.Field)
 }

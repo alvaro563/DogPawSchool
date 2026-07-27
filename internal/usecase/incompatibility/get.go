@@ -7,14 +7,38 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// GetIncompatibilityInput is the validated input for fetching a
+// single incompatibility by id.
 type GetIncompatibilityInput struct {
-	ID int
+	id int
 }
 
+func (in GetIncompatibilityInput) ID() int { return in.id }
+
+// NewGetIncompatibilityInput validates id > 0.
+func NewGetIncompatibilityInput(id int) (GetIncompatibilityInput, error) {
+	if id <= 0 {
+		return GetIncompatibilityInput{}, &ValidationError{Field: "id"}
+	}
+	return GetIncompatibilityInput{id: id}, nil
+}
+
+// MustNewGetIncompatibilityInput panics on validation error. For tests.
+func MustNewGetIncompatibilityInput(id int) GetIncompatibilityInput {
+	in, err := NewGetIncompatibilityInput(id)
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
+// GetIncompatibilityOutput carries the requested incompatibility.
 type GetIncompatibilityOutput struct {
 	Incompatibility *domain.Incompatibility
 }
 
+// GetIncompatibilityUseCase returns a single incompatibility or
+// ErrNotFound.
 type GetIncompatibilityUseCase struct {
 	repo domain.IncompatibilityRepository
 }
@@ -24,12 +48,9 @@ func NewGetIncompatibilityUseCase(repo domain.IncompatibilityRepository) *GetInc
 }
 
 func (uc *GetIncompatibilityUseCase) Execute(ctx context.Context, input GetIncompatibilityInput) (GetIncompatibilityOutput, error) {
-	if input.ID <= 0 {
-		return GetIncompatibilityOutput{}, &ValidationError{Field: "id"}
-	}
-	incompat, err := uc.repo.GetIncompatibilityByID(ctx, input.ID)
+	incompat, err := uc.repo.GetIncompatibilityByID(ctx, input.ID())
 	if err != nil {
-		return GetIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", input.ID, err)
+		return GetIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", input.ID(), err)
 	}
 	if incompat == nil {
 		return GetIncompatibilityOutput{}, ErrNotFound

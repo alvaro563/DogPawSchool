@@ -11,10 +11,7 @@ import (
 )
 
 func validRemoveInput() RemoveDogIncompatibilityInput {
-	return RemoveDogIncompatibilityInput{
-		DogID:             42,
-		IncompatibilityID: 1,
-	}
+	return MustNewRemoveDogIncompatibilityInput(42, 1)
 }
 
 func newTestDogForRemove(t *testing.T, incompats ...*domain.Incompatibility) *domain.Dog {
@@ -31,50 +28,30 @@ func newTestDogForRemove(t *testing.T, incompats ...*domain.Incompatibility) *do
 	return d
 }
 
+func TestNewRemoveDogIncompatibilityInput(t *testing.T) {
+	scenarios := []struct {
+		name          string
+		dogID         int
+		incompatID    int
+		expectedField string
+	}{
+		{"zero_dog_id", 0, 1, "dog_id"},
+		{"negative_dog_id", -1, 1, "dog_id"},
+		{"zero_incompatibility_id", 1, 0, "incompatibility_id"},
+		{"negative_incompatibility_id", 1, -5, "incompatibility_id"},
+	}
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			_, err := NewRemoveDogIncompatibilityInput(s.dogID, s.incompatID)
+			assert.Error(t, err)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr), "expected ValidationError, got %T", err)
+			assert.Equal(t, s.expectedField, verr.Field)
+		})
+	}
+}
+
 func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
-	t.Run("validation", func(t *testing.T) {
-		scenarios := []struct {
-			name          string
-			input         RemoveDogIncompatibilityInput
-			expectedField string
-		}{
-			{"zero_dog_id", RemoveDogIncompatibilityInput{IncompatibilityID: 1}, "dog_id"},
-			{"negative_dog_id", RemoveDogIncompatibilityInput{DogID: -1, IncompatibilityID: 1}, "dog_id"},
-			{"zero_incompatibility_id", RemoveDogIncompatibilityInput{DogID: 1}, "incompatibility_id"},
-			{"negative_incompatibility_id", RemoveDogIncompatibilityInput{DogID: 1, IncompatibilityID: -5}, "incompatibility_id"},
-		}
-
-		for _, s := range scenarios {
-			t.Run(s.name, func(t *testing.T) {
-				mock := &mockDogRepository{}
-				uc := NewRemoveDogIncompatibilityUseCase(mock)
-
-				_, err := uc.Execute(context.Background(), s.input)
-
-				assert.Error(t, err)
-				var verr *ValidationError
-				assert.True(t, errors.As(err, &verr), "expected ValidationError, got %T", err)
-				assert.Equal(t, s.expectedField, verr.Field)
-			})
-		}
-	})
-
-	t.Run("validation_does_not_call_repo", func(t *testing.T) {
-		called := false
-		mock := &mockDogRepository{
-			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
-				called = true
-				return nil, nil
-			},
-		}
-		uc := NewRemoveDogIncompatibilityUseCase(mock)
-
-		_, err := uc.Execute(context.Background(), RemoveDogIncompatibilityInput{DogID: 0, IncompatibilityID: 1})
-
-		assert.Error(t, err)
-		assert.False(t, called, "repo should not be called when validation fails")
-	})
-
 	t.Run("happy_path_removes_when_present", func(t *testing.T) {
 		existingDog := newTestDogForRemove(t,
 			validIncompatibility(),

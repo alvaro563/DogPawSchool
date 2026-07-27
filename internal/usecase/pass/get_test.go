@@ -22,7 +22,8 @@ func TestGetPassUseCase_Success(t *testing.T) {
 	}
 	uc := NewGetPassUseCase(repo)
 
-	output, err := uc.Execute(context.Background(), GetPassInput{ID: 7})
+	in := MustNewGetPassInput(7)
+	output, err := uc.Execute(context.Background(), in)
 
 	require.NoError(t, err)
 	assert.Same(t, expected, output.Pass)
@@ -35,30 +36,15 @@ func TestGetPassUseCase_NotFound(t *testing.T) {
 		},
 	}
 	uc := NewGetPassUseCase(repo)
-	_, err := uc.Execute(context.Background(), GetPassInput{ID: 99})
+	in := MustNewGetPassInput(99)
+	_, err := uc.Execute(context.Background(), in)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestGetPassUseCase_InvalidID(t *testing.T) {
-	repo := &mockPassRepository{
-		getByID: func(context.Context, int) (*domain.Pass, error) {
-			t.Fatal("repo should not be called on invalid id")
-			return nil, nil
-		},
-	}
-	uc := NewGetPassUseCase(repo)
-	tests := []struct {
-		name string
-		id   int
-	}{
-		{"zero", 0},
-		{"negative", -5},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := uc.Execute(context.Background(), GetPassInput{ID: tt.id})
-			assertValidationError(t, err, "id")
-		})
+func TestNewGetPassInput_InvalidID(t *testing.T) {
+	for _, id := range []int{0, -5} {
+		_, err := NewGetPassInput(id)
+		assertValidationError(t, err, "id")
 	}
 }
 
@@ -69,7 +55,8 @@ func TestGetPassUseCase_RepoError(t *testing.T) {
 		},
 	}
 	uc := NewGetPassUseCase(repo)
-	_, err := uc.Execute(context.Background(), GetPassInput{ID: 1})
+	in := MustNewGetPassInput(1)
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "get pass 1")

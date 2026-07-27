@@ -8,14 +8,65 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// RegisterPassInput is the validated payload for creating a new
-// prepaid pass (bono) for a specific user.
+// RegisterPassInput is the validated command to create a new
+// prepaid pass for a user. All fields are private: only
+// NewRegisterPassInput can construct one.
 type RegisterPassInput struct {
-	NumOfSessions int
-	Price         int
-	PassType      domain.PassType
-	UserID        int
-	ExpiresAt     *time.Time
+	numOfSessions int
+	price         int
+	passType      domain.PassType
+	userID        int
+	expiresAt     *time.Time
+}
+
+func (in RegisterPassInput) NumOfSessions() int        { return in.numOfSessions }
+func (in RegisterPassInput) Price() int                { return in.price }
+func (in RegisterPassInput) PassType() domain.PassType { return in.passType }
+func (in RegisterPassInput) UserID() int               { return in.userID }
+func (in RegisterPassInput) ExpiresAt() *time.Time     { return in.expiresAt }
+
+// NewRegisterPassInput is the validating factory. Returns the
+// first *ValidationError encountered. The returned input is, by
+// construction, always valid.
+func NewRegisterPassInput(
+	numOfSessions, price int,
+	passType domain.PassType,
+	userID int,
+	expiresAt *time.Time,
+) (RegisterPassInput, error) {
+	if numOfSessions <= 0 {
+		return RegisterPassInput{}, &ValidationError{Field: "num_of_sessions"}
+	}
+	if price < 0 {
+		return RegisterPassInput{}, &ValidationError{Field: "price"}
+	}
+	if !passType.IsValid() {
+		return RegisterPassInput{}, &ValidationError{Field: "pass_type"}
+	}
+	if userID <= 0 {
+		return RegisterPassInput{}, &ValidationError{Field: "user_id"}
+	}
+	if expiresAt != nil && expiresAt.IsZero() {
+		return RegisterPassInput{}, &ValidationError{Field: "expires_at"}
+	}
+	return RegisterPassInput{
+		numOfSessions: numOfSessions, price: price, passType: passType,
+		userID: userID, expiresAt: expiresAt,
+	}, nil
+}
+
+// MustNewRegisterPassInput panics on validation error. For tests.
+func MustNewRegisterPassInput(
+	numOfSessions, price int,
+	passType domain.PassType,
+	userID int,
+	expiresAt *time.Time,
+) RegisterPassInput {
+	in, err := NewRegisterPassInput(numOfSessions, price, passType, userID, expiresAt)
+	if err != nil {
+		panic(err)
+	}
+	return in
 }
 
 // RegisterPassOutput is the result of a successful create.
@@ -23,10 +74,10 @@ type RegisterPassOutput struct {
 	ID int
 }
 
-// RegisterPassUseCase creates a new pass for the user identified by
-// UserID. It validates the input, builds a domain.Pass (with the DB
-// generating the id and createdAt timestamp), and asks the
-// repository to persist it.
+// RegisterPassUseCase creates a new pass for the user identified
+// by UserID. id=0 lets the DB assign the new id; createdAt and
+// updatedAt are both the server's wall-clock at the moment of the
+// API call.
 type RegisterPassUseCase struct {
 	repo domain.PassRepository
 }
@@ -36,41 +87,15 @@ func NewRegisterPassUseCase(repo domain.PassRepository) *RegisterPassUseCase {
 }
 
 func (uc *RegisterPassUseCase) Execute(ctx context.Context, input RegisterPassInput) (RegisterPassOutput, error) {
-	if err := input.validate(); err != nil {
-		return RegisterPassOutput{}, err
-	}
-
-	// id=0 lets the DB assign the new id; createdAt and updatedAt
-	// are both the server's wall-clock at the moment of the API call
-	// (the DB trigger keeps updatedAt in sync on future UPDATEs).
 	now := time.Now()
-	pass, err := domain.NewPass(0, input.NumOfSessions, input.NumOfSessions, input.Price, input.PassType, input.UserID, now, now, input.ExpiresAt)
+	pass, err := domain.NewPass(0, input.NumOfSessions(), input.NumOfSessions(),
+		input.Price(), input.PassType(), input.UserID(), now, now, input.ExpiresAt())
 	if err != nil {
 		return RegisterPassOutput{}, err
 	}
-
 	id, err := uc.repo.Create(ctx, pass)
 	if err != nil {
 		return RegisterPassOutput{}, fmt.Errorf("register pass: %w", err)
 	}
 	return RegisterPassOutput{ID: id}, nil
-}
-
-func (input RegisterPassInput) validate() error {
-	if input.NumOfSessions <= 0 {
-		return &ValidationError{Field: "num_of_sessions"}
-	}
-	if input.Price < 0 {
-		return &ValidationError{Field: "price"}
-	}
-	if !input.PassType.IsValid() {
-		return &ValidationError{Field: "pass_type"}
-	}
-	if input.UserID <= 0 {
-		return &ValidationError{Field: "user_id"}
-	}
-	if input.ExpiresAt != nil && input.ExpiresAt.IsZero() {
-		return &ValidationError{Field: "expires_at"}
-	}
-	return nil
 }

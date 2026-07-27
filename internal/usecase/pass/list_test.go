@@ -24,7 +24,8 @@ func TestListAllPassesUseCase_Success(t *testing.T) {
 		},
 	}
 	uc := NewListAllPassesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListAllPassesInput{})
+	in := MustNewListAllPassesInput(0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, output.Passes)
 }
@@ -36,7 +37,8 @@ func TestListAllPassesUseCase_Empty(t *testing.T) {
 		},
 	}
 	uc := NewListAllPassesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListAllPassesInput{})
+	in := MustNewListAllPassesInput(0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(output.Passes))
 }
@@ -66,7 +68,8 @@ func TestListAllPassesUseCase_PaginationNormalization(t *testing.T) {
 				},
 			}
 			uc := NewListAllPassesUseCase(repo)
-			_, err := uc.Execute(context.Background(), ListAllPassesInput{Limit: tt.inputLimit, Offset: tt.inputOffset})
+			in := MustNewListAllPassesInput(tt.inputLimit, tt.inputOffset)
+			_, err := uc.Execute(context.Background(), in)
 			assert.NoError(t, err)
 		})
 	}
@@ -79,7 +82,8 @@ func TestListAllPassesUseCase_RepoError(t *testing.T) {
 		},
 	}
 	uc := NewListAllPassesUseCase(repo)
-	_, err := uc.Execute(context.Background(), ListAllPassesInput{})
+	in := MustNewListAllPassesInput(0, 0)
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "list all passes")

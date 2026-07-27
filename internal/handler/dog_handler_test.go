@@ -26,6 +26,14 @@ func (s *stubRegistrar) Execute(ctx context.Context, in doguc.RegisterDogInput) 
 	return s.fn(ctx, in)
 }
 
+type stubDogGetter struct {
+	fn func(ctx context.Context, in doguc.GetDogInput) (doguc.GetDogOutput, error)
+}
+
+func (s *stubDogGetter) Execute(ctx context.Context, in doguc.GetDogInput) (doguc.GetDogOutput, error) {
+	return s.fn(ctx, in)
+}
+
 type stubListerAll struct {
 	fn func(ctx context.Context, in doguc.ListAllDogsInput) (doguc.ListAllDogsOutput, error)
 }
@@ -163,19 +171,23 @@ func (s *stubHeatSetter) Execute(ctx context.Context, in doguc.SetDogHeatInput) 
 }
 
 func newTestHandler(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+}
+
+func newTestHandlerGet(get DogGetter) *DogHandler {
+	return NewDogHandler(nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newTestHandlerFull(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil)
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil)
 }
 
 func newTestHandlerFull4(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier, addIncompat DogIncompatibilityAdder) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, nil, nil, nil, nil)
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, nil, nil, nil, nil)
 }
 
 func newTestHandlerFull5(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier, addIncompat DogIncompatibilityAdder, removeIncompat DogIncompatibilityRemover) *DogHandler {
-	return NewDogHandler(reg, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, removeIncompat, nil, nil, nil)
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, removeIncompat, nil, nil, nil)
 }
 
 func mustNewIncompatibility(id int, name string, level domain.IncompatibilityLevel) domain.Incompatibility {
@@ -294,6 +306,56 @@ func TestRegister_InternalError(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "internal")
 }
 
+func TestDogGetByID_Success(t *testing.T) {
+	dog := newTestDog(7)
+	stub := &stubDogGetter{fn: func(_ context.Context, in doguc.GetDogInput) (doguc.GetDogOutput, error) {
+		assert.Equal(t, 7, in.ID())
+		return doguc.GetDogOutput{Dog: dog}, nil
+	}}
+	h := newTestHandlerGet(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/7", "")
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+
+	h.GetByID(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body dogDTO
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 7, body.ID)
+	assert.Equal(t, "Luna", body.Name)
+}
+
+func TestDogGetByID_InvalidID(t *testing.T) {
+	h := newTestHandlerGet(&stubDogGetter{fn: func(context.Context, doguc.GetDogInput) (doguc.GetDogOutput, error) {
+		t.Fatal("use case should not be called")
+		return doguc.GetDogOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/abc", "")
+	c.Params = gin.Params{{Key: "id", Value: "abc"}}
+	h.GetByID(c)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDogGetByID_NotFound(t *testing.T) {
+	h := newTestHandlerGet(&stubDogGetter{fn: func(context.Context, doguc.GetDogInput) (doguc.GetDogOutput, error) {
+		return doguc.GetDogOutput{}, doguc.ErrNotFound
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/99", "")
+	c.Params = gin.Params{{Key: "id", Value: "99"}}
+	h.GetByID(c)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestDogGetByID_InternalError(t *testing.T) {
+	h := newTestHandlerGet(&stubDogGetter{fn: func(context.Context, doguc.GetDogInput) (doguc.GetDogOutput, error) {
+		return doguc.GetDogOutput{}, errors.New("db down")
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/1", "")
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	h.GetByID(c)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 func TestList_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1), newTestDog(2)}
 	stub := &stubListerAll{fn: func(ctx context.Context, in doguc.ListAllDogsInput) (doguc.ListAllDogsOutput, error) {
@@ -343,7 +405,7 @@ func TestList_InternalError(t *testing.T) {
 func TestListByOwner_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1), newTestDog(2)}
 	stub := &stubListerByOwner{fn: func(ctx context.Context, in doguc.ListByOwnerInput) (doguc.ListByOwnerOutput, error) {
-		assert.Equal(t, 1, in.OwnerID)
+		assert.Equal(t, 1, in.OwnerID())
 		return doguc.ListByOwnerOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, stub)
@@ -423,9 +485,9 @@ func TestListByOwner_InternalError(t *testing.T) {
 
 func TestModify_Success(t *testing.T) {
 	stub := &stubModifier{fn: func(ctx context.Context, in doguc.ModifyDogInput) (doguc.ModifyDogOutput, error) {
-		assert.Equal(t, 42, in.ID)
-		assert.NotNil(t, in.Patch.Name)
-		assert.Equal(t, "Buddie", *in.Patch.Name)
+		assert.Equal(t, 42, in.ID())
+		assert.NotNil(t, in.Patch().Name)
+		assert.Equal(t, "Buddie", *in.Patch().Name)
 		return doguc.ModifyDogOutput{ID: 42}, nil
 	}}
 	h := newTestHandlerFull(nil, nil, nil, stub)
@@ -546,8 +608,8 @@ func TestAddIncompatibility_Success_Added(t *testing.T) {
 		mustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja),
 	}
 	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
-		assert.Equal(t, 42, in.DogID)
-		assert.Equal(t, 3, in.IncompatibilityID)
+		assert.Equal(t, 42, in.DogID())
+		assert.Equal(t, 3, in.IncompatibilityID())
 		return doguc.AddDogIncompatibilityOutput{
 			ID: 42, Added: true, Incompatibilities: incompats,
 		}, nil
@@ -622,7 +684,11 @@ func TestAddIncompatibility_BindingValidation(t *testing.T) {
 	h.AddIncompatibility(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "invalid_request")
+	// The factory is the sole validator (Q2). A zero id in the body is
+	// now caught by NewAddDogIncompatibilityInput, not by gin binding,
+	// so the response is the standard validation envelope with the
+	// field name.
+	assert.Contains(t, w.Body.String(), `"field":"incompatibility_id"`)
 }
 
 func TestAddIncompatibility_NotFound_UseCase(t *testing.T) {
@@ -671,8 +737,8 @@ func TestRemoveIncompatibility_Success_Removed(t *testing.T) {
 		mustNewIncompatibility(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta),
 	}
 	stub := &stubIncompatibilityRemover{fn: func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error) {
-		assert.Equal(t, 42, in.DogID)
-		assert.Equal(t, 3, in.IncompatibilityID)
+		assert.Equal(t, 42, in.DogID())
+		assert.Equal(t, 3, in.IncompatibilityID())
 		return doguc.RemoveDogIncompatibilityOutput{
 			ID: 42, Removed: true, Incompatibilities: incompats,
 		}, nil
@@ -836,7 +902,7 @@ func TestListActive_InternalError(t *testing.T) {
 func TestListByIsActive_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByIsActive{fn: func(ctx context.Context, in doguc.ListByIsActiveInput) (doguc.ListByIsActiveOutput, error) {
-		assert.True(t, in.IsActive)
+		assert.True(t, in.IsActive())
 		return doguc.ListByIsActiveOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -866,7 +932,7 @@ func TestListByIsActive_InvalidValue(t *testing.T) {
 func TestListByIncompatibility_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1), newTestDog(2), newTestDog(3)}
 	stub := &stubListerByIncompatibility{fn: func(ctx context.Context, in doguc.ListByIncompatibilityInput) (doguc.ListByIncompatibilityOutput, error) {
-		assert.Equal(t, 5, in.IncompatibilityID)
+		assert.Equal(t, 5, in.IncompatibilityID())
 		return doguc.ListByIncompatibilityOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -906,7 +972,7 @@ func TestListByIncompatibility_ZeroID(t *testing.T) {
 func TestListByBreed_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByBreed{fn: func(ctx context.Context, in doguc.ListByBreedInput) (doguc.ListByBreedOutput, error) {
-		assert.Equal(t, "Labrador", in.Breed)
+		assert.Equal(t, "Labrador", in.Breed())
 		return doguc.ListByBreedOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -942,7 +1008,7 @@ func TestListByBreed_Empty(t *testing.T) {
 func TestListBySex_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerBySex{fn: func(ctx context.Context, in doguc.ListBySexInput) (doguc.ListBySexOutput, error) {
-		assert.Equal(t, domain.SexFemale, in.Sex)
+		assert.Equal(t, domain.SexFemale, in.Sex())
 		return doguc.ListBySexOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -972,7 +1038,7 @@ func TestListBySex_InvalidSex(t *testing.T) {
 func TestListByNeutered_True(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByNeutered{fn: func(ctx context.Context, in doguc.ListByNeuteredInput) (doguc.ListByNeuteredOutput, error) {
-		assert.True(t, in.Neutered)
+		assert.True(t, in.Neutered())
 		return doguc.ListByNeuteredOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -987,7 +1053,7 @@ func TestListByNeutered_True(t *testing.T) {
 
 func TestListByNeutered_False(t *testing.T) {
 	stub := &stubListerByNeutered{fn: func(ctx context.Context, in doguc.ListByNeuteredInput) (doguc.ListByNeuteredOutput, error) {
-		assert.False(t, in.Neutered)
+		assert.False(t, in.Neutered())
 		return doguc.ListByNeuteredOutput{Dogs: []*domain.Dog{}}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -1013,7 +1079,7 @@ func TestListByNeutered_InvalidValue(t *testing.T) {
 func TestListByHeat_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByHeat{fn: func(ctx context.Context, in doguc.ListByHeatInput) (doguc.ListByHeatOutput, error) {
-		assert.True(t, in.Heat)
+		assert.True(t, in.Heat())
 		return doguc.ListByHeatOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -1039,7 +1105,7 @@ func TestListByHeat_InvalidValue(t *testing.T) {
 func TestListByAgeBracket_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByAgeBracket{fn: func(ctx context.Context, in doguc.ListByAgeBracketInput) (doguc.ListByAgeBracketOutput, error) {
-		assert.Equal(t, domain.AgeBracketChildren, in.AgeBracket)
+		assert.Equal(t, domain.AgeBracketChildren, in.AgeBracket())
 		return doguc.ListByAgeBracketOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -1066,7 +1132,7 @@ func TestListByAgeBracket_InvalidBracket(t *testing.T) {
 func TestListBySizeBracket_Success(t *testing.T) {
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerBySizeBracket{fn: func(ctx context.Context, in doguc.ListBySizeBracketInput) (doguc.ListBySizeBracketOutput, error) {
-		assert.Equal(t, domain.SizeBracketLarge, in.SizeBracket)
+		assert.Equal(t, domain.SizeBracketLarge, in.SizeBracket())
 		return doguc.ListBySizeBracketOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -1093,7 +1159,7 @@ func TestListBySizeBracket_InvalidBracket(t *testing.T) {
 func TestDelete_Success(t *testing.T) {
 	var capturedID int
 	stub := &stubDeleter{fn: func(ctx context.Context, in doguc.DeleteDogInput) (doguc.DeleteDogOutput, error) {
-		capturedID = in.ID
+		capturedID = in.ID()
 		return doguc.DeleteDogOutput{}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -1215,8 +1281,8 @@ func TestList_IncludesEmptyIncompatibilitiesArray(t *testing.T) {
 
 func TestSetNeutered_Success(t *testing.T) {
 	stub := &stubNeuteredSetter{fn: func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
-		assert.Equal(t, 42, in.ID)
-		assert.True(t, in.Neutered)
+		assert.Equal(t, 42, in.ID())
+		assert.True(t, in.Neutered())
 		return doguc.SetDogNeuteredOutput{ID: 42, Neutered: true, Sex: domain.SexFemale}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)
@@ -1286,8 +1352,8 @@ func TestSetNeutered_UseCaseValidation(t *testing.T) {
 
 func TestSetHeat_Success_Female(t *testing.T) {
 	stub := &stubHeatSetter{fn: func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
-		assert.Equal(t, 2, in.ID)
-		assert.True(t, in.Heat)
+		assert.Equal(t, 2, in.ID())
+		assert.True(t, in.Heat())
 		return doguc.SetDogHeatOutput{ID: 2, Heat: true, Sex: domain.SexFemale}, nil
 	}}
 	h := newTestHandler(nil, nil, nil)

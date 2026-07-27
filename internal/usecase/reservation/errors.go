@@ -90,3 +90,38 @@ var ErrReservationNotOwned = errors.New("reservation is not owned by this user")
 // valid ReservationStatus enum value. The handler maps it to 400
 // invalid_status.
 var ErrInvalidStatusFilter = errors.New("invalid status filter")
+
+// ErrDuplicateReservationForDog is returned when the
+// UNIQUE (activity_id, dog_id) constraint fires at insert time.
+// This is the only way to detect a duplicate booking when the
+// existing row is not in StatusConfirmed (e.g., the user previously
+// cancelled in time and is trying to rebook — which we want to
+// allow; the constraint is enforced to keep the history clean, so
+// we surface this as 409 and let the user cancel+rebook
+// explicitly).
+var ErrDuplicateReservationForDog = errors.New("dog already booked for this activity")
+
+// ErrActivityNotStarted is returned by MarkReservationNoShow when
+// the activity's date is at or after now. The policy is that only
+// already-started activities can be marked no-show, so the slot
+// is definitively "missed". Maps to 400 activity_not_started.
+var ErrActivityNotStarted = errors.New("activity has not started yet")
+
+// ErrNotCancellable is returned by MarkReservationNoShow when the
+// reservation is not in StatusConfirmed (i.e., it is already
+// cancelled, completed, no-show, or forgiven). Maps to 409
+// not_cancellable. The wire key is intentionally distinct from
+// already_cancelled (used by Cancel) to give clients a precise
+// distinction between the two action errors.
+var ErrNotCancellable = errors.New("reservation is not in a state that allows no-show")
+
+// ErrActivityNotFinished is returned by CompleteReservation when
+// the activity's date + duration is at or after now (the activity
+// has not ended yet). Maps to 400 activity_not_finished.
+var ErrActivityNotFinished = errors.New("activity has not finished yet")
+
+// ErrNotCompletable is returned by CompleteReservation when the
+// reservation is not in StatusConfirmed (i.e., it is already
+// cancelled, completed, no-show, or forgiven). Maps to 409
+// not_completable.
+var ErrNotCompletable = errors.New("reservation is not in a state that allows completion")

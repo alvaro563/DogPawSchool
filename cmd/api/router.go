@@ -38,6 +38,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	repo := postgres.NewDogRepository(db)
 	incompatRepo := postgres.NewIncompatibilityRepository(db)
 	registerUC := doguc.NewRegisterDogUseCase(repo)
+	getDogUC := doguc.NewGetDogUseCase(repo)
 	listAllUC := doguc.NewListAllDogsUseCase(repo)
 	listByOwnerUC := doguc.NewListByOwnerUseCase(repo)
 	listActiveUC := doguc.NewListActiveDogsUseCase(repo)
@@ -71,10 +72,6 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	modifyActivityUC := activityuc.NewModifyActivityUseCase(activityRepo)
 	listAllActivityUC := activityuc.NewListAllActivitiesUseCase(activityRepo)
 	listUpcomingActivityUC := activityuc.NewListUpcomingActivitiesUseCase(activityRepo)
-	activityH := handler.NewActivityHandler(
-		registerActivityUC, getActivityUC, modifyActivityUC,
-		listAllActivityUC, listUpcomingActivityUC,
-	)
 
 	passRepo := postgres.NewPassRepository(db)
 	registerPassUC := passuc.NewRegisterPassUseCase(passRepo)
@@ -86,11 +83,18 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 
 	transactor := postgres.NewTransactor(db)
 	reservationRepo := postgres.NewReservationRepository(db)
+	dogRepo := postgres.NewDogRepository(db)
 	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
-		transactor, activityRepo, repo, passRepo, reservationRepo,
+		transactor, activityRepo, dogRepo, passRepo, reservationRepo, time.Now,
 	)
 	cancelReservationUC := reservationuc.NewCancelReservationUseCase(
-		transactor, activityRepo, repo, passRepo, reservationRepo,
+		transactor, activityRepo, dogRepo, passRepo, reservationRepo, time.Now,
+	)
+	markNoShowReservationUC := reservationuc.NewMarkReservationNoShowUseCase(
+		transactor, activityRepo, dogRepo, reservationRepo, time.Now,
+	)
+	completeReservationUC := reservationuc.NewCompleteReservationUseCase(
+		transactor, activityRepo, dogRepo, reservationRepo, time.Now,
 	)
 	getReservationUC := reservationuc.NewGetReservationUseCase(reservationRepo)
 	listByUserReservationsUC := reservationuc.NewListByUserReservationsUseCase(reservationRepo)
@@ -102,10 +106,22 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		registerReservationUC, cancelReservationUC,
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
 		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
+		markNoShowReservationUC, completeReservationUC,
+	)
+
+	closeActivityUC := activityuc.NewCloseActivityUseCase(
+		transactor, activityRepo, dogRepo, reservationRepo,
+		markNoShowReservationUC, completeReservationUC, time.Now,
+	)
+
+	activityH := handler.NewActivityHandler(
+		registerActivityUC, getActivityUC, modifyActivityUC,
+		listAllActivityUC, listUpcomingActivityUC, closeActivityUC,
 	)
 
 	dogH := handler.NewDogHandler(
 		registerUC,
+		getDogUC,
 		listAllUC,
 		listByOwnerUC,
 		listActiveUC,
@@ -128,6 +144,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		v1.POST("/dogs", dogH.Register)
+		v1.GET("/dogs/:id", dogH.GetByID)
 		v1.GET("/dogs", dogH.List)
 		v1.GET("/dogs/active", dogH.ListActive)
 		v1.GET("/dogs/is_active/:value", dogH.ListByIsActive)
@@ -157,6 +174,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		v1.GET("/activities/upcoming", activityH.ListUpcoming)
 		v1.GET("/activities/:id", activityH.GetByID)
 		v1.PATCH("/activities/:id", activityH.Modify)
+		v1.POST("/activities/:id/close", activityH.Close)
 
 		v1.POST("/users/:user_id/passes", passH.Register)
 		v1.GET("/users/:user_id/passes", passH.ListByUser)
@@ -166,6 +184,8 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 
 		v1.POST("/users/:user_id/reservations", reservationH.Register)
 		v1.POST("/users/:user_id/reservations/:id/cancel", reservationH.Cancel)
+		v1.POST("/users/:user_id/reservations/:id/no-show", reservationH.MarkNoShow)
+		v1.POST("/users/:user_id/reservations/:id/complete", reservationH.CompleteReservation)
 
 		v1.GET("/users/:user_id/reservations", reservationH.ListByUser)
 		v1.GET("/users/:user_id/reservations/upcoming", reservationH.ListUpcomingByUser)

@@ -12,10 +12,14 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// These sentinels alias the domain-level persistence errors so that
+// callers match them via errors.Is(err, domain.ErrX) without importing
+// this package. They exist only for backward compatibility within the
+// repository layer and tests; new code should reference domain.ErrX.
 var (
-	ErrNotFound          = errors.New("postgres: dog not found")
-	ErrInvalidUser       = errors.New("postgres: user_id does not exist")
-	ErrDuplicatePassport = errors.New("postgres: passport already exists")
+	ErrNotFound          = domain.ErrNotFound
+	ErrInvalidUser       = domain.ErrInvalidUserReference
+	ErrDuplicatePassport = domain.ErrDuplicatePassport
 )
 
 const (
@@ -220,64 +224,57 @@ func (repo *DogRepository) ListByOwner(ctx context.Context, userID, limit, offse
 }
 
 // Update persists a Dog aggregate: the dog row plus all its incompatibilities.
-// Uses a transaction so the aggregate is always consistent:
+// The aggregate must be written atomically:
 //  1. UPDATE the dog row
 //  2. DELETE all existing dog_incompatibilities rows for this dog
 //  3. INSERT the current dog_incompatibilities rows
 //
 // This is the "aggregate root persistence" pattern: the Dog is the aggregate
 // root and its Incompatibility[] slice is part of the aggregate. A single
-// Update call must persist the whole aggregate atomically.
+// Update call must persist the whole aggregate atomically, so the work runs
+// through Transactor.WithinTx (which also lets the method join an ambient
+// transaction started by a use case).
 func (repo *DogRepository) Update(ctx context.Context, dog *domain.Dog) error {
-	transaction, err := repo.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	// Rollback is a no-op after Commit, so this is always safe.
-	defer func() { _ = transaction.Rollback() }()
-
-	const updateQuery = `
-		UPDATE dogs SET
-			name = $1, breed = $2, age_in_months = $3, sex = $4,
-			weight_kg = $5, neutered = $6, heat = $7,
-			photo_url = $8, medical_notes = $9, educator_notes = $10,
-			passport = $11, is_active = $12
-		WHERE id = $13
-	`
-	queryResult, err := transaction.ExecContext(ctx, updateQuery,
-		dog.Name(), dog.Breed(), dog.AgeInMonths(), dog.Sex(),
-		dog.WeightKg(), dog.Neutered(), dog.Heat(),
-		nullString(dog.PhotoURL()), nullString(dog.MedicalNotes()), nullString(dog.EducatorNotes()),
-		dog.Passport(), dog.IsActive(), dog.ID(),
-	)
-	if err != nil {
-		return mapUpdateError(err)
-	}
-	rowsAffected, err := queryResult.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("update dog: rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return ErrNotFound
-	}
-
-	if _, err := transaction.ExecContext(ctx,
-		`DELETE FROM dog_incompatibilities WHERE dog_id = $1`, dog.ID()); err != nil {
-		return fmt.Errorf("delete dog incompatibilities: %w", err)
-	}
-
-	for _, incompat := range dog.Incompatibilities() {
-		if _, err := transaction.ExecContext(ctx,
-			`INSERT INTO dog_incompatibilities (dog_id, incompatibility_id) VALUES ($1, $2)`,
-			dog.ID(), incompat.ID()); err != nil {
-			return fmt.Errorf("insert dog incompatibility %d: %w", incompat.ID(), err)
+	return NewTransactor(repo.db).WithinTx(ctx, func(txCtx context.Context) error {
+		const updateQuery = `
+			UPDATE dogs SET
+				name = $1, breed = $2, age_in_months = $3, sex = $4,
+				weight_kg = $5, neutered = $6, heat = $7,
+				photo_url = $8, medical_notes = $9, educator_notes = $10,
+				passport = $11, is_active = $12
+			WHERE id = $13
+		`
+		queryResult, err := runner(txCtx, repo.db).ExecContext(txCtx, updateQuery,
+			dog.Name(), dog.Breed(), dog.AgeInMonths(), dog.Sex(),
+			dog.WeightKg(), dog.Neutered(), dog.Heat(),
+			nullString(dog.PhotoURL()), nullString(dog.MedicalNotes()), nullString(dog.EducatorNotes()),
+			dog.Passport(), dog.IsActive(), dog.ID(),
+		)
+		if err != nil {
+			return mapUpdateError(err)
 		}
-	}
+		rowsAffected, err := queryResult.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("update dog: rows affected: %w", err)
+		}
+		if rowsAffected == 0 {
+			return ErrNotFound
+		}
 
-	if err := transaction.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
-	return nil
+		if _, err := runner(txCtx, repo.db).ExecContext(txCtx,
+			`DELETE FROM dog_incompatibilities WHERE dog_id = $1`, dog.ID()); err != nil {
+			return fmt.Errorf("delete dog incompatibilities: %w", err)
+		}
+
+		for _, incompat := range dog.Incompatibilities() {
+			if _, err := runner(txCtx, repo.db).ExecContext(txCtx,
+				`INSERT INTO dog_incompatibilities (dog_id, incompatibility_id) VALUES ($1, $2)`,
+				dog.ID(), incompat.ID()); err != nil {
+				return fmt.Errorf("insert dog incompatibility %d: %w", incompat.ID(), err)
+			}
+		}
+		return nil
+	})
 }
 
 func (repo *DogRepository) ListAll(ctx context.Context, activeOnly bool, limit, offset int) ([]*domain.Dog, error) {
@@ -558,45 +555,6 @@ func (repo *DogRepository) Delete(ctx context.Context, id int) error {
 	rowsAffected, err := queryResult.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("delete dog: rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// SetDogNeutered sets only the neutered flag for a dog. Returns ErrNotFound
-// if the dog does not exist. Single-statement UPDATE — no transaction, no
-// cascade — designed to be the fast path for the dynamic neutered toggle.
-func (repo *DogRepository) SetDogNeutered(ctx context.Context, id int, neutered bool) error {
-	const query = `UPDATE dogs SET neutered = $1 WHERE id = $2`
-	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, neutered, id)
-	if err != nil {
-		return fmt.Errorf("set dog neutered: %w", err)
-	}
-	rowsAffected, err := queryResult.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("set dog neutered: rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// SetDogHeat sets only the heat flag for a dog. Returns ErrNotFound if the
-// dog does not exist. Single-statement UPDATE — no transaction, no cascade.
-// Note: the use case is responsible for enforcing the business rule
-// "heat=true requires sex=FEMALE" (the DB does not constrain it).
-func (repo *DogRepository) SetDogHeat(ctx context.Context, id int, heat bool) error {
-	const query = `UPDATE dogs SET heat = $1 WHERE id = $2`
-	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, heat, id)
-	if err != nil {
-		return fmt.Errorf("set dog heat: %w", err)
-	}
-	rowsAffected, err := queryResult.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("set dog heat: rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
 		return ErrNotFound

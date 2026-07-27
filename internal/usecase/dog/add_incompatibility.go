@@ -7,17 +7,46 @@ import (
 	"dogpaw/internal/domain"
 )
 
+// AddDogIncompatibilityInput is the validated command to attach an
+// incompatibility to a dog. Only NewAddDogIncompatibilityInput can
+// construct one.
 type AddDogIncompatibilityInput struct {
-	DogID             int
-	IncompatibilityID int
+	dogID             int
+	incompatibilityID int
 }
 
+func (in AddDogIncompatibilityInput) DogID() int             { return in.dogID }
+func (in AddDogIncompatibilityInput) IncompatibilityID() int { return in.incompatibilityID }
+
+// NewAddDogIncompatibilityInput validates both ids > 0.
+func NewAddDogIncompatibilityInput(dogID, incompatibilityID int) (AddDogIncompatibilityInput, error) {
+	if err := validateTwoIDs(dogID, incompatibilityID); err != nil {
+		return AddDogIncompatibilityInput{}, err
+	}
+	return AddDogIncompatibilityInput{dogID: dogID, incompatibilityID: incompatibilityID}, nil
+}
+
+// MustNewAddDogIncompatibilityInput panics on validation error. For tests.
+func MustNewAddDogIncompatibilityInput(dogID, incompatibilityID int) AddDogIncompatibilityInput {
+	in, err := NewAddDogIncompatibilityInput(dogID, incompatibilityID)
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
+// AddDogIncompatibilityOutput reports the post-mutation state of the
+// dog (id, full incompatibility list) and whether the new link was
+// freshly added (false means the dog already had it: idempotent).
 type AddDogIncompatibilityOutput struct {
 	ID                int
 	Incompatibilities []domain.Incompatibility
 	Added             bool
 }
 
+// AddDogIncompatibilityUseCase attaches an incompatibility to a dog.
+// Idempotent: a duplicate add returns Added=false and skips the DB
+// write.
 type AddDogIncompatibilityUseCase struct {
 	dogRepo      domain.DogRepository
 	incompatRepo domain.IncompatibilityRepository
@@ -31,21 +60,17 @@ func NewAddDogIncompatibilityUseCase(
 }
 
 func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, input AddDogIncompatibilityInput) (AddDogIncompatibilityOutput, error) {
-	if err := input.validate(); err != nil {
-		return AddDogIncompatibilityOutput{}, err
-	}
-
-	incompat, err := uc.incompatRepo.GetIncompatibilityByID(ctx, input.IncompatibilityID)
+	incompat, err := uc.incompatRepo.GetIncompatibilityByID(ctx, input.IncompatibilityID())
 	if err != nil {
-		return AddDogIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", input.IncompatibilityID, err)
+		return AddDogIncompatibilityOutput{}, fmt.Errorf("get incompatibility %d: %w", input.IncompatibilityID(), err)
 	}
 	if incompat == nil {
 		return AddDogIncompatibilityOutput{}, ErrNotFound
 	}
 
-	dog, err := uc.dogRepo.GetByID(ctx, input.DogID)
+	dog, err := uc.dogRepo.GetByID(ctx, input.DogID())
 	if err != nil {
-		return AddDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", input.DogID, err)
+		return AddDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", input.DogID(), err)
 	}
 	if dog == nil {
 		return AddDogIncompatibilityOutput{}, ErrNotFound
@@ -57,17 +82,12 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, input AddDo
 	}
 	if added {
 		if err := uc.dogRepo.Update(ctx, dog); err != nil {
-			return AddDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", input.DogID, err)
+			return AddDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", input.DogID(), err)
 		}
 	}
-
 	return AddDogIncompatibilityOutput{
 		ID:                dog.ID(),
 		Incompatibilities: dog.Incompatibilities(),
 		Added:             added,
 	}, nil
-}
-
-func (input AddDogIncompatibilityInput) validate() error {
-	return validateIncompatibilityInput(input.DogID, input.IncompatibilityID)
 }

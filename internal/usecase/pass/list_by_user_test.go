@@ -25,7 +25,8 @@ func TestListByUserPassesUseCase_Success(t *testing.T) {
 		},
 	}
 	uc := NewListByUserPassesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListByUserPassesInput{UserID: 1})
+	in := MustNewListByUserPassesInput(1, 0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, output.Passes)
 }
@@ -37,31 +38,16 @@ func TestListByUserPassesUseCase_Empty(t *testing.T) {
 		},
 	}
 	uc := NewListByUserPassesUseCase(repo)
-	output, err := uc.Execute(context.Background(), ListByUserPassesInput{UserID: 999})
+	in := MustNewListByUserPassesInput(999, 0, 0)
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(output.Passes))
 }
 
-func TestListByUserPassesUseCase_InvalidUserID(t *testing.T) {
-	repo := &mockPassRepository{
-		listByOwner: func(context.Context, int, int, int) ([]*domain.Pass, error) {
-			t.Fatal("repo should not be called on invalid user_id")
-			return nil, nil
-		},
-	}
-	uc := NewListByUserPassesUseCase(repo)
-	tests := []struct {
-		name   string
-		userID int
-	}{
-		{"zero", 0},
-		{"negative", -5},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := uc.Execute(context.Background(), ListByUserPassesInput{UserID: tt.userID})
-			assertValidationError(t, err, "user_id")
-		})
+func TestNewListByUserPassesInput_InvalidUserID(t *testing.T) {
+	for _, userID := range []int{0, -5} {
+		_, err := NewListByUserPassesInput(userID, 0, 0)
+		assertValidationError(t, err, "user_id")
 	}
 }
 
@@ -88,9 +74,8 @@ func TestListByUserPassesUseCase_PaginationNormalization(t *testing.T) {
 				},
 			}
 			uc := NewListByUserPassesUseCase(repo)
-			_, err := uc.Execute(context.Background(), ListByUserPassesInput{
-				UserID: 1, Limit: tt.inputLimit, Offset: tt.inputOffset,
-			})
+			in := MustNewListByUserPassesInput(1, tt.inputLimit, tt.inputOffset)
+			_, err := uc.Execute(context.Background(), in)
 			assert.NoError(t, err)
 		})
 	}
@@ -103,7 +88,8 @@ func TestListByUserPassesUseCase_RepoError(t *testing.T) {
 		},
 	}
 	uc := NewListByUserPassesUseCase(repo)
-	_, err := uc.Execute(context.Background(), ListByUserPassesInput{UserID: 1})
+	in := MustNewListByUserPassesInput(1, 0, 0)
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "list passes by user 1")

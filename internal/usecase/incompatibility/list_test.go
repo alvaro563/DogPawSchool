@@ -10,17 +10,16 @@ import (
 	"dogpaw/internal/domain"
 )
 
-func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
-	t.Run("validation_invalid_level", func(t *testing.T) {
-		uc := NewListIncompatibilitiesUseCase(&mockIncompatibilityRepository{})
-		bad := domain.IncompatibilityLevel("OTHER")
-		_, err := uc.Execute(context.Background(), ListIncompatibilitiesInput{Level: &bad})
-		assert.Error(t, err)
-		var verr *ValidationError
-		assert.True(t, errors.As(err, &verr))
-		assert.Equal(t, "level", verr.Field)
-	})
+func TestNewListIncompatibilitiesInput_InvalidLevel(t *testing.T) {
+	bad := domain.IncompatibilityLevel("OTHER")
+	_, err := NewListIncompatibilitiesInput(&bad)
+	assert.Error(t, err)
+	var verr *ValidationError
+	assert.True(t, errors.As(err, &verr))
+	assert.Equal(t, "level", verr.Field)
+}
 
+func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 	t.Run("list_all_no_filter", func(t *testing.T) {
 		incompats := []*domain.Incompatibility{
 			mustNewIncompatibility(1, "A", domain.IncompatibilityLevelBaja),
@@ -34,7 +33,7 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListIncompatibilitiesInput{})
+		out, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil))
 		assert.NoError(t, err)
 		assert.Len(t, out.Incompatibilities, 2)
 		assert.Nil(t, capturedLevel, "no level filter should be passed to repo")
@@ -50,7 +49,7 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
 		media := domain.IncompatibilityLevelMedia
-		_, err := uc.Execute(context.Background(), ListIncompatibilitiesInput{Level: &media})
+		_, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(&media))
 		assert.NoError(t, err)
 		assert.NotNil(t, capturedLevel)
 		assert.Equal(t, domain.IncompatibilityLevelMedia, *capturedLevel)
@@ -63,7 +62,7 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
-		out, err := uc.Execute(context.Background(), ListIncompatibilitiesInput{})
+		out, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil))
 		assert.NoError(t, err)
 		assert.Empty(t, out.Incompatibilities)
 	})
@@ -76,7 +75,7 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
-		_, err := uc.Execute(context.Background(), ListIncompatibilitiesInput{})
+		_, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil))
 		assert.True(t, errors.Is(err, repoErr))
 	})
 }

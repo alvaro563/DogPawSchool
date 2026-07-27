@@ -2,22 +2,76 @@ package activity
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"dogpaw/internal/domain"
 )
 
-// RegisterActivityInput is the validated payload for creating a new
-// school activity.
+// RegisterActivityInput is the validated command to create a new
+// school activity. All fields are private: only NewRegisterActivityInput
+// can construct one.
 type RegisterActivityInput struct {
-	Name            string
-	Location        string
-	ActivityType    domain.ActivityType
-	MaxCapacity     int
-	DurationInHours int
-	Date            time.Time
+	name            string
+	location        string
+	activityType    domain.ActivityType
+	maxCapacity     int
+	durationInHours int
+	date            time.Time
+}
+
+func (in RegisterActivityInput) Name() string                      { return in.name }
+func (in RegisterActivityInput) Location() string                  { return in.location }
+func (in RegisterActivityInput) ActivityType() domain.ActivityType { return in.activityType }
+func (in RegisterActivityInput) MaxCapacity() int                  { return in.maxCapacity }
+func (in RegisterActivityInput) DurationInHours() int              { return in.durationInHours }
+func (in RegisterActivityInput) Date() time.Time                   { return in.date }
+
+// NewRegisterActivityInput is the validating factory. Returns the
+// first *ValidationError encountered. The returned input is, by
+// construction, always valid.
+func NewRegisterActivityInput(
+	name, location string,
+	activityType domain.ActivityType,
+	maxCapacity, durationInHours int,
+	date time.Time,
+) (RegisterActivityInput, error) {
+	if name == "" {
+		return RegisterActivityInput{}, &ValidationError{Field: "name"}
+	}
+	if location == "" {
+		return RegisterActivityInput{}, &ValidationError{Field: "location"}
+	}
+	if !activityType.IsValid() {
+		return RegisterActivityInput{}, &ValidationError{Field: "activity_type"}
+	}
+	if maxCapacity <= 0 {
+		return RegisterActivityInput{}, &ValidationError{Field: "max_capacity"}
+	}
+	if durationInHours <= 0 {
+		return RegisterActivityInput{}, &ValidationError{Field: "duration_in_hours"}
+	}
+	if date.IsZero() {
+		return RegisterActivityInput{}, &ValidationError{Field: "date"}
+	}
+	return RegisterActivityInput{
+		name: name, location: location, activityType: activityType,
+		maxCapacity: maxCapacity, durationInHours: durationInHours, date: date,
+	}, nil
+}
+
+// MustNewRegisterActivityInput panics on validation error. For tests.
+func MustNewRegisterActivityInput(
+	name, location string,
+	activityType domain.ActivityType,
+	maxCapacity, durationInHours int,
+	date time.Time,
+) RegisterActivityInput {
+	in, err := NewRegisterActivityInput(name, location, activityType, maxCapacity, durationInHours, date)
+	if err != nil {
+		panic(err)
+	}
+	return in
 }
 
 // RegisterActivityOutput is the result of a successful create.
@@ -25,9 +79,7 @@ type RegisterActivityOutput struct {
 	ID int
 }
 
-// RegisterActivityUseCase creates a new activity in the system. It
-// validates the input, builds a domain.Activity, and asks the
-// repository to persist it.
+// RegisterActivityUseCase creates a new activity in the system.
 type RegisterActivityUseCase struct {
 	repo domain.ActivityRepository
 }
@@ -37,44 +89,14 @@ func NewRegisterActivityUseCase(repo domain.ActivityRepository) *RegisterActivit
 }
 
 func (uc *RegisterActivityUseCase) Execute(ctx context.Context, input RegisterActivityInput) (RegisterActivityOutput, error) {
-	if err := input.validate(); err != nil {
-		return RegisterActivityOutput{}, err
-	}
-
-	activity, err := domain.NewActivity(0, input.Name, input.Location, input.ActivityType, input.MaxCapacity, input.DurationInHours, input.Date)
+	activity, err := domain.NewActivity(0, input.Name(), input.Location(), input.ActivityType(),
+		input.MaxCapacity(), input.DurationInHours(), input.Date())
 	if err != nil {
 		return RegisterActivityOutput{}, err
 	}
-
 	id, err := uc.repo.Create(ctx, activity)
 	if err != nil {
 		return RegisterActivityOutput{}, fmt.Errorf("register activity: %w", err)
 	}
 	return RegisterActivityOutput{ID: id}, nil
 }
-
-func (input RegisterActivityInput) validate() error {
-	if input.Name == "" {
-		return &ValidationError{Field: "name"}
-	}
-	if input.Location == "" {
-		return &ValidationError{Field: "location"}
-	}
-	if !input.ActivityType.IsValid() {
-		return &ValidationError{Field: "activity_type"}
-	}
-	if input.MaxCapacity <= 0 {
-		return &ValidationError{Field: "max_capacity"}
-	}
-	if input.DurationInHours <= 0 {
-		return &ValidationError{Field: "duration_in_hours"}
-	}
-	if input.Date.IsZero() {
-		return &ValidationError{Field: "date"}
-	}
-	return nil
-}
-
-// sentinelErr is a small, import-free error used in tests to verify
-// that repository errors are wrapped correctly.
-var sentinelErr = errors.New("repo failure")

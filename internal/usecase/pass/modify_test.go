@@ -37,7 +37,8 @@ func TestModifyPassUseCase_Success_AppliesAllFields(t *testing.T) {
 		PassType:  &newType,
 		ExpiresAt: &newExpiry,
 	}
-	output, err := uc.Execute(context.Background(), ModifyPassInput{ID: 1, Patch: patch})
+	in := MustNewModifyPassInput(1, patch)
+	output, err := uc.Execute(context.Background(), in)
 
 	assert.NoError(t, err)
 	assert.Equal(t, 15000, output.Pass.Price())
@@ -59,7 +60,8 @@ func TestModifyPassUseCase_Success_EmptyPatchIsNoOp(t *testing.T) {
 		},
 	}
 	uc := NewModifyPassUseCase(repo)
-	output, err := uc.Execute(context.Background(), ModifyPassInput{ID: 1, Patch: domain.PassPatch{}})
+	in := MustNewModifyPassInput(1, domain.PassPatch{})
+	output, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
 	assert.Equal(t, 100, output.Pass.Price())
 	assert.Equal(t, domain.PassGeneric, output.Pass.Type())
@@ -76,24 +78,15 @@ func TestModifyPassUseCase_NotFound(t *testing.T) {
 		},
 	}
 	uc := NewModifyPassUseCase(repo)
-	_, err := uc.Execute(context.Background(), ModifyPassInput{ID: 99, Patch: domain.PassPatch{}})
+	in := MustNewModifyPassInput(99, domain.PassPatch{})
+	_, err := uc.Execute(context.Background(), in)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestModifyPassUseCase_InvalidID(t *testing.T) {
-	uc := NewModifyPassUseCase(&mockPassRepository{})
-	tests := []struct {
-		name string
-		id   int
-	}{
-		{"zero", 0},
-		{"negative", -1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := uc.Execute(context.Background(), ModifyPassInput{ID: tt.id, Patch: domain.PassPatch{}})
-			assertValidationError(t, err, "id")
-		})
+func TestNewModifyPassInput_InvalidID(t *testing.T) {
+	for _, id := range []int{0, -1} {
+		_, err := NewModifyPassInput(id, domain.PassPatch{})
+		assertValidationError(t, err, "id")
 	}
 }
 
@@ -125,7 +118,8 @@ func TestModifyPassUseCase_PatchValidationErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := uc.Execute(context.Background(), ModifyPassInput{ID: 1, Patch: tt.patch})
+			in := MustNewModifyPassInput(1, tt.patch)
+			_, err := uc.Execute(context.Background(), in)
 			assertValidationError(t, err, tt.wantField)
 		})
 	}
@@ -149,11 +143,10 @@ func TestModifyPassUseCase_NonEditableFieldsUnchanged(t *testing.T) {
 	uc := NewModifyPassUseCase(repo)
 
 	newPrice := 200
-	_, err := uc.Execute(context.Background(), ModifyPassInput{ID: 42, Patch: domain.PassPatch{Price: &newPrice}})
+	in := MustNewModifyPassInput(42, domain.PassPatch{Price: &newPrice})
+	_, err := uc.Execute(context.Background(), in)
 	assert.NoError(t, err)
-	// Editable field changed.
 	assert.Equal(t, 200, original.Price())
-	// Non-editable fields must not change.
 	assert.Equal(t, 42, original.ID())
 	assert.Equal(t, 10, original.NumOfSessions())
 	assert.Equal(t, 10, original.RemainingSessions())
@@ -168,7 +161,8 @@ func TestModifyPassUseCase_RepoError_OnGet(t *testing.T) {
 		},
 	}
 	uc := NewModifyPassUseCase(repo)
-	_, err := uc.Execute(context.Background(), ModifyPassInput{ID: 1, Patch: domain.PassPatch{}})
+	in := MustNewModifyPassInput(1, domain.PassPatch{})
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "get pass 1")
@@ -185,7 +179,8 @@ func TestModifyPassUseCase_RepoError_OnUpdate(t *testing.T) {
 	}
 	uc := NewModifyPassUseCase(repo)
 	newPrice := 200
-	_, err := uc.Execute(context.Background(), ModifyPassInput{ID: 1, Patch: domain.PassPatch{Price: &newPrice}})
+	in := MustNewModifyPassInput(1, domain.PassPatch{Price: &newPrice})
+	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "update pass 1")

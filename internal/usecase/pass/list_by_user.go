@@ -7,12 +7,37 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// ListByUserPassesInput is the paginated request for listing passes
-// owned by a specific user.
+// ListByUserPassesInput is the paginated request for listing
+// passes owned by a specific user.
 type ListByUserPassesInput struct {
-	UserID int
-	Limit  int
-	Offset int
+	userID int
+	limit  int
+	offset int
+}
+
+func (in ListByUserPassesInput) UserID() int { return in.userID }
+func (in ListByUserPassesInput) Limit() int  { return in.limit }
+func (in ListByUserPassesInput) Offset() int { return in.offset }
+
+// NewListByUserPassesInput validates user id and normalizes
+// pagination. The use case does not verify the user exists; if
+// the user_id does not exist the repository returns an empty
+// slice.
+func NewListByUserPassesInput(userID, limit, offset int) (ListByUserPassesInput, error) {
+	if userID <= 0 {
+		return ListByUserPassesInput{}, &ValidationError{Field: "user_id"}
+	}
+	limit, offset = normalizePagination(limit, offset)
+	return ListByUserPassesInput{userID: userID, limit: limit, offset: offset}, nil
+}
+
+// MustNewListByUserPassesInput panics on error. For tests.
+func MustNewListByUserPassesInput(userID, limit, offset int) ListByUserPassesInput {
+	in, err := NewListByUserPassesInput(userID, limit, offset)
+	if err != nil {
+		panic(err)
+	}
+	return in
 }
 
 // ListByUserPassesOutput carries the result page, most recent first.
@@ -21,10 +46,7 @@ type ListByUserPassesOutput struct {
 }
 
 // ListByUserPassesUseCase returns a paginated list of passes owned
-// by the given user. The use case does not verify the user exists;
-// if the user_id does not exist the repository returns an empty
-// slice. Validating user existence requires a UserRepository, which
-// is out of scope for this iteration.
+// by the given user.
 type ListByUserPassesUseCase struct {
 	repo domain.PassRepository
 }
@@ -34,20 +56,9 @@ func NewListByUserPassesUseCase(repo domain.PassRepository) *ListByUserPassesUse
 }
 
 func (uc *ListByUserPassesUseCase) Execute(ctx context.Context, input ListByUserPassesInput) (ListByUserPassesOutput, error) {
-	if err := input.validate(); err != nil {
-		return ListByUserPassesOutput{}, err
-	}
-	limit, offset := NormalizePagination(input.Limit, input.Offset)
-	passes, err := uc.repo.ListByOwner(ctx, input.UserID, limit, offset)
+	passes, err := uc.repo.ListByOwner(ctx, input.UserID(), input.Limit(), input.Offset())
 	if err != nil {
-		return ListByUserPassesOutput{}, fmt.Errorf("list passes by user %d: %w", input.UserID, err)
+		return ListByUserPassesOutput{}, fmt.Errorf("list passes by user %d: %w", input.UserID(), err)
 	}
 	return ListByUserPassesOutput{Passes: passes}, nil
-}
-
-func (input ListByUserPassesInput) validate() error {
-	if input.UserID <= 0 {
-		return &ValidationError{Field: "user_id"}
-	}
-	return nil
 }

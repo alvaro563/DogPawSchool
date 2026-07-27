@@ -12,14 +12,11 @@ import (
 )
 
 func validRegisterInput() RegisterActivityInput {
-	return RegisterActivityInput{
-		Name:            "Paseo Río",
-		Location:        "Parking Central",
-		ActivityType:    domain.TypeRoute,
-		MaxCapacity:     8,
-		DurationInHours: 2,
-		Date:            time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC),
-	}
+	return MustNewRegisterActivityInput(
+		"Paseo Río", "Parking Central",
+		domain.TypeRoute, 8, 2,
+		time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC),
+	)
 }
 
 func TestRegisterActivityUseCase_Success(t *testing.T) {
@@ -39,67 +36,49 @@ func TestRegisterActivityUseCase_Success(t *testing.T) {
 	assert.Equal(t, 42, output.ID)
 }
 
-func TestRegisterActivityUseCase_ValidationErrors(t *testing.T) {
-	base := validRegisterInput()
-	tests := []struct {
+func TestNewRegisterActivityInput(t *testing.T) {
+	fixedDate := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	base := func() RegisterActivityInput {
+		return MustNewRegisterActivityInput("n", "l", domain.TypeRoute, 8, 2, fixedDate)
+	}
+
+	scenarios := []struct {
 		name      string
-		mutate    func(input *RegisterActivityInput)
+		factory   func() (RegisterActivityInput, error)
 		wantField string
 	}{
-		{
-			name:      "empty_name",
-			mutate:    func(i *RegisterActivityInput) { i.Name = "" },
-			wantField: "name",
-		},
-		{
-			name:      "empty_location",
-			mutate:    func(i *RegisterActivityInput) { i.Location = "" },
-			wantField: "location",
-		},
-		{
-			name:      "invalid_type",
-			mutate:    func(i *RegisterActivityInput) { i.ActivityType = domain.ActivityType("INVALID") },
-			wantField: "activity_type",
-		},
-		{
-			name:      "zero_capacity",
-			mutate:    func(i *RegisterActivityInput) { i.MaxCapacity = 0 },
-			wantField: "max_capacity",
-		},
-		{
-			name:      "negative_capacity",
-			mutate:    func(i *RegisterActivityInput) { i.MaxCapacity = -1 },
-			wantField: "max_capacity",
-		},
-		{
-			name:      "zero_duration",
-			mutate:    func(i *RegisterActivityInput) { i.DurationInHours = 0 },
-			wantField: "duration_in_hours",
-		},
-		{
-			name:      "zero_date",
-			mutate:    func(i *RegisterActivityInput) { i.Date = time.Time{} },
-			wantField: "date",
-		},
+		{"empty_name", func() (RegisterActivityInput, error) {
+			return NewRegisterActivityInput("", "l", domain.TypeRoute, 8, 2, fixedDate)
+		}, "name"},
+		{"empty_location", func() (RegisterActivityInput, error) {
+			return NewRegisterActivityInput("n", "", domain.TypeRoute, 8, 2, fixedDate)
+		}, "location"},
+		{"invalid_type", func() (RegisterActivityInput, error) {
+			return NewRegisterActivityInput("n", "l", domain.ActivityType("INVALID"), 8, 2, fixedDate)
+		}, "activity_type"},
+		{"zero_capacity", func() (RegisterActivityInput, error) {
+			return NewRegisterActivityInput("n", "l", domain.TypeRoute, 0, 2, fixedDate)
+		}, "max_capacity"},
+		{"negative_capacity", func() (RegisterActivityInput, error) {
+			return NewRegisterActivityInput("n", "l", domain.TypeRoute, -1, 2, fixedDate)
+		}, "max_capacity"},
+		{"zero_duration", func() (RegisterActivityInput, error) {
+			return NewRegisterActivityInput("n", "l", domain.TypeRoute, 8, 0, fixedDate)
+		}, "duration_in_hours"},
+		{"zero_date", func() (RegisterActivityInput, error) {
+			return NewRegisterActivityInput("n", "l", domain.TypeRoute, 8, 2, time.Time{})
+		}, "date"},
 	}
-	for _, tt := range tests {
+	for _, tt := range scenarios {
 		t.Run(tt.name, func(t *testing.T) {
-			input := base
-			tt.mutate(&input)
-			repo := &mockActivityRepository{
-				create: func(context.Context, *domain.Activity) (int, error) {
-					t.Fatal("create should not be called on validation error")
-					return 0, nil
-				},
-			}
-			uc := NewRegisterActivityUseCase(repo)
-			_, err := uc.Execute(context.Background(), input)
+			_, err := tt.factory()
 			assert.Error(t, err)
-			var validationErr *ValidationError
-			assert.True(t, errors.As(err, &validationErr))
-			assert.Equal(t, tt.wantField, validationErr.Field)
+			var verr *ValidationError
+			assert.True(t, errors.As(err, &verr))
+			assert.Equal(t, tt.wantField, verr.Field)
 		})
 	}
+	_ = base // silence unused if the slice above is empty in some refactor
 }
 
 func TestRegisterActivityUseCase_RepoError(t *testing.T) {

@@ -36,6 +36,7 @@ type Activity struct {
 	location        string
 	durationInHours int
 	date            time.Time
+	closed          bool
 }
 
 // NewActivity creates an Activity with validated fields.
@@ -104,6 +105,28 @@ func (activity *Activity) IsInThePast(now time.Time) bool {
 // IsUpcoming reports whether the activity date is at or after now.
 func (activity *Activity) IsUpcoming(now time.Time) bool {
 	return !activity.date.Before(now)
+}
+
+// IsFinished reports whether the activity has ended: date + duration < now.
+func (activity *Activity) IsFinished(now time.Time) bool {
+	return activity.date.Add(time.Duration(activity.durationInHours) * time.Hour).Before(now)
+}
+
+// IsClosed reports whether the activity has been closed by an admin.
+func (activity *Activity) IsClosed() bool { return activity.closed }
+
+// SetClosed sets the closed flag directly. Used by the repository
+// scanner when loading from the database.
+func (activity *Activity) SetClosed(closed bool) { activity.closed = closed }
+
+// Close transitions the activity to the closed state. Returns an error
+// if the activity is already closed.
+func (activity *Activity) Close() error {
+	if activity.closed {
+		return fmt.Errorf("activity: already closed")
+	}
+	activity.closed = true
+	return nil
 }
 
 // IsIndividualClass reports whether this activity is a 1-on-1 session.
