@@ -18,6 +18,7 @@ import (
 	incompatuc "dogpaw/internal/usecase/incompatibility"
 	passuc "dogpaw/internal/usecase/pass"
 	reservationuc "dogpaw/internal/usecase/reservation"
+	useruc "dogpaw/internal/usecase/user"
 
 	_ "dogpaw/docs"
 )
@@ -141,8 +142,20 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		setHeatUC,
 	)
 
+	userRepo := postgres.NewUserRepository(db)
+	getUserUC := useruc.NewGetUserUseCase(userRepo)
+	listUsersUC := useruc.NewListUsersUseCase(userRepo)
+	updateUserUC := useruc.NewUpdateUserUseCase(userRepo)
+	deactivateUserUC := useruc.NewDeactivateUserUseCase(userRepo)
+	userH := handler.NewUserHandler(getUserUC, listUsersUC, updateUserUC, deactivateUserUC)
+
 	v1 := r.Group("/api/v1")
 	{
+		v1.GET("/users", userH.List)
+		v1.GET("/users/:user_id", userH.GetByID)
+		v1.PATCH("/users/:user_id", userH.Update)
+		v1.POST("/users/:user_id/deactivate", userH.Deactivate)
+
 		v1.POST("/dogs", dogH.Register)
 		v1.GET("/dogs/:id", dogH.GetByID)
 		v1.GET("/dogs", dogH.List)
@@ -190,7 +203,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		v1.GET("/users/:user_id/reservations", reservationH.ListByUser)
 		v1.GET("/users/:user_id/reservations/upcoming", reservationH.ListUpcomingByUser)
 		v1.GET("/users/:user_id/reservations/:id", reservationH.GetByID)
-		v1.GET("/dogs/:dog_id/reservations", reservationH.ListByDog)
+		v1.GET("/dogs/:id/reservations", reservationH.ListByDog)
 		v1.GET("/passes/:id/reservations", reservationH.ListByPass)
 		v1.GET("/activities/:id/reservations", reservationH.ListByActivity)
 	}

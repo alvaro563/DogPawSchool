@@ -754,7 +754,7 @@ func TestListByDog_Success(t *testing.T) {
 	}
 	h := newReservationHandlerListByDog(stub)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/20/reservations", "")
-	c.Params = gin.Params{{Key: "dog_id", Value: "20"}}
+	c.Params = gin.Params{{Key: "id", Value: "20"}}
 	h.ListByDog(c)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
@@ -767,7 +767,7 @@ func TestListByDog_InvalidDogID(t *testing.T) {
 		},
 	})
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/0/reservations", "")
-	c.Params = gin.Params{{Key: "dog_id", Value: "0"}}
+	c.Params = gin.Params{{Key: "id", Value: "0"}}
 	h.ListByDog(c)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

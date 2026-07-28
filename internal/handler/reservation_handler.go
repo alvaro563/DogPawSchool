@@ -467,15 +467,15 @@ func (h *ReservationHandler) GetByID(c *gin.Context) {
 // @Description  given dog, ordered by created_at DESC.
 // @Tags         reservations
 // @Produce      json
-// @Param        dog_id   path      int     true   "Dog ID"
+// @Param        id       path      int     true   "Dog ID"
 // @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
 // @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
-// @Router       /api/v1/dogs/{dog_id}/reservations [get]
+// @Router       /api/v1/dogs/{id}/reservations [get]
 func (h *ReservationHandler) ListByDog(c *gin.Context) {
-	dogID, err := strconv.Atoi(c.Param("dog_id"))
+	dogID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || dogID <= 0 {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "dog_id"})
 		return

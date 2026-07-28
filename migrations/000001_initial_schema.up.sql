@@ -71,6 +71,13 @@ CREATE TYPE reservation_status AS ENUM (
     'NO_SHOW'
 );
 
+CREATE TYPE invitation_status AS ENUM (
+    'PENDING',
+    'ACCEPTED',
+    'EXPIRED',
+    'REVOKED'
+);
+
 -- ============================================================================
 -- 2. Helper: trigger function to auto-update updated_at
 -- ============================================================================
@@ -358,6 +365,42 @@ CREATE TRIGGER trg_reservations_set_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================================================
+-- 11. invitations
+-- ============================================================================
+CREATE TABLE invitations (
+    id            BIGINT               GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email         TEXT                 NOT NULL,
+    token         TEXT                 NOT NULL,
+    role          user_role            NOT NULL DEFAULT 'REGULAR',
+    status        invitation_status    NOT NULL DEFAULT 'PENDING',
+    created_by    BIGINT               NOT NULL,
+    expires_at    TIMESTAMPTZ          NOT NULL,
+    created_at    TIMESTAMPTZ          NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ          NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT invitations_email_not_empty  CHECK (LENGTH(TRIM(email)) > 0),
+    CONSTRAINT invitations_token_not_empty  CHECK (LENGTH(TRIM(token)) > 0),
+    CONSTRAINT invitations_email_format     CHECK (email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+    CONSTRAINT invitations_expires_future   CHECK (expires_at > created_at),
+
+    CONSTRAINT fk_invitations_created_by
+        FOREIGN KEY (created_by)
+        REFERENCES users (id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_invitations_token        ON invitations (token);
+CREATE INDEX        idx_invitations_email        ON invitations (email);
+CREATE INDEX        idx_invitations_status       ON invitations (status);
+CREATE INDEX        idx_invitations_created_by   ON invitations (created_by);
+CREATE INDEX        idx_invitations_expires      ON invitations (expires_at);
+
+CREATE TRIGGER trg_invitations_set_updated_at
+    BEFORE UPDATE ON invitations
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================================
 -- 11. Table & column comments (database documentation)
 -- ============================================================================
 COMMENT ON TABLE users                 IS 'Application users (dog owners and admins)';
@@ -368,6 +411,7 @@ COMMENT ON TABLE passes                IS 'Prepaid session packs owned by users;
 COMMENT ON TABLE pass_movements        IS 'Append-only audit log of session consume (-1) and refund (+1)';
 COMMENT ON TABLE activities            IS 'Scheduled classes/routes/individual sessions';
 COMMENT ON TABLE reservations          IS 'A dog booked into an activity, paid from a pass';
+COMMENT ON TABLE invitations          IS 'Pending invitations for new users to join the platform';
 
 COMMENT ON COLUMN users.password       IS 'bcrypt hash, minimum 60 chars';
 COMMENT ON COLUMN passes.price         IS 'Price in cents/centimos (e.g. 49.95€ = 4995)';

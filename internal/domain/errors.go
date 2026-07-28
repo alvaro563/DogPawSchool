@@ -37,4 +37,16 @@ var (
 	// violates the UNIQUE (activity_id, dog_id) constraint: the same dog
 	// is already booked into that activity.
 	ErrDuplicateReservation = errors.New("dog already booked for this activity")
+
+	// ErrDuplicateEmail is returned when a user insert/update violates
+	// the UNIQUE email constraint on the users table.
+	ErrDuplicateEmail = errors.New("email already exists")
+
+	// ErrDuplicateToken is returned when an invitation insert/update
+	// violates the UNIQUE token constraint on the invitations table.
+	ErrDuplicateToken = errors.New("invitation token already exists")
+
+	// ErrInvitationInvalid is returned when an invitation cannot be
+	// used: it may be expired, already accepted, or revoked.
+	ErrInvitationInvalid = errors.New("invitation is invalid or expired")
 )

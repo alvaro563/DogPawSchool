@@ -10,6 +10,7 @@ BEGIN;
 -- Tables: reverse topological order. CASCADE removes triggers + indexes
 -- attached to each table automatically.
 DROP TABLE IF EXISTS reservations           CASCADE;
+DROP TABLE IF EXISTS invitations            CASCADE;
 DROP TABLE IF EXISTS pass_movements         CASCADE;
 DROP TABLE IF EXISTS passes                 CASCADE;
 DROP TABLE IF EXISTS activities             CASCADE;
@@ -23,6 +24,7 @@ DROP FUNCTION IF EXISTS set_updated_at()    CASCADE;
 
 -- Enum types (no inter-dependencies, order is irrelevant here)
 DROP TYPE IF EXISTS reservation_status      CASCADE;
+DROP TYPE IF EXISTS invitation_status       CASCADE;
 DROP TYPE IF EXISTS activity_type           CASCADE;
 DROP TYPE IF EXISTS pass_type               CASCADE;
 DROP TYPE IF EXISTS size_bracket            CASCADE;

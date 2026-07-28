@@ -3,6 +3,8 @@ package domain
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 )
 
 // UserRole determines what a User can do in the system.
@@ -79,6 +81,58 @@ func (user *User) Activate() { user.isActive = true }
 // Deactivate marks the user as inactive (soft delete).
 func (user *User) Deactivate() { user.isActive = false }
 
+// UserPatch is a partial update for User: only the non-nil fields are
+// applied. Each field has its own validation rules; see ApplyPatch.
+type UserPatch struct {
+	Name  *string
+	Email *string
+}
+
+// IsEmpty reports whether the patch would not change any field. Use cases
+// short-circuit on an empty patch to avoid touching the DB.
+func (patch UserPatch) IsEmpty() bool {
+	return patch.Name == nil && patch.Email == nil
+}
+
+// UserValidationError is returned by ApplyPatch when a supplied value is
+// invalid (empty after trim, malformed email, etc.).
+type UserValidationError struct {
+	Field string
+}
+
+func (validationError *UserValidationError) Error() string {
+	return fmt.Sprintf("user: invalid value for %s", validationError.Field)
+}
+
+// basicEmailRegex mirrors the DB-level CHECK on users.email so the
+// domain can reject malformed addresses before they ever reach the
+// repository.
+var basicEmailRegex = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+
+// ApplyPatch mutates the user in place with the fields present in
+// patch. An empty patch is a no-op. Returns a *UserValidationError
+// identifying the offending field, or nil.
+func (user *User) ApplyPatch(patch UserPatch) error {
+	if patch.Name != nil {
+		trimmed := strings.TrimSpace(*patch.Name)
+		if trimmed == "" {
+			return &UserValidationError{Field: "name"}
+		}
+		user.name = trimmed
+	}
+	if patch.Email != nil {
+		trimmed := strings.TrimSpace(*patch.Email)
+		if trimmed == "" {
+			return &UserValidationError{Field: "email"}
+		}
+		if !basicEmailRegex.MatchString(trimmed) {
+			return &UserValidationError{Field: "email"}
+		}
+		user.email = trimmed
+	}
+	return nil
+}
+
 // UserRepository is the persistence contract for User. Implemented by
 // internal/repository/postgres (future).
 type UserRepository interface {
@@ -87,5 +141,6 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id int) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	ListAll(ctx context.Context) ([]*User, error)
+	ListAllPaged(ctx context.Context, limit, offset int) ([]*User, error)
 	Delete(ctx context.Context, id int) error
 }
