@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"dogpaw/internal/domain"
 )
@@ -254,11 +255,32 @@ func TestActivity_Close(t *testing.T) {
 	})
 }
 
-func TestActivity_SetClosed(t *testing.T) {
-	a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, time.Now())
-	assert.False(t, a.IsClosed())
-	a.SetClosed(true)
-	assert.True(t, a.IsClosed())
-	a.SetClosed(false)
-	assert.False(t, a.IsClosed())
+func TestReconstituteActivity(t *testing.T) {
+	date := time.Date(2030, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	t.Run("restores the closed flag", func(t *testing.T) {
+		a, err := domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 5, 1, date, true)
+		require.NoError(t, err)
+		assert.True(t, a.IsClosed())
+	})
+
+	t.Run("restores an open activity", func(t *testing.T) {
+		a, err := domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 5, 1, date, false)
+		require.NoError(t, err)
+		assert.False(t, a.IsClosed())
+	})
+
+	t.Run("applies the same validation as NewActivity", func(t *testing.T) {
+		_, err := domain.ReconstituteActivity(1, "", "l", domain.TypeRoute, 5, 1, date, true)
+		assert.Error(t, err, "an empty name must be rejected on reconstitution too")
+
+		_, err = domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 0, 1, date, true)
+		assert.Error(t, err, "a non-positive capacity must be rejected")
+	})
+
+	t.Run("a reconstituted closed activity cannot be closed again", func(t *testing.T) {
+		a, err := domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 5, 1, date, true)
+		require.NoError(t, err)
+		assert.Error(t, a.Close(), "Close must still guard against double-closing")
+	})
 }

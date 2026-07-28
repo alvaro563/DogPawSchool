@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"dogpaw/internal/domain"
@@ -84,6 +85,10 @@ type CloseActivityOutput struct {
 // finished, batch-processes every CONFIRMED reservation (marking them
 // as no-show or completed), then marks the activity as closed. The
 // entire flow runs inside a single transaction.
+//
+// The use case holds no mutable state: the clock travels with the
+// input, so a single instance is safe to share across concurrent
+// requests.
 type CloseActivityUseCase struct {
 	transactor      transactor
 	activityRepo    domain.ActivityRepository
@@ -91,7 +96,6 @@ type CloseActivityUseCase struct {
 	reservationRepo domain.ReservationRepository
 	noShower        reservationNoShower
 	completer       reservationCompleter
-	now             func() time.Time
 }
 
 func NewCloseActivityUseCase(
@@ -101,7 +105,6 @@ func NewCloseActivityUseCase(
 	reservationRepo domain.ReservationRepository,
 	noShower reservationNoShower,
 	completer reservationCompleter,
-	now func() time.Time,
 ) *CloseActivityUseCase {
 	return &CloseActivityUseCase{
 		transactor:      transactor,
@@ -110,17 +113,13 @@ func NewCloseActivityUseCase(
 		reservationRepo: reservationRepo,
 		noShower:        noShower,
 		completer:       completer,
-		now:             now,
 	}
 }
 
 func (uc *CloseActivityUseCase) Execute(ctx context.Context, input CloseActivityInput) (CloseActivityOutput, error) {
-	now := input.Now()
-	uc.now = func() time.Time { return now }
-
 	var output CloseActivityOutput
 	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		a, err := uc.runInTx(txCtx, input)
+		a, err := uc.runInTx(txCtx, input, input.Now())
 		if err != nil {
 			return err
 		}
@@ -130,9 +129,7 @@ func (uc *CloseActivityUseCase) Execute(ctx context.Context, input CloseActivity
 	return output, err
 }
 
-func (uc *CloseActivityUseCase) runInTx(ctx context.Context, input CloseActivityInput) (*domain.Activity, error) {
-	now := uc.now()
-
+func (uc *CloseActivityUseCase) runInTx(ctx context.Context, input CloseActivityInput, now time.Time) (*domain.Activity, error) {
 	// 1. Load activity.
 	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID())
 	if err != nil {
@@ -161,39 +158,42 @@ func (uc *CloseActivityUseCase) runInTx(ctx context.Context, input CloseActivity
 		return nil, fmt.Errorf("list reservations for activity %d: %w", input.ActivityID(), err)
 	}
 
-	// 5. Build a set of CONFIRMED reservation IDs and validate
-	// the no-show list against them.
+	// 5. Index the CONFIRMED reservations. `confirmed` keeps a
+	// deterministic (id-ascending) processing order: step 6 issues a
+	// write per reservation, and iterating the map instead would
+	// randomize the order in which those writes take row locks, which
+	// risks a deadlock between two concurrent closes and makes tests
+	// order-dependent.
 	confirmedSet := make(map[int]*domain.Reservation, len(allReservations))
+	confirmed := make([]*domain.Reservation, 0, len(allReservations))
 	for _, r := range allReservations {
 		if r.Status() == domain.StatusConfirmed {
 			confirmedSet[r.ID()] = r
+			confirmed = append(confirmed, r)
 		}
 	}
+	sort.Slice(confirmed, func(i, j int) bool { return confirmed[i].ID() < confirmed[j].ID() })
 
+	// Validate the no-show list against them. allReservations is
+	// already scoped to this activity, so an id that is present there
+	// but absent from confirmedSet can only be a non-CONFIRMED
+	// reservation — there is no "belongs to another activity" case to
+	// distinguish here.
 	noShowSet := make(map[int]struct{}, len(input.NoShowReservationIDs()))
 	for _, id := range input.NoShowReservationIDs() {
 		if _, ok := confirmedSet[id]; !ok {
-			// Check if it exists at all (maybe it belongs to
-			// another activity or has a different status).
-			exists := false
 			for _, r := range allReservations {
 				if r.ID() == id {
-					exists = true
-					if r.Status() != domain.StatusConfirmed {
-						return nil, ErrReservationNotConfirmed
-					}
-					return nil, ErrReservationNotInActivity
+					return nil, ErrReservationNotConfirmed
 				}
 			}
-			if !exists {
-				return nil, ErrReservationNotFound
-			}
+			return nil, ErrReservationNotFound
 		}
 		noShowSet[id] = struct{}{}
 	}
 
 	// 6. Process each CONFIRMED reservation.
-	for _, r := range confirmedSet {
+	for _, r := range confirmed {
 		// Load the dog to get the owner's user ID for the
 		// child use case's ownership check.
 		dog, err := uc.dogRepo.GetByID(ctx, r.DogID())
@@ -226,9 +226,11 @@ func (uc *CloseActivityUseCase) runInTx(ctx context.Context, input CloseActivity
 		}
 	}
 
-	// 7. Close the activity.
+	// 7. Close the activity. The domain error is wrapped rather than
+	// replaced so errors.Is(err, ErrAlreadyClosed) still holds for the
+	// handler while the log keeps the underlying reason.
 	if err := activity.Close(); err != nil {
-		return nil, ErrAlreadyClosed
+		return nil, fmt.Errorf("%w: %v", ErrAlreadyClosed, err)
 	}
 
 	// 8. Persist the closed state.

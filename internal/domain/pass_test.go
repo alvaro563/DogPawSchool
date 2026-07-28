@@ -131,7 +131,7 @@ func TestPass_ConsumeSession(t *testing.T) {
 		assert.Equal(t, -1, mov.Amount())
 		assert.Equal(t, "Booking Route", mov.Reason())
 		assert.Equal(t, 9, p.RemainingSessions())
-		assert.Len(t, p.Movements(), 1)
+		assert.Len(t, p.PendingMovements(), 1)
 	})
 
 	t.Run("empty_reason_returns_error", func(t *testing.T) {

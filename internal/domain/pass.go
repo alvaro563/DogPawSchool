@@ -24,8 +24,11 @@ func (passType PassType) IsValid() bool {
 }
 
 // PassMovement is the append-only audit entry of a session consume (-1)
-// or refund (+1). The aggregate Pass carries its movements so the
-// domain enforces the pass invariant (remaining = numOf − sum(movements)).
+// or refund (+1). Movements are never loaded back into the aggregate:
+// Pass only carries the ones recorded during the current unit of work
+// (see Pass.pendingMovements), which the repository flushes on Update.
+// The full history is a read-only projection queried directly from the
+// pass_movements table.
 type PassMovement struct {
 	id        int
 	passID    int
@@ -83,7 +86,15 @@ type Pass struct {
 	updatedAt         time.Time
 	expiresAt         *time.Time
 	userID            int
-	movements         []PassMovement
+
+	// pendingMovements holds the audit entries produced by
+	// ConsumeSession / RefundSession during the current unit of work.
+	// It is NOT the pass history: a Pass loaded from the repository
+	// always starts with an empty slice. PassRepository.Update
+	// persists these alongside the new remainingSessions in one
+	// transaction, which is what keeps the audit log and the counter
+	// from drifting apart.
+	pendingMovements []PassMovement
 }
 
 // NewPass creates a Pass. The caller must pass the current
@@ -154,11 +165,20 @@ func (pass *Pass) UpdatedAt() time.Time   { return pass.updatedAt }
 func (pass *Pass) ExpiresAt() *time.Time  { return pass.expiresAt }
 func (pass *Pass) UserID() int            { return pass.userID }
 
-// Movements returns a defensive copy of the pass movements.
-func (pass *Pass) Movements() []PassMovement {
-	out := make([]PassMovement, len(pass.movements))
-	copy(out, pass.movements)
+// PendingMovements returns a defensive copy of the movements recorded
+// during the current unit of work and not yet persisted. The repository
+// reads this on Update; callers must not treat it as the pass history.
+func (pass *Pass) PendingMovements() []PassMovement {
+	out := make([]PassMovement, len(pass.pendingMovements))
+	copy(out, pass.pendingMovements)
 	return out
+}
+
+// ClearPendingMovements drops the pending movements. The repository
+// calls it after flushing them so a second Update cannot insert the
+// same audit rows twice.
+func (pass *Pass) ClearPendingMovements() {
+	pass.pendingMovements = nil
 }
 
 // PassPatch is a partial update: only the non-nil fields are mutated.
@@ -245,7 +265,7 @@ func (pass *Pass) ConsumeSession(reason string, now time.Time) (PassMovement, er
 		reason:    reason,
 		createdAt: now,
 	}
-	pass.movements = append(pass.movements, movement)
+	pass.pendingMovements = append(pass.pendingMovements, movement)
 	pass.remainingSessions--
 	return movement, nil
 }
@@ -278,7 +298,7 @@ func (pass *Pass) RefundSession(reason string, now time.Time) (PassMovement, err
 		reason:    reason,
 		createdAt: now,
 	}
-	pass.movements = append(pass.movements, movement)
+	pass.pendingMovements = append(pass.pendingMovements, movement)
 	pass.remainingSessions++
 	return movement, nil
 }
@@ -288,9 +308,15 @@ func (pass *Pass) RefundSession(reason string, now time.Time) (PassMovement, err
 // internal/repository/postgres.
 type PassRepository interface {
 	Create(ctx context.Context, pass *Pass) (int, error)
+
+	// Update writes the pass row and flushes its pending movements in
+	// a single transaction, then clears them from the aggregate.
+	// Persisting both together is deliberate: it is the only thing
+	// stopping remaining_sessions and the pass_movements audit log
+	// from drifting apart when a caller forgets one of the two.
 	Update(ctx context.Context, pass *Pass) error
+
 	GetByID(ctx context.Context, id int) (*Pass, error)
 	ListAll(ctx context.Context, limit, offset int) ([]*Pass, error)
 	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Pass, error)
-	AddMovement(ctx context.Context, movement *PassMovement) error
 }

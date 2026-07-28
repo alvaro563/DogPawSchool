@@ -112,12 +112,28 @@ func (activity *Activity) IsFinished(now time.Time) bool {
 	return activity.date.Add(time.Duration(activity.durationInHours) * time.Hour).Before(now)
 }
 
+// ReconstituteActivity rebuilds an Activity from persisted state,
+// including the fields that have no public setter. It is the
+// repository's entry point: NewActivity is for creating a genuinely new
+// activity (always open), this one is for restoring an existing row.
+//
+// The distinction matters. A public SetClosed would let any caller flip
+// the flag and bypass Close's "already closed" guard, so the only way to
+// close an activity in memory stays Close(). This mirrors how
+// Reservation (NewReservationWithStatus) and Invitation (NewInvitation
+// vs NewPendingInvitation) already separate creation from
+// reconstitution.
+func ReconstituteActivity(id int, name, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, closed bool) (*Activity, error) {
+	activity, err := NewActivity(id, name, location, activityType, maxCapacity, durationInHours, date)
+	if err != nil {
+		return nil, err
+	}
+	activity.closed = closed
+	return activity, nil
+}
+
 // IsClosed reports whether the activity has been closed by an admin.
 func (activity *Activity) IsClosed() bool { return activity.closed }
-
-// SetClosed sets the closed flag directly. Used by the repository
-// scanner when loading from the database.
-func (activity *Activity) SetClosed(closed bool) { activity.closed = closed }
 
 // Close transitions the activity to the closed state. Returns an error
 // if the activity is already closed.

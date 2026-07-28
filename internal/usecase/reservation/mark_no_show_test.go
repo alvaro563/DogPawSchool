@@ -40,7 +40,7 @@ func newMarkUseCase(
 	if transactor == nil {
 		transactor = &stubTransactor{}
 	}
-	return NewMarkReservationNoShowUseCase(transactor, activityRepo, dogRepo, reservationRepo, func() time.Time { return fixedNow })
+	return NewMarkReservationNoShowUseCase(transactor, activityRepo, dogRepo, reservationRepo)
 }
 
 func validMarkInput() MarkReservationNoShowInput {

@@ -518,14 +518,13 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct reservation: %w", err)
 	}
-	activity, err := domain.NewActivity(
+	activity, err := domain.ReconstituteActivity(
 		activityID, activityName, activityLocation,
-		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate,
+		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate, activityClosed,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct activity: %w", err)
 	}
-	activity.SetClosed(activityClosed)
 	dog, err := domain.NewDog(
 		dogID, dogName, dogBreed, passport,
 		dogAgeMonths, domain.Sex(dogSex), dogWeightKg, dogUserID,

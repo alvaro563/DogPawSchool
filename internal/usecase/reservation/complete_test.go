@@ -36,7 +36,7 @@ func newCompleteUseCase(
 	if transactor == nil {
 		transactor = &stubTransactor{}
 	}
-	return NewCompleteReservationUseCase(transactor, activityRepo, dogRepo, reservationRepo, func() time.Time { return fixedNow })
+	return NewCompleteReservationUseCase(transactor, activityRepo, dogRepo, reservationRepo)
 }
 
 func validCompleteInput() CompleteReservationInput {
