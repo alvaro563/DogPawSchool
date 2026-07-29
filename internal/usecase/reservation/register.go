@@ -77,13 +77,17 @@ type RegisterReservationOutput struct {
 //  5. One pass session is consumed (in memory) and a movement is
 //     appended to the audit log.
 //  6. The reservation is created in StatusConfirmed.
+//
+// The use case holds no mutable state: the clock travels with the
+// input (RegisterReservationInput freezes it at construction), so a
+// single instance is safe to share across concurrent requests, which
+// is exactly how the router wires it.
 type RegisterReservationUseCase struct {
 	transactor      Transactor
 	activityRepo    domain.ActivityRepository
 	dogRepo         domain.DogRepository
 	passRepo        domain.PassRepository
 	reservationRepo domain.ReservationRepository
-	now             func() time.Time
 }
 
 func NewRegisterReservationUseCase(
@@ -92,7 +96,6 @@ func NewRegisterReservationUseCase(
 	dogRepo domain.DogRepository,
 	passRepo domain.PassRepository,
 	reservationRepo domain.ReservationRepository,
-	now func() time.Time,
 ) *RegisterReservationUseCase {
 	return &RegisterReservationUseCase{
 		transactor:      transactor,
@@ -100,22 +103,14 @@ func NewRegisterReservationUseCase(
 		dogRepo:         dogRepo,
 		passRepo:        passRepo,
 		reservationRepo: reservationRepo,
-		now:             now,
 	}
 }
 
 // Execute runs the create flow atomically.
 func (uc *RegisterReservationUseCase) Execute(ctx context.Context, input RegisterReservationInput) (RegisterReservationOutput, error) {
-	// Override uc.now with the factory-provided one so the use
-	// case uses the same clock as the one validated at construction.
-	now := input.Now()
-	// Reset to the factory-supplied clock if the constructor did not
-	// capture it (legacy path: constructed with time.Now).
-	uc.now = func() time.Time { return now }
-
 	var output RegisterReservationOutput
 	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		id, err := uc.runInTx(txCtx, input)
+		id, err := uc.runInTx(txCtx, input, input.Now())
 		if err != nil {
 			return err
 		}
@@ -128,9 +123,7 @@ func (uc *RegisterReservationUseCase) Execute(ctx context.Context, input Registe
 	return output, nil
 }
 
-func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input RegisterReservationInput) (int, error) {
-	now := uc.now()
-
+func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input RegisterReservationInput, now time.Time) (int, error) {
 	// 1. Activity must exist and be in the future.
 	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID())
 	if err != nil {
@@ -138,6 +131,9 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 			return 0, ErrInvalidActivity
 		}
 		return 0, fmt.Errorf("get activity %d: %w", input.ActivityID(), err)
+	}
+	if activity == nil {
+		return 0, ErrInvalidActivity
 	}
 	if activity.IsInThePast(now) {
 		return 0, ErrActivityInPast
@@ -166,6 +162,9 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 		}
 		return 0, fmt.Errorf("get dog %d: %w", input.DogID(), err)
 	}
+	if dog == nil {
+		return 0, ErrInvalidDog
+	}
 	if dog.UserID() != input.UserID() {
 		return 0, ErrInvalidDog
 	}
@@ -179,6 +178,9 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 		}
 		return 0, fmt.Errorf("get pass %d: %w", input.PassID(), err)
 	}
+	if pass == nil {
+		return 0, ErrInvalidPass
+	}
 	if pass.UserID() != input.UserID() {
 		return 0, ErrInvalidPass
 	}
@@ -189,19 +191,16 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 		return 0, ErrPassExpired
 	}
 
-	// 5. Consume one pass session.
+	// 5. Consume one pass session. The audit movement is recorded on
+	// the aggregate; Update flushes it together with the new counter.
 	reason := fmt.Sprintf("Reservation: activity %d, dog %d", input.ActivityID(), input.DogID())
-	movement, err := pass.ConsumeSession(reason, now)
-	if err != nil {
+	if _, err := pass.ConsumeSession(reason, now); err != nil {
 		return 0, fmt.Errorf("consume pass %d: %w", input.PassID(), err)
 	}
 
-	// 6. Persist the pass update + the movement.
+	// 6. Persist the pass: counter + audit row, atomically.
 	if err := uc.passRepo.Update(ctx, pass); err != nil {
 		return 0, fmt.Errorf("update pass %d: %w", input.PassID(), err)
-	}
-	if err := uc.passRepo.AddMovement(ctx, &movement); err != nil {
-		return 0, fmt.Errorf("add movement for pass %d: %w", input.PassID(), err)
 	}
 
 	// 7. Create the reservation.

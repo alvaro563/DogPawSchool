@@ -57,7 +57,7 @@ func newRegisterUseCase(
 	if transactor == nil {
 		transactor = &stubTransactor{}
 	}
-	return NewRegisterReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo, func() time.Time { return fixedNow })
+	return NewRegisterReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo)
 }
 
 func TestNewRegisterReservationInput(t *testing.T) {
@@ -146,7 +146,7 @@ func TestRegisterReservationUseCase_Success(t *testing.T) {
 	assert.Equal(t, 0, capturedReservation.ID(), "in-memory reservation has id=0 before DB insert")
 	assert.Equal(t, 10, capturedReservation.ActivityID())
 	assert.Equal(t, 4, pass.RemainingSessions())
-	assert.True(t, now.Before(pass.Movements()[0].CreatedAt().Add(time.Second)),
+	assert.True(t, now.Before(pass.PendingMovements()[0].CreatedAt().Add(time.Second)),
 		"movement createdAt should be ~now")
 }
 
@@ -424,26 +424,28 @@ func TestRegisterReservationUseCase_TransactorRollsBackOnRepoError(t *testing.T)
 			return dog, nil
 		},
 	}
+	// PassRepository.Update now persists the counter and the audit
+	// movement together, so a failed audit insert surfaces as a failed
+	// Update. No reservation may be created afterwards.
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) {
 			return pass, nil
 		},
-		update: func(context.Context, *domain.Pass) error { return nil },
-		addMovement: func(context.Context, *domain.PassMovement) error {
-			return errors.New("movement insert failed")
+		update: func(context.Context, *domain.Pass) error {
+			return errors.New("add pass movement: movement insert failed")
 		},
 	}
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) { return nil, nil },
 		create: func(context.Context, *domain.Reservation) (int, error) {
-			t.Fatal("reservation Create should not be called after AddMovement fails")
+			t.Fatal("reservation Create should not be called after the pass Update fails")
 			return 0, nil
 		},
 	}
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
 	_, err := uc.Execute(context.Background(), validRegisterInput())
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "add movement")
+	assert.Contains(t, err.Error(), "movement insert failed")
 }
 
 func TestRegisterReservationUseCase_ActivityRepoErrorIsWrapped(t *testing.T) {

@@ -75,30 +75,50 @@ func (repo *PassRepository) GetByID(ctx context.Context, id int) (*domain.Pass, 
 	return pass, nil
 }
 
-// Update writes all mutable fields of the pass. Returns
-// ErrPassNotFound if no row matches the id.
+// Update writes all mutable fields of the pass AND appends the audit
+// rows the aggregate accumulated during this unit of work, in a single
+// transaction. Returns ErrPassNotFound if no row matches the id.
+//
+// This is the "aggregate root persistence" pattern already used by
+// DogRepository.Update: remaining_sessions and pass_movements describe
+// the same fact, so they must land together or not at all. On success
+// the pending movements are cleared, making a repeated Update
+// idempotent with respect to the audit log.
+//
+// If a transaction is already in flight on ctx (the reservation use
+// cases always wrap their work in one), WithinTx joins it instead of
+// opening a nested one, so the whole booking stays atomic.
 func (repo *PassRepository) Update(ctx context.Context, pass *domain.Pass) error {
-	const query = `
-		UPDATE passes
-		SET num_of_sessions = $1, remaining_sessions = $2, price = $3,
-		    pass_type = $4, expires_at = $5
-		WHERE id = $6
-	`
-	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
-		pass.NumOfSessions(), pass.RemainingSessions(), pass.Price(),
-		string(pass.Type()), nullTimePtr(pass.ExpiresAt()), pass.ID(),
-	)
-	if err != nil {
-		return fmt.Errorf("update pass: %w", err)
-	}
-	rowsAffected, err := queryResult.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("update pass: rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return ErrPassNotFound
-	}
-	return nil
+	return NewTransactor(repo.db).WithinTx(ctx, func(txCtx context.Context) error {
+		const query = `
+			UPDATE passes
+			SET num_of_sessions = $1, remaining_sessions = $2, price = $3,
+			    pass_type = $4, expires_at = $5
+			WHERE id = $6
+		`
+		queryResult, err := runner(txCtx, repo.db).ExecContext(txCtx, query,
+			pass.NumOfSessions(), pass.RemainingSessions(), pass.Price(),
+			string(pass.Type()), nullTimePtr(pass.ExpiresAt()), pass.ID(),
+		)
+		if err != nil {
+			return fmt.Errorf("update pass: %w", err)
+		}
+		rowsAffected, err := queryResult.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("update pass: rows affected: %w", err)
+		}
+		if rowsAffected == 0 {
+			return ErrPassNotFound
+		}
+
+		for _, movement := range pass.PendingMovements() {
+			if err := repo.addMovement(txCtx, movement); err != nil {
+				return err
+			}
+		}
+		pass.ClearPendingMovements()
+		return nil
+	})
 }
 
 // ListAll returns a paginated list of all passes in the system,
@@ -143,9 +163,12 @@ func (repo *PassRepository) queryPasses(ctx context.Context, query string, args 
 	return passes, nil
 }
 
-// AddMovement inserts an append-only pass_movements row. The CHECK
-// constraint `pass_movements_amount_nonzero` is enforced by the DB.
-func (repo *PassRepository) AddMovement(ctx context.Context, movement *domain.PassMovement) error {
+// addMovement inserts one append-only pass_movements row. It is
+// unexported on purpose: the audit log is written only as part of
+// Update, so no caller can record a movement without also persisting
+// the counter it justifies. The CHECK constraint
+// `pass_movements_amount_nonzero` is enforced by the DB.
+func (repo *PassRepository) addMovement(ctx context.Context, movement domain.PassMovement) error {
 	const query = `
 		INSERT INTO pass_movements (pass_id, amount, reason, created_at)
 		VALUES ($1, $2, $3, $4)

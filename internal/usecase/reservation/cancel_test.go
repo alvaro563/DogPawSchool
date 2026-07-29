@@ -58,7 +58,7 @@ func newCancelUseCase(
 	if transactor == nil {
 		transactor = &stubTransactor{}
 	}
-	return NewCancelReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo, func() time.Time { return fixedNow })
+	return NewCancelReservationUseCase(transactor, activityRepo, dogRepo, passRepo, reservationRepo)
 }
 
 func TestNewCancelReservationInput(t *testing.T) {
@@ -90,7 +90,7 @@ func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
 	dog := validDog(20, userID)
 	pass := validPass(30, userID, 1)
 	originalPassRemaining := pass.RemainingSessions()
-	originalMovementCount := len(pass.Movements())
+	originalMovementCount := len(pass.PendingMovements())
 
 	reservation := validConfirmedReservation(99, 10, 20, 30)
 
@@ -134,7 +134,7 @@ func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
 		"output should reflect the in-time cancel")
 	assert.Equal(t, originalPassRemaining+1, pass.RemainingSessions(),
 		"in-memory pass should reflect the refund")
-	assert.Equal(t, originalMovementCount+1, len(pass.Movements()),
+	assert.Equal(t, originalMovementCount+1, len(pass.PendingMovements()),
 		"in-memory pass should have a new movement")
 }
 
@@ -147,7 +147,7 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 	dog := validDog(20, userID)
 	pass := validPass(30, userID, 1)
 	originalPassRemaining := pass.RemainingSessions()
-	originalMovementCount := len(pass.Movements())
+	originalMovementCount := len(pass.PendingMovements())
 
 	reservation := validConfirmedReservation(99, 10, 20, 30)
 
@@ -183,7 +183,7 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 	assert.Equal(t, domain.StatusCancelledLate, output.Reservation.Status())
 	assert.Equal(t, originalPassRemaining, pass.RemainingSessions(),
 		"late cancel must NOT change pass remaining")
-	assert.Equal(t, originalMovementCount, len(pass.Movements()),
+	assert.Equal(t, originalMovementCount, len(pass.PendingMovements()),
 		"late cancel must NOT add a new movement")
 }
 
@@ -357,24 +357,26 @@ func TestCancelReservationUseCase_TransactorRollsBackOnMovementFailure(t *testin
 	dogRepo := &stubDogRepository{
 		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
 	}
+	// PassRepository.Update now persists the counter and the audit
+	// movement together, so a failed audit insert surfaces as a failed
+	// Update. The reservation must not be touched afterwards.
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update:  func(context.Context, *domain.Pass) error { return nil },
-		addMovement: func(context.Context, *domain.PassMovement) error {
-			return errors.New("movement insert failed")
+		update: func(context.Context, *domain.Pass) error {
+			return errors.New("add pass movement: movement insert failed")
 		},
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
 		update: func(context.Context, *domain.Reservation) error {
-			t.Fatal("reservation Update should not be called after AddMovement fails")
+			t.Fatal("reservation Update should not be called after the pass Update fails")
 			return nil
 		},
 	}
 	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
 	_, err := uc.Execute(context.Background(), validCancelInput())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "add movement")
+	assert.Contains(t, err.Error(), "movement insert failed")
 }
 
 func TestCancelReservationUseCase_ReservationRepoErrorIsWrapped(t *testing.T) {
@@ -435,5 +437,5 @@ func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusCancelledInTime, output.Reservation.Status())
 	assert.Equal(t, 5, pass.RemainingSessions())
-	assert.Empty(t, pass.Movements())
+	assert.Empty(t, pass.PendingMovements())
 }

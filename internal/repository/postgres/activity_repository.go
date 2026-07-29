@@ -185,15 +185,10 @@ func scanActivity(row scanner) (*domain.Activity, error) {
 	); err != nil {
 		return nil, err
 	}
-	activity, err := domain.NewActivity(
+	return domain.ReconstituteActivity(
 		activityID, activityName, location,
-		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate,
+		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate, closed,
 	)
-	if err != nil {
-		return nil, err
-	}
-	activity.SetClosed(closed)
-	return activity, nil
 }
 
 func mapActivityCreateError(err error) error {

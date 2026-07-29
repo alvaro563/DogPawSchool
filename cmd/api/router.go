@@ -86,16 +86,16 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	reservationRepo := postgres.NewReservationRepository(db)
 	dogRepo := postgres.NewDogRepository(db)
 	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
-		transactor, activityRepo, dogRepo, passRepo, reservationRepo, time.Now,
+		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
 	)
 	cancelReservationUC := reservationuc.NewCancelReservationUseCase(
-		transactor, activityRepo, dogRepo, passRepo, reservationRepo, time.Now,
+		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
 	)
 	markNoShowReservationUC := reservationuc.NewMarkReservationNoShowUseCase(
-		transactor, activityRepo, dogRepo, reservationRepo, time.Now,
+		transactor, activityRepo, dogRepo, reservationRepo,
 	)
 	completeReservationUC := reservationuc.NewCompleteReservationUseCase(
-		transactor, activityRepo, dogRepo, reservationRepo, time.Now,
+		transactor, activityRepo, dogRepo, reservationRepo,
 	)
 	getReservationUC := reservationuc.NewGetReservationUseCase(reservationRepo)
 	listByUserReservationsUC := reservationuc.NewListByUserReservationsUseCase(reservationRepo)
@@ -112,7 +112,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 
 	closeActivityUC := activityuc.NewCloseActivityUseCase(
 		transactor, activityRepo, dogRepo, reservationRepo,
-		markNoShowReservationUC, completeReservationUC, time.Now,
+		markNoShowReservationUC, completeReservationUC,
 	)
 
 	activityH := handler.NewActivityHandler(

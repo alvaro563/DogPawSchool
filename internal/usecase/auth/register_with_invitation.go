@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"dogpaw/internal/domain"
 )
 
@@ -78,17 +76,20 @@ type RegisterWithInvitationUseCase struct {
 	transactor     Transactor
 	invitationRepo domain.InvitationRepository
 	userRepo       domain.UserRepository
+	hasher         PasswordHasher
 }
 
 func NewRegisterWithInvitationUseCase(
 	transactor Transactor,
 	invitationRepo domain.InvitationRepository,
 	userRepo domain.UserRepository,
+	hasher PasswordHasher,
 ) *RegisterWithInvitationUseCase {
 	return &RegisterWithInvitationUseCase{
 		transactor:     transactor,
 		invitationRepo: invitationRepo,
 		userRepo:       userRepo,
+		hasher:         hasher,
 	}
 }
 
@@ -107,14 +108,16 @@ func (uc *RegisterWithInvitationUseCase) Execute(ctx context.Context, input Regi
 		return RegisterWithInvitationOutput{}, domain.ErrInvitationInvalid
 	}
 
-	// 3. Hash password with bcrypt.
-	hashedPw, err := bcrypt.GenerateFromPassword([]byte(input.Password()), bcrypt.DefaultCost)
+	// 3. Hash the password. The algorithm is an infrastructure
+	// decision injected as PasswordHasher; this layer only knows that
+	// the plaintext must never reach the repository.
+	hashedPw, err := uc.hasher.Hash(input.Password())
 	if err != nil {
 		return RegisterWithInvitationOutput{}, fmt.Errorf("hash password: %w", err)
 	}
 
 	// 4. Create user entity.
-	user, err := domain.NewUser(0, input.Name(), inv.Email(), string(hashedPw), inv.Role())
+	user, err := domain.NewUser(0, input.Name(), inv.Email(), hashedPw, inv.Role())
 	if err != nil {
 		return RegisterWithInvitationOutput{}, fmt.Errorf("build user: %w", err)
 	}

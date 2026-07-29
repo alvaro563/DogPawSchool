@@ -61,13 +61,16 @@ type CancelReservationOutput struct {
 //   - If the cancel happens within cancellationLateWindow, the
 //     reservation transitions to StatusCancelledLate and NO refund
 //     is applied.
+//
+// The use case holds no mutable state: the clock travels with the
+// input (CancelReservationInput freezes it at construction), so a
+// single instance is safe to share across concurrent requests.
 type CancelReservationUseCase struct {
 	transactor      Transactor
 	activityRepo    domain.ActivityRepository
 	dogRepo         domain.DogRepository
 	passRepo        domain.PassRepository
 	reservationRepo domain.ReservationRepository
-	now             func() time.Time
 }
 
 func NewCancelReservationUseCase(
@@ -76,7 +79,6 @@ func NewCancelReservationUseCase(
 	dogRepo domain.DogRepository,
 	passRepo domain.PassRepository,
 	reservationRepo domain.ReservationRepository,
-	now func() time.Time,
 ) *CancelReservationUseCase {
 	return &CancelReservationUseCase{
 		transactor:      transactor,
@@ -84,17 +86,13 @@ func NewCancelReservationUseCase(
 		dogRepo:         dogRepo,
 		passRepo:        passRepo,
 		reservationRepo: reservationRepo,
-		now:             now,
 	}
 }
 
 func (uc *CancelReservationUseCase) Execute(ctx context.Context, input CancelReservationInput) (CancelReservationOutput, error) {
-	now := input.Now()
-	uc.now = func() time.Time { return now }
-
 	var output CancelReservationOutput
 	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		reservation, err := uc.runInTx(txCtx, input)
+		reservation, err := uc.runInTx(txCtx, input, input.Now())
 		if err != nil {
 			return err
 		}
@@ -107,9 +105,7 @@ func (uc *CancelReservationUseCase) Execute(ctx context.Context, input CancelRes
 	return output, nil
 }
 
-func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelReservationInput) (*domain.Reservation, error) {
-	now := uc.now()
-
+func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelReservationInput, now time.Time) (*domain.Reservation, error) {
 	// 1. Reservation must exist.
 	reservation, err := uc.reservationRepo.GetByID(ctx, input.ReservationID())
 	if err != nil {
@@ -117,6 +113,9 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 			return nil, ErrInvalidReservation
 		}
 		return nil, fmt.Errorf("get reservation %d: %w", input.ReservationID(), err)
+	}
+	if reservation == nil {
+		return nil, ErrInvalidReservation
 	}
 
 	// 2. Reservation must be cancellable.
@@ -133,6 +132,9 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 		}
 		return nil, fmt.Errorf("get activity %d: %w", reservation.ActivityID(), err)
 	}
+	if activity == nil {
+		return nil, ErrInvalidActivity
+	}
 	if activity.IsInThePast(now) {
 		return nil, ErrActivityInPast
 	}
@@ -144,6 +146,9 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 			return nil, ErrInvalidDog
 		}
 		return nil, fmt.Errorf("get dog %d: %w", reservation.DogID(), err)
+	}
+	if dog == nil {
+		return nil, ErrInvalidDog
 	}
 	if dog.UserID() != input.UserID() {
 		return nil, ErrInvalidDog
@@ -157,28 +162,31 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 		}
 		return nil, fmt.Errorf("get pass %d: %w", reservation.PassID(), err)
 	}
+	if pass == nil {
+		return nil, ErrInvalidPass
+	}
 	if pass.UserID() != input.UserID() {
 		return nil, ErrInvalidPass
 	}
 
 	// 6. Apply the status change. The domain decides in-time vs
 	// late.
+	// The domain error is wrapped rather than replaced: the handler
+	// still matches ErrAlreadyCancelled with errors.Is, but the log
+	// keeps the reason the transition was refused.
 	if err := reservation.Cancel(activity.Date(), now); err != nil {
-		return nil, ErrAlreadyCancelled
+		return nil, fmt.Errorf("%w: %v", ErrAlreadyCancelled, err)
 	}
 
-	// 7. Refund the pass session if the cancel was in-time.
+	// 7. Refund the pass session if the cancel was in-time. The audit
+	// movement rides along on the aggregate and is flushed by Update.
 	if reservation.WasCancelledInTime() && pass.CanRefund() {
 		reason := fmt.Sprintf("Reservation %d cancelled in time", reservation.ID())
-		movement, err := pass.RefundSession(reason, now)
-		if err != nil {
+		if _, err := pass.RefundSession(reason, now); err != nil {
 			return nil, fmt.Errorf("refund pass %d: %w", reservation.PassID(), err)
 		}
 		if err := uc.passRepo.Update(ctx, pass); err != nil {
 			return nil, fmt.Errorf("update pass %d: %w", reservation.PassID(), err)
-		}
-		if err := uc.passRepo.AddMovement(ctx, &movement); err != nil {
-			return nil, fmt.Errorf("add movement for pass %d: %w", reservation.PassID(), err)
 		}
 	}
 

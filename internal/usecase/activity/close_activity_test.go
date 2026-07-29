@@ -19,6 +19,16 @@ func closeFinishedActivity(id int) *domain.Activity {
 	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour))
 }
 
+// closeFinishedClosedActivity is closeFinishedActivity in the state a
+// repository would hand back for an already-closed row.
+func closeFinishedClosedActivity(id int) *domain.Activity {
+	activity, err := domain.ReconstituteActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour), true)
+	if err != nil {
+		panic(err)
+	}
+	return activity
+}
+
 // closeOngoingActivity returns an activity that started at
 // fixedNow - 30min with duration 2h, so it ends at fixedNow + 1.5h.
 func closeOngoingActivity(id int) *domain.Activity {
@@ -237,7 +247,7 @@ func TestCloseActivityUseCase_Success_AllComplete(t *testing.T) {
 
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, dogRepo, resRepo,
-		noShower, completer, func() time.Time { return fixedNow },
+		noShower, completer,
 	)
 	output, err := uc.Execute(context.Background(), validCloseInput())
 	require.NoError(t, err)
@@ -267,7 +277,7 @@ func TestCloseActivityUseCase_Success_AllNoShow(t *testing.T) {
 	input := MustNewCloseActivityInput(10, []int{1}, func() time.Time { return fixedNow })
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, dogRepo, resRepo,
-		noShower, completer, func() time.Time { return fixedNow },
+		noShower, completer,
 	)
 	output, err := uc.Execute(context.Background(), input)
 	require.NoError(t, err)
@@ -317,7 +327,7 @@ func TestCloseActivityUseCase_Success_Mixed(t *testing.T) {
 	input := MustNewCloseActivityInput(10, []int{1}, func() time.Time { return fixedNow })
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, dogRepo, resRepo,
-		noShower, completer, func() time.Time { return fixedNow },
+		noShower, completer,
 	)
 	_, err := uc.Execute(context.Background(), input)
 	require.NoError(t, err)
@@ -331,7 +341,7 @@ func TestCloseActivityUseCase_ActivityNotFound(t *testing.T) {
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, nil,
-		&stubNoShower{}, &stubCompleter{}, func() time.Time { return fixedNow },
+		&stubNoShower{}, &stubCompleter{},
 	)
 	_, err := uc.Execute(context.Background(), validCloseInput())
 	assert.ErrorIs(t, err, ErrNotFound)
@@ -345,22 +355,21 @@ func TestCloseActivityUseCase_ActivityNotFinished(t *testing.T) {
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, nil,
-		&stubNoShower{}, &stubCompleter{}, func() time.Time { return fixedNow },
+		&stubNoShower{}, &stubCompleter{},
 	)
 	_, err := uc.Execute(context.Background(), validCloseInput())
 	assert.ErrorIs(t, err, ErrNotFinished)
 }
 
 func TestCloseActivityUseCase_AlreadyClosed(t *testing.T) {
-	activity := closeFinishedActivity(10)
-	activity.SetClosed(true)
+	activity := closeFinishedClosedActivity(10)
 
 	activityRepo := &mockActivityRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return activity, nil },
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, nil,
-		&stubNoShower{}, &stubCompleter{}, func() time.Time { return fixedNow },
+		&stubNoShower{}, &stubCompleter{},
 	)
 	_, err := uc.Execute(context.Background(), validCloseInput())
 	assert.ErrorIs(t, err, ErrAlreadyClosed)
@@ -381,7 +390,7 @@ func TestCloseActivityUseCase_NoShowID_NotFound(t *testing.T) {
 	input := MustNewCloseActivityInput(10, []int{999}, func() time.Time { return fixedNow })
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, resRepo,
-		&stubNoShower{}, &stubCompleter{}, func() time.Time { return fixedNow },
+		&stubNoShower{}, &stubCompleter{},
 	)
 	_, err := uc.Execute(context.Background(), input)
 	assert.ErrorIs(t, err, ErrReservationNotFound)
@@ -402,7 +411,7 @@ func TestCloseActivityUseCase_NoShowID_WrongActivity(t *testing.T) {
 	input := MustNewCloseActivityInput(10, []int{99}, func() time.Time { return fixedNow })
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, resRepo,
-		&stubNoShower{}, &stubCompleter{}, func() time.Time { return fixedNow },
+		&stubNoShower{}, &stubCompleter{},
 	)
 	_, err := uc.Execute(context.Background(), input)
 	assert.ErrorIs(t, err, ErrReservationNotFound)
@@ -415,7 +424,7 @@ func TestCloseActivityUseCase_RepoError_Wrapped(t *testing.T) {
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, nil,
-		&stubNoShower{}, &stubCompleter{}, func() time.Time { return fixedNow },
+		&stubNoShower{}, &stubCompleter{},
 	)
 	_, err := uc.Execute(context.Background(), validCloseInput())
 	require.Error(t, err)
@@ -437,7 +446,7 @@ func TestCloseActivityUseCase_EmptyConfirmedList(t *testing.T) {
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, resRepo,
-		&stubNoShower{}, &stubCompleter{}, func() time.Time { return fixedNow },
+		&stubNoShower{}, &stubCompleter{},
 	)
 	output, err := uc.Execute(context.Background(), validCloseInput())
 	require.NoError(t, err)

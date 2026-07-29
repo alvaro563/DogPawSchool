@@ -72,12 +72,15 @@ type MarkReservationNoShowOutput struct {
 //     case translates any failure into ErrNotCancellable, 409).
 //   - No pass refund: the slot is past, the session is consumed.
 //   - No pass movement appended: same reason.
+//
+// The use case holds no mutable state: the clock travels with the
+// input, so a single instance is safe to share across concurrent
+// requests.
 type MarkReservationNoShowUseCase struct {
 	transactor      Transactor
 	activityRepo    domain.ActivityRepository
 	dogRepo         domain.DogRepository
 	reservationRepo domain.ReservationRepository
-	now             func() time.Time
 }
 
 func NewMarkReservationNoShowUseCase(
@@ -85,24 +88,19 @@ func NewMarkReservationNoShowUseCase(
 	activityRepo domain.ActivityRepository,
 	dogRepo domain.DogRepository,
 	reservationRepo domain.ReservationRepository,
-	now func() time.Time,
 ) *MarkReservationNoShowUseCase {
 	return &MarkReservationNoShowUseCase{
 		transactor:      transactor,
 		activityRepo:    activityRepo,
 		dogRepo:         dogRepo,
 		reservationRepo: reservationRepo,
-		now:             now,
 	}
 }
 
 func (uc *MarkReservationNoShowUseCase) Execute(ctx context.Context, input MarkReservationNoShowInput) (MarkReservationNoShowOutput, error) {
-	now := input.Now()
-	uc.now = func() time.Time { return now }
-
 	var output MarkReservationNoShowOutput
 	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		r, err := uc.runInTx(txCtx, input)
+		r, err := uc.runInTx(txCtx, input, input.Now())
 		if err != nil {
 			return err
 		}
@@ -112,9 +110,7 @@ func (uc *MarkReservationNoShowUseCase) Execute(ctx context.Context, input MarkR
 	return output, err
 }
 
-func (uc *MarkReservationNoShowUseCase) runInTx(ctx context.Context, input MarkReservationNoShowInput) (*domain.Reservation, error) {
-	now := uc.now()
-
+func (uc *MarkReservationNoShowUseCase) runInTx(ctx context.Context, input MarkReservationNoShowInput, now time.Time) (*domain.Reservation, error) {
 	// 1. Load reservation.
 	reservation, err := uc.reservationRepo.GetByID(ctx, input.ReservationID())
 	if err != nil {
