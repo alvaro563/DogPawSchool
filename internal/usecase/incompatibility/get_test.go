@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewGetIncompatibilityInput(t *testing.T) {
+	t.Parallel()
 	t.Run("zero_id", func(t *testing.T) {
 		_, err := NewGetIncompatibilityInput(0)
 		assert.Error(t, err)
@@ -29,6 +30,7 @@ func TestNewGetIncompatibilityInput(t *testing.T) {
 }
 
 func TestGetIncompatibilityUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("not_found", func(t *testing.T) {
 		mock := &mockIncompatibilityRepository{
 			getIncompatibilityByID: func(ctx context.Context, id int) (*domain.Incompatibility, error) { return nil, nil },

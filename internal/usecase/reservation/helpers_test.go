@@ -138,6 +138,13 @@ func (s *stubActivityRepository) GetByID(ctx context.Context, id int) (*domain.A
 	return nil, nil
 }
 
+func (s *stubActivityRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Activity, error) {
+	if s.getByID != nil {
+		return s.getByID(ctx, id)
+	}
+	return nil, nil
+}
+
 func (s *stubActivityRepository) Create(ctx context.Context, activity *domain.Activity) (int, error) {
 	return 0, nil
 }
@@ -159,6 +166,12 @@ type stubDogRepository struct {
 }
 
 func (s *stubDogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, error) {
+	if s.getByID != nil {
+		return s.getByID(ctx, id)
+	}
+	return nil, nil
+}
+func (s *stubDogRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Dog, error) {
 	if s.getByID != nil {
 		return s.getByID(ctx, id)
 	}
@@ -210,6 +223,12 @@ type stubPassRepository struct {
 }
 
 func (s *stubPassRepository) GetByID(ctx context.Context, id int) (*domain.Pass, error) {
+	if s.getByID != nil {
+		return s.getByID(ctx, id)
+	}
+	return nil, nil
+}
+func (s *stubPassRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Pass, error) {
 	if s.getByID != nil {
 		return s.getByID(ctx, id)
 	}

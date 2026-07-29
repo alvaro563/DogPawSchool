@@ -220,6 +220,7 @@ func newTestDog(id int) *domain.Dog {
 }
 
 func TestRegister_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubRegistrar{fn: func(ctx context.Context, in doguc.RegisterDogInput) (doguc.RegisterDogOutput, error) {
 		return doguc.RegisterDogOutput{ID: 42}, nil
 	}}
@@ -236,6 +237,7 @@ func TestRegister_Success(t *testing.T) {
 }
 
 func TestRegister_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/dogs", "not json")
 
@@ -246,6 +248,7 @@ func TestRegister_InvalidJSON(t *testing.T) {
 }
 
 func TestRegister_BindingValidation(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/dogs", `{"name":"Luna"}`)
 
@@ -255,6 +258,7 @@ func TestRegister_BindingValidation(t *testing.T) {
 }
 
 func TestRegister_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	stub := &stubRegistrar{fn: func(ctx context.Context, in doguc.RegisterDogInput) (doguc.RegisterDogOutput, error) {
 		return doguc.RegisterDogOutput{}, &doguc.ValidationError{Field: "breed"}
 	}}
@@ -268,6 +272,7 @@ func TestRegister_UseCaseValidation(t *testing.T) {
 }
 
 func TestRegister_InvalidUser(t *testing.T) {
+	t.Parallel()
 	stub := &stubRegistrar{fn: func(ctx context.Context, in doguc.RegisterDogInput) (doguc.RegisterDogOutput, error) {
 		return doguc.RegisterDogOutput{}, postgres.ErrInvalidUser
 	}}
@@ -281,6 +286,7 @@ func TestRegister_InvalidUser(t *testing.T) {
 }
 
 func TestRegister_DuplicatePassport(t *testing.T) {
+	t.Parallel()
 	stub := &stubRegistrar{fn: func(ctx context.Context, in doguc.RegisterDogInput) (doguc.RegisterDogOutput, error) {
 		return doguc.RegisterDogOutput{}, postgres.ErrDuplicatePassport
 	}}
@@ -294,6 +300,7 @@ func TestRegister_DuplicatePassport(t *testing.T) {
 }
 
 func TestRegister_InternalError(t *testing.T) {
+	t.Parallel()
 	stub := &stubRegistrar{fn: func(ctx context.Context, in doguc.RegisterDogInput) (doguc.RegisterDogOutput, error) {
 		return doguc.RegisterDogOutput{}, errors.New("db down")
 	}}
@@ -307,6 +314,7 @@ func TestRegister_InternalError(t *testing.T) {
 }
 
 func TestDogGetByID_Success(t *testing.T) {
+	t.Parallel()
 	dog := newTestDog(7)
 	stub := &stubDogGetter{fn: func(_ context.Context, in doguc.GetDogInput) (doguc.GetDogOutput, error) {
 		assert.Equal(t, 7, in.ID())
@@ -326,6 +334,7 @@ func TestDogGetByID_Success(t *testing.T) {
 }
 
 func TestDogGetByID_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerGet(&stubDogGetter{fn: func(context.Context, doguc.GetDogInput) (doguc.GetDogOutput, error) {
 		t.Fatal("use case should not be called")
 		return doguc.GetDogOutput{}, nil
@@ -337,6 +346,7 @@ func TestDogGetByID_InvalidID(t *testing.T) {
 }
 
 func TestDogGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerGet(&stubDogGetter{fn: func(context.Context, doguc.GetDogInput) (doguc.GetDogOutput, error) {
 		return doguc.GetDogOutput{}, doguc.ErrNotFound
 	}})
@@ -347,6 +357,7 @@ func TestDogGetByID_NotFound(t *testing.T) {
 }
 
 func TestDogGetByID_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerGet(&stubDogGetter{fn: func(context.Context, doguc.GetDogInput) (doguc.GetDogOutput, error) {
 		return doguc.GetDogOutput{}, errors.New("db down")
 	}})
@@ -357,6 +368,7 @@ func TestDogGetByID_InternalError(t *testing.T) {
 }
 
 func TestList_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1), newTestDog(2)}
 	stub := &stubListerAll{fn: func(ctx context.Context, in doguc.ListAllDogsInput) (doguc.ListAllDogsOutput, error) {
 		return doguc.ListAllDogsOutput{Dogs: dogs}, nil
@@ -376,6 +388,7 @@ func TestList_Success(t *testing.T) {
 }
 
 func TestList_Empty(t *testing.T) {
+	t.Parallel()
 	stub := &stubListerAll{fn: func(ctx context.Context, in doguc.ListAllDogsInput) (doguc.ListAllDogsOutput, error) {
 		return doguc.ListAllDogsOutput{Dogs: []*domain.Dog{}}, nil
 	}}
@@ -391,6 +404,7 @@ func TestList_Empty(t *testing.T) {
 }
 
 func TestList_InternalError(t *testing.T) {
+	t.Parallel()
 	stub := &stubListerAll{fn: func(ctx context.Context, in doguc.ListAllDogsInput) (doguc.ListAllDogsOutput, error) {
 		return doguc.ListAllDogsOutput{}, errors.New("db down")
 	}}
@@ -403,6 +417,7 @@ func TestList_InternalError(t *testing.T) {
 }
 
 func TestListByOwner_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1), newTestDog(2)}
 	stub := &stubListerByOwner{fn: func(ctx context.Context, in doguc.ListByOwnerInput) (doguc.ListByOwnerOutput, error) {
 		assert.Equal(t, 1, in.OwnerID())
@@ -424,6 +439,7 @@ func TestListByOwner_Success(t *testing.T) {
 }
 
 func TestListByOwner_Empty(t *testing.T) {
+	t.Parallel()
 	stub := &stubListerByOwner{fn: func(ctx context.Context, in doguc.ListByOwnerInput) (doguc.ListByOwnerOutput, error) {
 		return doguc.ListByOwnerOutput{Dogs: []*domain.Dog{}}, nil
 	}}
@@ -440,6 +456,7 @@ func TestListByOwner_Empty(t *testing.T) {
 }
 
 func TestListByOwner_InvalidOwnerID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/owner/abc", "")
 	c.Params = gin.Params{{Key: "owner_id", Value: "abc"}}
@@ -451,6 +468,7 @@ func TestListByOwner_InvalidOwnerID(t *testing.T) {
 }
 
 func TestListByOwner_NegativeOwnerID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/owner/-5", "")
 	c.Params = gin.Params{{Key: "owner_id", Value: "-5"}}
@@ -461,6 +479,7 @@ func TestListByOwner_NegativeOwnerID(t *testing.T) {
 }
 
 func TestListByOwner_ZeroOwnerID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/owner/0", "")
 	c.Params = gin.Params{{Key: "owner_id", Value: "0"}}
@@ -471,6 +490,7 @@ func TestListByOwner_ZeroOwnerID(t *testing.T) {
 }
 
 func TestListByOwner_InternalError(t *testing.T) {
+	t.Parallel()
 	stub := &stubListerByOwner{fn: func(ctx context.Context, in doguc.ListByOwnerInput) (doguc.ListByOwnerOutput, error) {
 		return doguc.ListByOwnerOutput{}, errors.New("db down")
 	}}
@@ -484,6 +504,7 @@ func TestListByOwner_InternalError(t *testing.T) {
 }
 
 func TestModify_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubModifier{fn: func(ctx context.Context, in doguc.ModifyDogInput) (doguc.ModifyDogOutput, error) {
 		assert.Equal(t, 42, in.ID())
 		assert.NotNil(t, in.Patch().Name)
@@ -503,6 +524,7 @@ func TestModify_Success(t *testing.T) {
 }
 
 func TestModify_EmptyPatchIsNoop(t *testing.T) {
+	t.Parallel()
 	stub := &stubModifier{fn: func(ctx context.Context, in doguc.ModifyDogInput) (doguc.ModifyDogOutput, error) {
 		return doguc.ModifyDogOutput{ID: 42}, nil
 	}}
@@ -516,6 +538,7 @@ func TestModify_EmptyPatchIsNoop(t *testing.T) {
 }
 
 func TestModify_InvalidID_NonNumeric(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull(nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/abc", `{"name":"x"}`)
 
@@ -526,6 +549,7 @@ func TestModify_InvalidID_NonNumeric(t *testing.T) {
 }
 
 func TestModify_InvalidID_ZeroOrNegative(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull(nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/0", `{"name":"x"}`)
 	c.Params = gin.Params{{Key: "id", Value: "0"}}
@@ -537,6 +561,7 @@ func TestModify_InvalidID_ZeroOrNegative(t *testing.T) {
 }
 
 func TestModify_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull(nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/42", "not json")
 	c.Params = gin.Params{{Key: "id", Value: "42"}}
@@ -548,6 +573,7 @@ func TestModify_InvalidJSON(t *testing.T) {
 }
 
 func TestModify_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	stub := &stubModifier{fn: func(ctx context.Context, in doguc.ModifyDogInput) (doguc.ModifyDogOutput, error) {
 		return doguc.ModifyDogOutput{}, &doguc.ValidationError{Field: "name"}
 	}}
@@ -562,6 +588,7 @@ func TestModify_UseCaseValidation(t *testing.T) {
 }
 
 func TestModify_NotFound(t *testing.T) {
+	t.Parallel()
 	stub := &stubModifier{fn: func(ctx context.Context, in doguc.ModifyDogInput) (doguc.ModifyDogOutput, error) {
 		return doguc.ModifyDogOutput{}, doguc.ErrNotFound
 	}}
@@ -576,6 +603,7 @@ func TestModify_NotFound(t *testing.T) {
 }
 
 func TestModify_DuplicatePassport(t *testing.T) {
+	t.Parallel()
 	stub := &stubModifier{fn: func(ctx context.Context, in doguc.ModifyDogInput) (doguc.ModifyDogOutput, error) {
 		return doguc.ModifyDogOutput{}, postgres.ErrDuplicatePassport
 	}}
@@ -590,6 +618,7 @@ func TestModify_DuplicatePassport(t *testing.T) {
 }
 
 func TestModify_InternalError(t *testing.T) {
+	t.Parallel()
 	stub := &stubModifier{fn: func(ctx context.Context, in doguc.ModifyDogInput) (doguc.ModifyDogOutput, error) {
 		return doguc.ModifyDogOutput{}, errors.New("db down")
 	}}
@@ -603,6 +632,7 @@ func TestModify_InternalError(t *testing.T) {
 }
 
 func TestAddIncompatibility_Success_Added(t *testing.T) {
+	t.Parallel()
 	incompats := []domain.Incompatibility{
 		mustNewIncompatibility(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta),
 		mustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja),
@@ -632,6 +662,7 @@ func TestAddIncompatibility_Success_Added(t *testing.T) {
 }
 
 func TestAddIncompatibility_Idempotent_Returns200(t *testing.T) {
+	t.Parallel()
 	incompats := []domain.Incompatibility{
 		mustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja),
 	}
@@ -655,6 +686,7 @@ func TestAddIncompatibility_Idempotent_Returns200(t *testing.T) {
 }
 
 func TestAddIncompatibility_InvalidDogID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull4(nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/abc/incompatibilities", `{"incompatibility_id":3}`)
 	c.Params = gin.Params{{Key: "id", Value: "abc"}}
@@ -666,6 +698,7 @@ func TestAddIncompatibility_InvalidDogID(t *testing.T) {
 }
 
 func TestAddIncompatibility_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull4(nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/42/incompatibilities", "not json")
 	c.Params = gin.Params{{Key: "id", Value: "42"}}
@@ -677,6 +710,7 @@ func TestAddIncompatibility_InvalidJSON(t *testing.T) {
 }
 
 func TestAddIncompatibility_BindingValidation(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull4(nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/42/incompatibilities", `{"incompatibility_id":0}`)
 	c.Params = gin.Params{{Key: "id", Value: "42"}}
@@ -692,6 +726,7 @@ func TestAddIncompatibility_BindingValidation(t *testing.T) {
 }
 
 func TestAddIncompatibility_NotFound_UseCase(t *testing.T) {
+	t.Parallel()
 	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
 		return doguc.AddDogIncompatibilityOutput{}, doguc.ErrNotFound
 	}}
@@ -706,6 +741,7 @@ func TestAddIncompatibility_NotFound_UseCase(t *testing.T) {
 }
 
 func TestAddIncompatibility_NotFound_Repo(t *testing.T) {
+	t.Parallel()
 	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
 		return doguc.AddDogIncompatibilityOutput{}, postgres.ErrNotFound
 	}}
@@ -720,6 +756,7 @@ func TestAddIncompatibility_NotFound_Repo(t *testing.T) {
 }
 
 func TestAddIncompatibility_InternalError(t *testing.T) {
+	t.Parallel()
 	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
 		return doguc.AddDogIncompatibilityOutput{}, errors.New("db down")
 	}}
@@ -733,6 +770,7 @@ func TestAddIncompatibility_InternalError(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_Success_Removed(t *testing.T) {
+	t.Parallel()
 	incompats := []domain.Incompatibility{
 		mustNewIncompatibility(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta),
 	}
@@ -758,6 +796,7 @@ func TestRemoveIncompatibility_Success_Removed(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_Idempotent_NotPresent(t *testing.T) {
+	t.Parallel()
 	incompats := []domain.Incompatibility{
 		mustNewIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia),
 	}
@@ -779,6 +818,7 @@ func TestRemoveIncompatibility_Idempotent_NotPresent(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_InvalidDogID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/abc/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "abc"}, {Key: "incompatibility_id", Value: "3"}}
@@ -790,6 +830,7 @@ func TestRemoveIncompatibility_InvalidDogID(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_ZeroOrNegativeDogID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/0/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "0"}, {Key: "incompatibility_id", Value: "3"}}
@@ -801,6 +842,7 @@ func TestRemoveIncompatibility_ZeroOrNegativeDogID(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_InvalidIncompatID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/abc", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "abc"}}
@@ -812,6 +854,7 @@ func TestRemoveIncompatibility_InvalidIncompatID(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_ZeroIncompatID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/0", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "0"}}
@@ -823,6 +866,7 @@ func TestRemoveIncompatibility_ZeroIncompatID(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_DogNotFound(t *testing.T) {
+	t.Parallel()
 	stub := &stubIncompatibilityRemover{fn: func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error) {
 		return doguc.RemoveDogIncompatibilityOutput{}, doguc.ErrNotFound
 	}}
@@ -837,6 +881,7 @@ func TestRemoveIncompatibility_DogNotFound(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	stub := &stubIncompatibilityRemover{fn: func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error) {
 		return doguc.RemoveDogIncompatibilityOutput{}, &doguc.ValidationError{Field: "incompatibility_id"}
 	}}
@@ -851,6 +896,7 @@ func TestRemoveIncompatibility_UseCaseValidation(t *testing.T) {
 }
 
 func TestRemoveIncompatibility_InternalError(t *testing.T) {
+	t.Parallel()
 	stub := &stubIncompatibilityRemover{fn: func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error) {
 		return doguc.RemoveDogIncompatibilityOutput{}, errors.New("db down")
 	}}
@@ -868,6 +914,7 @@ func TestRemoveIncompatibility_InternalError(t *testing.T) {
 // ============================================================================
 
 func TestListActive_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1), newTestDog(2)}
 	stub := &stubListerActive{fn: func(ctx context.Context, in doguc.ListActiveDogsInput) (doguc.ListActiveDogsOutput, error) {
 		return doguc.ListActiveDogsOutput{Dogs: dogs}, nil
@@ -887,6 +934,7 @@ func TestListActive_Success(t *testing.T) {
 }
 
 func TestListActive_InternalError(t *testing.T) {
+	t.Parallel()
 	stub := &stubListerActive{fn: func(ctx context.Context, in doguc.ListActiveDogsInput) (doguc.ListActiveDogsOutput, error) {
 		return doguc.ListActiveDogsOutput{}, errors.New("db down")
 	}}
@@ -900,6 +948,7 @@ func TestListActive_InternalError(t *testing.T) {
 }
 
 func TestListByIsActive_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByIsActive{fn: func(ctx context.Context, in doguc.ListByIsActiveInput) (doguc.ListByIsActiveOutput, error) {
 		assert.True(t, in.IsActive())
@@ -919,6 +968,7 @@ func TestListByIsActive_Success(t *testing.T) {
 }
 
 func TestListByIsActive_InvalidValue(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/is_active/banana", "")
 	c.Params = gin.Params{{Key: "value", Value: "banana"}}
@@ -930,6 +980,7 @@ func TestListByIsActive_InvalidValue(t *testing.T) {
 }
 
 func TestListByIncompatibility_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1), newTestDog(2), newTestDog(3)}
 	stub := &stubListerByIncompatibility{fn: func(ctx context.Context, in doguc.ListByIncompatibilityInput) (doguc.ListByIncompatibilityOutput, error) {
 		assert.Equal(t, 5, in.IncompatibilityID())
@@ -949,6 +1000,7 @@ func TestListByIncompatibility_Success(t *testing.T) {
 }
 
 func TestListByIncompatibility_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/incompatibility/abc", "")
 	c.Params = gin.Params{{Key: "incompat_id", Value: "abc"}}
@@ -960,6 +1012,7 @@ func TestListByIncompatibility_InvalidID(t *testing.T) {
 }
 
 func TestListByIncompatibility_ZeroID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/incompatibility/0", "")
 	c.Params = gin.Params{{Key: "incompat_id", Value: "0"}}
@@ -970,6 +1023,7 @@ func TestListByIncompatibility_ZeroID(t *testing.T) {
 }
 
 func TestListByBreed_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByBreed{fn: func(ctx context.Context, in doguc.ListByBreedInput) (doguc.ListByBreedOutput, error) {
 		assert.Equal(t, "Labrador", in.Breed())
@@ -989,6 +1043,7 @@ func TestListByBreed_Success(t *testing.T) {
 }
 
 func TestListByBreed_Empty(t *testing.T) {
+	t.Parallel()
 	stub := &stubListerByBreed{fn: func(ctx context.Context, in doguc.ListByBreedInput) (doguc.ListByBreedOutput, error) {
 		return doguc.ListByBreedOutput{Dogs: []*domain.Dog{}}, nil
 	}}
@@ -1006,6 +1061,7 @@ func TestListByBreed_Empty(t *testing.T) {
 }
 
 func TestListBySex_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerBySex{fn: func(ctx context.Context, in doguc.ListBySexInput) (doguc.ListBySexOutput, error) {
 		assert.Equal(t, domain.SexFemale, in.Sex())
@@ -1025,6 +1081,7 @@ func TestListBySex_Success(t *testing.T) {
 }
 
 func TestListBySex_InvalidSex(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/sex/INVALID", "")
 	c.Params = gin.Params{{Key: "sex", Value: "INVALID"}}
@@ -1036,6 +1093,7 @@ func TestListBySex_InvalidSex(t *testing.T) {
 }
 
 func TestListByNeutered_True(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByNeutered{fn: func(ctx context.Context, in doguc.ListByNeuteredInput) (doguc.ListByNeuteredOutput, error) {
 		assert.True(t, in.Neutered())
@@ -1052,6 +1110,7 @@ func TestListByNeutered_True(t *testing.T) {
 }
 
 func TestListByNeutered_False(t *testing.T) {
+	t.Parallel()
 	stub := &stubListerByNeutered{fn: func(ctx context.Context, in doguc.ListByNeuteredInput) (doguc.ListByNeuteredOutput, error) {
 		assert.False(t, in.Neutered())
 		return doguc.ListByNeuteredOutput{Dogs: []*domain.Dog{}}, nil
@@ -1067,6 +1126,7 @@ func TestListByNeutered_False(t *testing.T) {
 }
 
 func TestListByNeutered_InvalidValue(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/neutered/banana", "")
 	c.Params = gin.Params{{Key: "value", Value: "banana"}}
@@ -1077,6 +1137,7 @@ func TestListByNeutered_InvalidValue(t *testing.T) {
 }
 
 func TestListByHeat_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByHeat{fn: func(ctx context.Context, in doguc.ListByHeatInput) (doguc.ListByHeatOutput, error) {
 		assert.True(t, in.Heat())
@@ -1093,6 +1154,7 @@ func TestListByHeat_Success(t *testing.T) {
 }
 
 func TestListByHeat_InvalidValue(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/heat/banana", "")
 	c.Params = gin.Params{{Key: "value", Value: "banana"}}
@@ -1103,6 +1165,7 @@ func TestListByHeat_InvalidValue(t *testing.T) {
 }
 
 func TestListByAgeBracket_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerByAgeBracket{fn: func(ctx context.Context, in doguc.ListByAgeBracketInput) (doguc.ListByAgeBracketOutput, error) {
 		assert.Equal(t, domain.AgeBracketChildren, in.AgeBracket())
@@ -1119,6 +1182,7 @@ func TestListByAgeBracket_Success(t *testing.T) {
 }
 
 func TestListByAgeBracket_InvalidBracket(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/age/BOGUS", "")
 	c.Params = gin.Params{{Key: "bracket", Value: "BOGUS"}}
@@ -1130,6 +1194,7 @@ func TestListByAgeBracket_InvalidBracket(t *testing.T) {
 }
 
 func TestListBySizeBracket_Success(t *testing.T) {
+	t.Parallel()
 	dogs := []*domain.Dog{newTestDog(1)}
 	stub := &stubListerBySizeBracket{fn: func(ctx context.Context, in doguc.ListBySizeBracketInput) (doguc.ListBySizeBracketOutput, error) {
 		assert.Equal(t, domain.SizeBracketLarge, in.SizeBracket())
@@ -1146,6 +1211,7 @@ func TestListBySizeBracket_Success(t *testing.T) {
 }
 
 func TestListBySizeBracket_InvalidBracket(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/size/BOGUS", "")
 	c.Params = gin.Params{{Key: "bracket", Value: "BOGUS"}}
@@ -1157,6 +1223,7 @@ func TestListBySizeBracket_InvalidBracket(t *testing.T) {
 }
 
 func TestDelete_Success(t *testing.T) {
+	t.Parallel()
 	var capturedID int
 	stub := &stubDeleter{fn: func(ctx context.Context, in doguc.DeleteDogInput) (doguc.DeleteDogOutput, error) {
 		capturedID = in.ID()
@@ -1174,6 +1241,7 @@ func TestDelete_Success(t *testing.T) {
 }
 
 func TestDelete_NotFound(t *testing.T) {
+	t.Parallel()
 	stub := &stubDeleter{fn: func(ctx context.Context, in doguc.DeleteDogInput) (doguc.DeleteDogOutput, error) {
 		return doguc.DeleteDogOutput{}, postgres.ErrNotFound
 	}}
@@ -1188,6 +1256,7 @@ func TestDelete_NotFound(t *testing.T) {
 }
 
 func TestDelete_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/abc", "")
 	c.Params = gin.Params{{Key: "id", Value: "abc"}}
@@ -1199,6 +1268,7 @@ func TestDelete_InvalidID(t *testing.T) {
 }
 
 func TestDelete_ZeroID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/0", "")
 	c.Params = gin.Params{{Key: "id", Value: "0"}}
@@ -1209,6 +1279,7 @@ func TestDelete_ZeroID(t *testing.T) {
 }
 
 func TestDelete_UseCaseValidationError(t *testing.T) {
+	t.Parallel()
 	stub := &stubDeleter{fn: func(ctx context.Context, in doguc.DeleteDogInput) (doguc.DeleteDogOutput, error) {
 		return doguc.DeleteDogOutput{}, &doguc.ValidationError{Field: "id"}
 	}}
@@ -1228,6 +1299,7 @@ func TestDelete_UseCaseValidationError(t *testing.T) {
 // ============================================================================
 
 func TestList_IncludesIncompatibilities(t *testing.T) {
+	t.Parallel()
 	// Build a dog with 2 incompatibilities using the domain API.
 	dog, err := domain.NewDog(1, "Luna", "Labrador", "ES-Luna", 24,
 		domain.SexFemale, 22.5, 1)
@@ -1256,6 +1328,7 @@ func TestList_IncludesIncompatibilities(t *testing.T) {
 }
 
 func TestList_IncludesEmptyIncompatibilitiesArray(t *testing.T) {
+	t.Parallel()
 	// Dogs with no incompats must still have the field present (as []), not null.
 	dog, err := domain.NewDog(1, "Luna", "Labrador", "ES-Luna", 24,
 		domain.SexFemale, 22.5, 1)
@@ -1280,6 +1353,7 @@ func TestList_IncludesEmptyIncompatibilitiesArray(t *testing.T) {
 // ============================================================================
 
 func TestSetNeutered_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubNeuteredSetter{fn: func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
 		assert.Equal(t, 42, in.ID())
 		assert.True(t, in.Neutered())
@@ -1301,6 +1375,7 @@ func TestSetNeutered_Success(t *testing.T) {
 }
 
 func TestSetNeutered_NotFound(t *testing.T) {
+	t.Parallel()
 	stub := &stubNeuteredSetter{fn: func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
 		return doguc.SetDogNeuteredOutput{}, postgres.ErrNotFound
 	}}
@@ -1315,6 +1390,7 @@ func TestSetNeutered_NotFound(t *testing.T) {
 }
 
 func TestSetNeutered_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/abc/neutered", `{"neutered":true}`)
 	c.Params = gin.Params{{Key: "id", Value: "abc"}}
@@ -1325,6 +1401,7 @@ func TestSetNeutered_InvalidID(t *testing.T) {
 }
 
 func TestSetNeutered_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/1/neutered", `not json`)
 	c.Params = gin.Params{{Key: "id", Value: "1"}}
@@ -1336,6 +1413,7 @@ func TestSetNeutered_InvalidJSON(t *testing.T) {
 }
 
 func TestSetNeutered_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	stub := &stubNeuteredSetter{fn: func(ctx context.Context, in doguc.SetDogNeuteredInput) (doguc.SetDogNeuteredOutput, error) {
 		return doguc.SetDogNeuteredOutput{}, &doguc.ValidationError{Field: "id"}
 	}}
@@ -1351,6 +1429,7 @@ func TestSetNeutered_UseCaseValidation(t *testing.T) {
 }
 
 func TestSetHeat_Success_Female(t *testing.T) {
+	t.Parallel()
 	stub := &stubHeatSetter{fn: func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
 		assert.Equal(t, 2, in.ID())
 		assert.True(t, in.Heat())
@@ -1371,6 +1450,7 @@ func TestSetHeat_Success_Female(t *testing.T) {
 }
 
 func TestSetHeat_RejectedOnMale(t *testing.T) {
+	t.Parallel()
 	stub := &stubHeatSetter{fn: func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
 		return doguc.SetDogHeatOutput{}, doguc.ErrInvalidHeatForSex
 	}}
@@ -1386,6 +1466,7 @@ func TestSetHeat_RejectedOnMale(t *testing.T) {
 }
 
 func TestSetHeat_NotFound(t *testing.T) {
+	t.Parallel()
 	stub := &stubHeatSetter{fn: func(ctx context.Context, in doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error) {
 		return doguc.SetDogHeatOutput{}, postgres.ErrNotFound
 	}}
@@ -1400,6 +1481,7 @@ func TestSetHeat_NotFound(t *testing.T) {
 }
 
 func TestSetHeat_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/0/heat", `{"heat":false}`)
 	c.Params = gin.Params{{Key: "id", Value: "0"}}
@@ -1410,6 +1492,7 @@ func TestSetHeat_InvalidID(t *testing.T) {
 }
 
 func TestSetHeat_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newTestHandler(nil, nil, nil)
 	c, w := setupCtx(http.MethodPatch, "/api/v1/dogs/1/heat", `{"heat":"yes"}`)
 	c.Params = gin.Params{{Key: "id", Value: "1"}}

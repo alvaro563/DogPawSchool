@@ -15,6 +15,7 @@ func validRegisterInput() RegisterDogInput {
 }
 
 func TestNewRegisterDogInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name          string
 		factory       func() (RegisterDogInput, error)
@@ -42,6 +43,7 @@ func TestNewRegisterDogInput(t *testing.T) {
 }
 
 func TestRegisterDogUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("factory_blocks_invalid_before_use_case_runs", func(t *testing.T) {
 		// The factory rejects invalid input; the use case never sees it.
 		_, err := NewRegisterDogInput("", "", "", 0, domain.Sex(""), 0, 0)

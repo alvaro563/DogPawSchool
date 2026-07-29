@@ -9,6 +9,7 @@ import (
 )
 
 func TestNewDeleteDogInput(t *testing.T) {
+	t.Parallel()
 	t.Run("zero_id", func(t *testing.T) {
 		_, err := NewDeleteDogInput(0)
 		assert.Error(t, err)
@@ -26,6 +27,7 @@ func TestNewDeleteDogInput(t *testing.T) {
 }
 
 func TestDeleteDogUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedID int
 		mock := &mockDogRepository{

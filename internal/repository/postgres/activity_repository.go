@@ -71,6 +71,22 @@ func (repo *ActivityRepository) GetByID(ctx context.Context, id int) (*domain.Ac
 	return activity, nil
 }
 
+// GetByIDForUpdate fetches a single activity by id and locks the row
+// with FOR UPDATE until the transaction commits. Returns
+// ErrActivityNotFound when no row matches.
+func (repo *ActivityRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Activity, error) {
+	query := activitySelectClause + ` WHERE id = $1 FOR UPDATE`
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
+	activity, err := scanActivity(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrActivityNotFound
+		}
+		return nil, err
+	}
+	return activity, nil
+}
+
 // Update writes all mutable fields of the activity. Returns
 // ErrActivityNotFound if no row matches the id.
 func (repo *ActivityRepository) Update(ctx context.Context, activity *domain.Activity) error {

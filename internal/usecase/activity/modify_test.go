@@ -17,6 +17,7 @@ func newModifyActivity(id int) *domain.Activity {
 }
 
 func TestModifyActivityUseCase_Success(t *testing.T) {
+	t.Parallel()
 	original := newModifyActivity(1)
 	var saved *domain.Activity
 	repo := &mockActivityRepository{
@@ -47,6 +48,7 @@ func TestModifyActivityUseCase_Success(t *testing.T) {
 }
 
 func TestModifyActivityUseCase_EmptyPatchIsNoOp(t *testing.T) {
+	t.Parallel()
 	original := newModifyActivity(1)
 	repo := &mockActivityRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
@@ -65,6 +67,7 @@ func TestModifyActivityUseCase_EmptyPatchIsNoOp(t *testing.T) {
 }
 
 func TestModifyActivityUseCase_NotFound(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
 			return nil, nil
@@ -81,6 +84,7 @@ func TestModifyActivityUseCase_NotFound(t *testing.T) {
 }
 
 func TestNewModifyActivityInput_InvalidID(t *testing.T) {
+	t.Parallel()
 	_, err := NewModifyActivityInput(0, domain.ActivityPatch{})
 	assertValidationError(t, err, "id")
 	_, err = NewModifyActivityInput(-1, domain.ActivityPatch{})
@@ -88,6 +92,7 @@ func TestNewModifyActivityInput_InvalidID(t *testing.T) {
 }
 
 func TestModifyActivityUseCase_PatchValidationErrors(t *testing.T) {
+	t.Parallel()
 	original := newModifyActivity(1)
 	repo := &mockActivityRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
@@ -134,6 +139,7 @@ func TestModifyActivityUseCase_PatchValidationErrors(t *testing.T) {
 }
 
 func TestModifyActivityUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
 			return newModifyActivity(1), nil

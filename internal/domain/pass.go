@@ -317,6 +317,7 @@ type PassRepository interface {
 	Update(ctx context.Context, pass *Pass) error
 
 	GetByID(ctx context.Context, id int) (*Pass, error)
+	GetByIDForUpdate(ctx context.Context, id int) (*Pass, error)
 	ListAll(ctx context.Context, limit, offset int) ([]*Pass, error)
 	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Pass, error)
 }

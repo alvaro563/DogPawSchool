@@ -21,13 +21,14 @@ func validGetInput() GetReservationInput {
 func makeOwnedView(id, userID int) *domain.ReservationView {
 	return mustNewReservationView(
 		id, 10, 20, userID, 30, userID,
-		domain.StatusConfirmed, time.Now(),
-		"Paseo", "Park", time.Now().Add(7*24*time.Hour),
+		domain.StatusConfirmed, fixedNow,
+		"Paseo", "Park", fixedNow.Add(7*24*time.Hour),
 		"Luna", 5,
 	)
 }
 
 func TestNewGetReservationInput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		user  int
@@ -50,6 +51,7 @@ func TestNewGetReservationInput(t *testing.T) {
 }
 
 func TestGetReservationUseCase_Success(t *testing.T) {
+	t.Parallel()
 	view := makeOwnedView(99, 1)
 	repo := &mockReservationRepository{
 		getView: func(_ context.Context, id int) (*domain.ReservationView, error) {
@@ -64,6 +66,7 @@ func TestGetReservationUseCase_Success(t *testing.T) {
 }
 
 func TestGetReservationUseCase_NotFound(t *testing.T) {
+	t.Parallel()
 	repo := &mockReservationRepository{
 		getView: func(context.Context, int) (*domain.ReservationView, error) {
 			return nil, domain.ErrNotFound
@@ -75,6 +78,7 @@ func TestGetReservationUseCase_NotFound(t *testing.T) {
 }
 
 func TestGetReservationUseCase_NotOwnedByUser(t *testing.T) {
+	t.Parallel()
 	// The reservation exists but the dog is owned by user 99, not
 	// user 1 (the path). Must surface as not_found (no leak).
 	view := makeOwnedView(99, 99)
@@ -89,6 +93,7 @@ func TestGetReservationUseCase_NotOwnedByUser(t *testing.T) {
 }
 
 func TestGetReservationUseCase_RepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
 	repo := &mockReservationRepository{
 		getView: func(context.Context, int) (*domain.ReservationView, error) {
 			return nil, errors.New("db connection lost")

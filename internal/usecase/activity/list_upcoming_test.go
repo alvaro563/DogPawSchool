@@ -11,6 +11,7 @@ import (
 )
 
 func TestListUpcomingActivitiesUseCase_Success(t *testing.T) {
+	t.Parallel()
 	future1 := time.Date(2030, 1, 1, 10, 0, 0, 0, time.UTC)
 	future2 := time.Date(2030, 2, 1, 10, 0, 0, 0, time.UTC)
 	expected := []*domain.Activity{
@@ -32,6 +33,7 @@ func TestListUpcomingActivitiesUseCase_Success(t *testing.T) {
 }
 
 func TestListUpcomingActivitiesUseCase_Empty(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		listUpcoming: func(ctx context.Context, limit, offset int) ([]*domain.Activity, error) {
 			return nil, nil
@@ -45,6 +47,7 @@ func TestListUpcomingActivitiesUseCase_Empty(t *testing.T) {
 }
 
 func TestListUpcomingActivitiesUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		listUpcoming: func(ctx context.Context, limit, offset int) ([]*domain.Activity, error) {
 			return nil, sentinelErr

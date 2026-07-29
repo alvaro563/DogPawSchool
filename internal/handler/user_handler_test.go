@@ -85,6 +85,7 @@ func newTestUser(id int) *domain.User {
 // ---------------------------------------------------------------------------
 
 func TestUserGetByID_Success(t *testing.T) {
+	t.Parallel()
 	u := newTestUser(7)
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		assert.Equal(t, 7, in.ID())
@@ -106,6 +107,7 @@ func TestUserGetByID_Success(t *testing.T) {
 }
 
 func TestUserGetByID_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(context.Context, useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		t.Fatal("use case should not be called")
 		return useruc.GetUserOutput{}, nil
@@ -120,6 +122,7 @@ func TestUserGetByID_InvalidID(t *testing.T) {
 }
 
 func TestUserGetByID_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		return useruc.GetUserOutput{}, &useruc.ValidationError{Field: "id"}
 	}})
@@ -132,6 +135,7 @@ func TestUserGetByID_UseCaseValidation(t *testing.T) {
 }
 
 func TestUserGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		return useruc.GetUserOutput{}, useruc.ErrNotFound
 	}})
@@ -144,6 +148,7 @@ func TestUserGetByID_NotFound(t *testing.T) {
 }
 
 func TestUserGetByID_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		return useruc.GetUserOutput{}, errors.New("db down")
 	}})
@@ -160,6 +165,7 @@ func TestUserGetByID_InternalError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUserList_Success(t *testing.T) {
+	t.Parallel()
 	users := []*domain.User{newTestUser(1), newTestUser(2)}
 	h := newTestUserHandlerList(&stubUserLister{fn: func(_ context.Context, in useruc.ListUsersInput) (useruc.ListUsersOutput, error) {
 		assert.Equal(t, 10, in.Limit())
@@ -181,6 +187,7 @@ func TestUserList_Success(t *testing.T) {
 }
 
 func TestUserList_PaginationPassesThrough(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerList(&stubUserLister{fn: func(_ context.Context, in useruc.ListUsersInput) (useruc.ListUsersOutput, error) {
 		assert.Equal(t, 25, in.Limit(), "factory should normalize and pass through limit")
 		assert.Equal(t, 50, in.Offset())
@@ -194,6 +201,7 @@ func TestUserList_PaginationPassesThrough(t *testing.T) {
 }
 
 func TestUserList_Empty(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerList(&stubUserLister{fn: func(_ context.Context, in useruc.ListUsersInput) (useruc.ListUsersOutput, error) {
 		return useruc.ListUsersOutput{Users: []*domain.User{}}, nil
 	}})
@@ -206,6 +214,7 @@ func TestUserList_Empty(t *testing.T) {
 }
 
 func TestUserList_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerList(&stubUserLister{fn: func(_ context.Context, in useruc.ListUsersInput) (useruc.ListUsersOutput, error) {
 		return useruc.ListUsersOutput{}, errors.New("connection lost")
 	}})
@@ -221,6 +230,7 @@ func TestUserList_InternalError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUserUpdate_Success_Name(t *testing.T) {
+	t.Parallel()
 	var captured useruc.UpdateUserInput
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		captured = in
@@ -240,6 +250,7 @@ func TestUserUpdate_Success_Name(t *testing.T) {
 }
 
 func TestUserUpdate_Success_Email(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		return useruc.UpdateUserOutput{ID: 42}, nil
 	}})
@@ -251,6 +262,7 @@ func TestUserUpdate_Success_Email(t *testing.T) {
 }
 
 func TestUserUpdate_Success_Both(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		require.NotNil(t, in.Patch().Name)
 		require.NotNil(t, in.Patch().Email)
@@ -264,6 +276,7 @@ func TestUserUpdate_Success_Both(t *testing.T) {
 }
 
 func TestUserUpdate_EmptyBody_Noop(t *testing.T) {
+	t.Parallel()
 	var capturedPatch domain.UserPatch
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		capturedPatch = in.Patch()
@@ -278,6 +291,7 @@ func TestUserUpdate_EmptyBody_Noop(t *testing.T) {
 }
 
 func TestUserUpdate_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(context.Context, useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		t.Fatal("use case should not be called")
 		return useruc.UpdateUserOutput{}, nil
@@ -291,6 +305,7 @@ func TestUserUpdate_InvalidID(t *testing.T) {
 }
 
 func TestUserUpdate_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(context.Context, useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		t.Fatal("use case should not be called")
 		return useruc.UpdateUserOutput{}, nil
@@ -304,6 +319,7 @@ func TestUserUpdate_InvalidJSON(t *testing.T) {
 }
 
 func TestUserUpdate_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		return useruc.UpdateUserOutput{}, &useruc.ValidationError{Field: "email"}
 	}})
@@ -316,6 +332,7 @@ func TestUserUpdate_UseCaseValidation(t *testing.T) {
 }
 
 func TestUserUpdate_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		return useruc.UpdateUserOutput{}, useruc.ErrNotFound
 	}})
@@ -328,6 +345,7 @@ func TestUserUpdate_NotFound(t *testing.T) {
 }
 
 func TestUserUpdate_DuplicateEmail(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		return useruc.UpdateUserOutput{}, domain.ErrDuplicateEmail
 	}})
@@ -340,6 +358,7 @@ func TestUserUpdate_DuplicateEmail(t *testing.T) {
 }
 
 func TestUserUpdate_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
 		return useruc.UpdateUserOutput{}, errors.New("db down")
 	}})
@@ -355,6 +374,7 @@ func TestUserUpdate_InternalError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUserDeactivate_Success(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerDeactivate(&stubUserDeactivator{fn: func(_ context.Context, in useruc.DeactivateUserInput) (useruc.DeactivateUserOutput, error) {
 		assert.Equal(t, 9, in.ID())
 		return useruc.DeactivateUserOutput{ID: 9}, nil
@@ -371,6 +391,7 @@ func TestUserDeactivate_Success(t *testing.T) {
 }
 
 func TestUserDeactivate_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerDeactivate(&stubUserDeactivator{fn: func(context.Context, useruc.DeactivateUserInput) (useruc.DeactivateUserOutput, error) {
 		t.Fatal("use case should not be called")
 		return useruc.DeactivateUserOutput{}, nil
@@ -384,6 +405,7 @@ func TestUserDeactivate_InvalidID(t *testing.T) {
 }
 
 func TestUserDeactivate_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerDeactivate(&stubUserDeactivator{fn: func(_ context.Context, in useruc.DeactivateUserInput) (useruc.DeactivateUserOutput, error) {
 		return useruc.DeactivateUserOutput{}, useruc.ErrNotFound
 	}})
@@ -395,6 +417,7 @@ func TestUserDeactivate_NotFound(t *testing.T) {
 }
 
 func TestUserDeactivate_AlreadyInactive(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerDeactivate(&stubUserDeactivator{fn: func(_ context.Context, in useruc.DeactivateUserInput) (useruc.DeactivateUserOutput, error) {
 		return useruc.DeactivateUserOutput{ID: 9}, nil
 	}})
@@ -407,6 +430,7 @@ func TestUserDeactivate_AlreadyInactive(t *testing.T) {
 }
 
 func TestUserDeactivate_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newTestUserHandlerDeactivate(&stubUserDeactivator{fn: func(_ context.Context, in useruc.DeactivateUserInput) (useruc.DeactivateUserOutput, error) {
 		return useruc.DeactivateUserOutput{}, errors.New("db down")
 	}})

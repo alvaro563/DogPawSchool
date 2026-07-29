@@ -100,6 +100,12 @@ func (s *stubDogRepoForClose) GetByID(ctx context.Context, id int) (*domain.Dog,
 	}
 	return nil, nil
 }
+func (s *stubDogRepoForClose) GetByIDForUpdate(ctx context.Context, id int) (*domain.Dog, error) {
+	if s.getByID != nil {
+		return s.getByID(ctx, id)
+	}
+	return nil, nil
+}
 func (s *stubDogRepoForClose) Update(_ context.Context, _ *domain.Dog) error { return nil }
 func (s *stubDogRepoForClose) Delete(_ context.Context, _ int) error         { return nil }
 func (s *stubDogRepoForClose) ListByOwner(_ context.Context, _, _, _ int) ([]*domain.Dog, error) {
@@ -184,6 +190,7 @@ func validCloseInput() CloseActivityInput {
 }
 
 func TestNewCloseActivityInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name      string
 		activity  int
@@ -207,12 +214,14 @@ func TestNewCloseActivityInput(t *testing.T) {
 }
 
 func TestNewCloseActivityInput_Deduplicates(t *testing.T) {
+	t.Parallel()
 	in, err := NewCloseActivityInput(10, []int{1, 2, 1, 3, 2}, func() time.Time { return fixedNow })
 	require.NoError(t, err)
 	assert.Equal(t, []int{1, 2, 3}, in.NoShowReservationIDs())
 }
 
 func TestCloseActivityUseCase_Success_AllComplete(t *testing.T) {
+	t.Parallel()
 	activity := closeFinishedActivity(10)
 	res1 := confirmedRes(1, 10, 20, 30)
 	res2 := confirmedRes(2, 10, 21, 31)
@@ -255,6 +264,7 @@ func TestCloseActivityUseCase_Success_AllComplete(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_Success_AllNoShow(t *testing.T) {
+	t.Parallel()
 	activity := closeFinishedActivity(10)
 	res1 := confirmedRes(1, 10, 20, 30)
 	dog1 := closeValidDog(20, 1)
@@ -285,6 +295,7 @@ func TestCloseActivityUseCase_Success_AllNoShow(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_Success_Mixed(t *testing.T) {
+	t.Parallel()
 	activity := closeFinishedActivity(10)
 	res1 := confirmedRes(1, 10, 20, 30)
 	res2 := confirmedRes(2, 10, 21, 31)
@@ -336,6 +347,7 @@ func TestCloseActivityUseCase_Success_Mixed(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_ActivityNotFound(t *testing.T) {
+	t.Parallel()
 	activityRepo := &mockActivityRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return nil, nil },
 	}
@@ -348,6 +360,7 @@ func TestCloseActivityUseCase_ActivityNotFound(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_ActivityNotFinished(t *testing.T) {
+	t.Parallel()
 	activityRepo := &mockActivityRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Activity, error) {
 			return closeOngoingActivity(10), nil
@@ -362,6 +375,7 @@ func TestCloseActivityUseCase_ActivityNotFinished(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_AlreadyClosed(t *testing.T) {
+	t.Parallel()
 	activity := closeFinishedClosedActivity(10)
 
 	activityRepo := &mockActivityRepository{
@@ -376,6 +390,7 @@ func TestCloseActivityUseCase_AlreadyClosed(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_NoShowID_NotFound(t *testing.T) {
+	t.Parallel()
 	activity := closeFinishedActivity(10)
 	res1 := confirmedRes(1, 10, 20, 30)
 
@@ -397,6 +412,7 @@ func TestCloseActivityUseCase_NoShowID_NotFound(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_NoShowID_WrongActivity(t *testing.T) {
+	t.Parallel()
 	activity := closeFinishedActivity(10)
 	// No reservations at all for this activity.
 	activityRepo := &mockActivityRepository{
@@ -418,6 +434,7 @@ func TestCloseActivityUseCase_NoShowID_WrongActivity(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_RepoError_Wrapped(t *testing.T) {
+	t.Parallel()
 	repoErr := errors.New("db connection lost")
 	activityRepo := &mockActivityRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return nil, repoErr },
@@ -433,6 +450,7 @@ func TestCloseActivityUseCase_RepoError_Wrapped(t *testing.T) {
 }
 
 func TestCloseActivityUseCase_EmptyConfirmedList(t *testing.T) {
+	t.Parallel()
 	activity := closeFinishedActivity(10)
 
 	activityRepo := &mockActivityRepository{

@@ -12,6 +12,7 @@ import (
 )
 
 func TestListByPassReservationsUseCase_Success(t *testing.T) {
+	t.Parallel()
 	views := []*domain.ReservationView{makeOwnedView(1, 1)}
 	repo := &mockReservationRepository{
 		listByPassView: func(_ context.Context, passID, limit, offset int) ([]*domain.ReservationView, error) {
@@ -26,6 +27,7 @@ func TestListByPassReservationsUseCase_Success(t *testing.T) {
 }
 
 func TestNewListByPassReservationsInput_ZeroPassID(t *testing.T) {
+	t.Parallel()
 	_, err := NewListByPassReservationsInput(0, 50, 0)
 	assert.Error(t, err)
 	var verr *ValidationError

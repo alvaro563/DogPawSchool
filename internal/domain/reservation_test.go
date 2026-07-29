@@ -10,7 +10,8 @@ import (
 )
 
 func TestNewReservation(t *testing.T) {
-	now := time.Now()
+	t.Parallel()
+	now := fixedNow
 
 	t.Run("happy_path_forces_confirmed", func(t *testing.T) {
 		r, err := domain.NewReservation(1, 10, 20, 30, now)
@@ -45,7 +46,8 @@ func TestNewReservation(t *testing.T) {
 }
 
 func TestNewReservationWithStatus(t *testing.T) {
-	now := time.Now()
+	t.Parallel()
+	now := fixedNow
 
 	t.Run("happy_path", func(t *testing.T) {
 		r, err := domain.NewReservationWithStatus(1, 10, 20, 30, domain.StatusCancelledLate, now)
@@ -61,6 +63,7 @@ func TestNewReservationWithStatus(t *testing.T) {
 }
 
 func TestReservation_Cancel(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	activityDate := now.Add(3 * time.Hour)
 
@@ -105,7 +108,8 @@ func TestReservation_Cancel(t *testing.T) {
 }
 
 func TestReservation_Complete(t *testing.T) {
-	now := time.Now()
+	t.Parallel()
+	now := fixedNow
 	r, _ := domain.NewReservation(1, 10, 20, 30, now)
 	err := r.Complete()
 	assert.NoError(t, err)
@@ -116,7 +120,8 @@ func TestReservation_Complete(t *testing.T) {
 }
 
 func TestReservation_MarkNoShow(t *testing.T) {
-	now := time.Now()
+	t.Parallel()
+	now := fixedNow
 	r, _ := domain.NewReservation(1, 10, 20, 30, now)
 	err := r.MarkNoShow()
 	assert.NoError(t, err)
@@ -124,7 +129,8 @@ func TestReservation_MarkNoShow(t *testing.T) {
 }
 
 func TestReservation_Forgive(t *testing.T) {
-	now := time.Now()
+	t.Parallel()
+	now := fixedNow
 	r, _ := domain.NewReservation(1, 10, 20, 30, now)
 	_ = r.Cancel(now.Add(time.Hour), now.Add(3*time.Hour)) // sets to CancelledLate
 	assert.Equal(t, domain.StatusCancelledLate, r.Status())
@@ -138,7 +144,8 @@ func TestReservation_Forgive(t *testing.T) {
 }
 
 func TestReservation_StatePredicates(t *testing.T) {
-	now := time.Now()
+	t.Parallel()
+	now := fixedNow
 
 	confirmed, _ := domain.NewReservation(1, 10, 20, 30, now)
 	assert.True(t, confirmed.IsConfirmed())
@@ -160,6 +167,7 @@ func TestReservation_StatePredicates(t *testing.T) {
 }
 
 func TestReservationStatus_IsValid(t *testing.T) {
+	t.Parallel()
 	assert.True(t, domain.StatusConfirmed.IsValid())
 	assert.True(t, domain.StatusCompleted.IsValid())
 	assert.True(t, domain.StatusCancelledInTime.IsValid())

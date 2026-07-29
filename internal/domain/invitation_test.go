@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewInvitation(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	expires := now.Add(24 * time.Hour)
 
@@ -148,6 +149,7 @@ func TestNewInvitation(t *testing.T) {
 }
 
 func TestNewPendingInvitation(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expires := now.Add(time.Hour)
 
@@ -248,6 +250,7 @@ func TestNewPendingInvitation(t *testing.T) {
 }
 
 func TestInvitation_IsExpired(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 
 	t.Run("not_expired", func(t *testing.T) {
@@ -271,6 +274,7 @@ func TestInvitation_IsExpired(t *testing.T) {
 }
 
 func TestInvitation_CanBeUsed(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 
 	t.Run("pending_and_not_expired", func(t *testing.T) {
@@ -302,6 +306,7 @@ func TestInvitation_CanBeUsed(t *testing.T) {
 }
 
 func TestInvitation_Accept(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expires := now.Add(time.Hour)
 
@@ -330,6 +335,7 @@ func TestInvitation_Accept(t *testing.T) {
 }
 
 func TestInvitation_Revoke(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expires := now.Add(time.Hour)
 
@@ -358,6 +364,7 @@ func TestInvitation_Revoke(t *testing.T) {
 }
 
 func TestInvitationStatus_IsValid(t *testing.T) {
+	t.Parallel()
 	assert.True(t, domain.InvitationPending.IsValid())
 	assert.True(t, domain.InvitationAccepted.IsValid())
 	assert.True(t, domain.InvitationExpired.IsValid())
@@ -367,6 +374,7 @@ func TestInvitationStatus_IsValid(t *testing.T) {
 }
 
 func TestInvitation_CanBeUsed_StatusTransitions(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expires := now.Add(time.Hour)
 
@@ -382,6 +390,7 @@ func TestInvitation_CanBeUsed_StatusTransitions(t *testing.T) {
 }
 
 func TestInvitation_EmailValidationError(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expires := now.Add(time.Hour)
 
@@ -391,6 +400,7 @@ func TestInvitation_EmailValidationError(t *testing.T) {
 }
 
 func TestInvitation_AcceptRejectsMultipleTransitions(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expires := now.Add(time.Hour)
 
@@ -403,6 +413,7 @@ func TestInvitation_AcceptRejectsMultipleTransitions(t *testing.T) {
 }
 
 func TestInvitation_ReconstructAllStatuses(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expires := now.Add(time.Hour)
 

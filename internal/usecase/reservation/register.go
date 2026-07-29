@@ -124,8 +124,10 @@ func (uc *RegisterReservationUseCase) Execute(ctx context.Context, input Registe
 }
 
 func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input RegisterReservationInput, now time.Time) (int, error) {
-	// 1. Activity must exist and be in the future.
-	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID())
+	// 1. Activity must exist and be in the future. FOR UPDATE locks the
+	// activity row so two concurrent registrations serialize on the
+	// capacity check below (materialised conflict for B2).
+	activity, err := uc.activityRepo.GetByIDForUpdate(ctx, input.ActivityID())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return 0, ErrInvalidActivity
@@ -170,8 +172,9 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 	}
 
 	// 4. Pass must exist, be owned by UserID, not be exhausted, and
-	// not be expired.
-	pass, err := uc.passRepo.GetByID(ctx, input.PassID())
+	// not be expired. FOR UPDATE locks the pass row so two concurrent
+	// consumptions serialise (prevents B3 lost update).
+	pass, err := uc.passRepo.GetByIDForUpdate(ctx, input.PassID())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return 0, ErrInvalidPass

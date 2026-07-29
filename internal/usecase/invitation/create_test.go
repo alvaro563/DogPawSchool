@@ -21,6 +21,7 @@ func fixedNow() func() time.Time {
 }
 
 func TestNewCreateInvitationInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name          string
 		factory       func() (CreateInvitationInput, error)
@@ -82,12 +83,14 @@ func TestNewCreateInvitationInput(t *testing.T) {
 }
 
 func TestNewCreateInvitationInput_NilNowDefaults(t *testing.T) {
+	t.Parallel()
 	in, err := NewCreateInvitationInput(1, "a@b.com", domain.RoleRegular, nil)
 	require.NoError(t, err)
 	assert.False(t, in.Now().IsZero(), "now should default to time.Now")
 }
 
 func TestNewCreateInvitationInput_HappyPath(t *testing.T) {
+	t.Parallel()
 	now := fixedNow()
 	in, err := NewCreateInvitationInput(1, "ana@dogpaw.es", domain.RoleAdmin, now)
 	require.NoError(t, err)
@@ -98,6 +101,7 @@ func TestNewCreateInvitationInput_HappyPath(t *testing.T) {
 }
 
 func TestCreateInvitationUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	fixed := fixedNow()
 
 	t.Run("happy_path", func(t *testing.T) {

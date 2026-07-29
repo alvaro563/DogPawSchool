@@ -16,6 +16,7 @@ func validRegisterInput() RegisterPassInput {
 }
 
 func TestRegisterPassUseCase_Success(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		create: func(ctx context.Context, pass *domain.Pass) (int, error) {
 			assert.Equal(t, 10, pass.NumOfSessions())
@@ -35,6 +36,7 @@ func TestRegisterPassUseCase_Success(t *testing.T) {
 }
 
 func TestRegisterPassUseCase_SuccessWithExpiry(t *testing.T) {
+	t.Parallel()
 	expiry := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 	repo := &mockPassRepository{
 		create: func(ctx context.Context, pass *domain.Pass) (int, error) {
@@ -53,6 +55,7 @@ func TestRegisterPassUseCase_SuccessWithExpiry(t *testing.T) {
 }
 
 func TestNewRegisterPassInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name    string
 		factory func() (RegisterPassInput, error)
@@ -83,6 +86,7 @@ func TestNewRegisterPassInput(t *testing.T) {
 }
 
 func TestRegisterPassUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		create: func(ctx context.Context, pass *domain.Pass) (int, error) {
 			return 0, sentinelErr

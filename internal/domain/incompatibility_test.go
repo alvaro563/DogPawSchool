@@ -9,6 +9,7 @@ import (
 )
 
 func TestNewIncompatibility(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		scenarios := []struct {
 			name           string
@@ -62,6 +63,7 @@ func TestNewIncompatibility(t *testing.T) {
 }
 
 func TestIncompatibilityLevel_IsValid(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name     string
 		level    domain.IncompatibilityLevel
@@ -82,6 +84,7 @@ func TestIncompatibilityLevel_IsValid(t *testing.T) {
 }
 
 func TestIncompatibility_Getters(t *testing.T) {
+	t.Parallel()
 	t.Run("getters_return_constructor_values", func(t *testing.T) {
 		i, err := domain.NewIncompatibility(42, "Miedo a tormentas", domain.IncompatibilityLevelBaja)
 		assert.NoError(t, err)

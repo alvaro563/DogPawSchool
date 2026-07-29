@@ -12,8 +12,10 @@ import (
 
 	"dogpaw/internal/domain"
 	activityuc "dogpaw/internal/usecase/activity"
+	authuc "dogpaw/internal/usecase/auth"
 	doguc "dogpaw/internal/usecase/dog"
 	incompatuc "dogpaw/internal/usecase/incompatibility"
+	invitationuc "dogpaw/internal/usecase/invitation"
 	passuc "dogpaw/internal/usecase/pass"
 	reservationuc "dogpaw/internal/usecase/reservation"
 	useruc "dogpaw/internal/usecase/user"
@@ -911,7 +913,9 @@ func writeError(c *gin.Context, err error) {
 	var passValidationErr *passuc.ValidationError
 	var reservationValidationErr *reservationuc.ValidationError
 	var userValidationErr *useruc.ValidationError
-	if errors.As(err, &dogValidationErr) || errors.As(err, &incompValidationErr) || errors.As(err, &activityValidationErr) || errors.As(err, &passValidationErr) || errors.As(err, &reservationValidationErr) || errors.As(err, &userValidationErr) {
+	var authValidationErr *authuc.ValidationError
+	var invitationValidationErr *invitationuc.ValidationError
+	if errors.As(err, &dogValidationErr) || errors.As(err, &incompValidationErr) || errors.As(err, &activityValidationErr) || errors.As(err, &passValidationErr) || errors.As(err, &reservationValidationErr) || errors.As(err, &userValidationErr) || errors.As(err, &authValidationErr) || errors.As(err, &invitationValidationErr) {
 		var field string
 		switch {
 		case dogValidationErr != nil:
@@ -924,6 +928,10 @@ func writeError(c *gin.Context, err error) {
 			field = reservationValidationErr.Field
 		case userValidationErr != nil:
 			field = userValidationErr.Field
+		case authValidationErr != nil:
+			field = authValidationErr.Field
+		case invitationValidationErr != nil:
+			field = invitationValidationErr.Field
 		default:
 			field = passValidationErr.Field
 		}
@@ -933,7 +941,7 @@ func writeError(c *gin.Context, err error) {
 		})
 		return
 	}
-	if errors.Is(err, doguc.ErrNotFound) || errors.Is(err, incompatuc.ErrNotFound) || errors.Is(err, activityuc.ErrNotFound) || errors.Is(err, passuc.ErrNotFound) || errors.Is(err, reservationuc.ErrNotFound) || errors.Is(err, reservationuc.ErrInvalidReservation) || errors.Is(err, reservationuc.ErrReservationNotOwned) || errors.Is(err, useruc.ErrNotFound) || errors.Is(err, domain.ErrNotFound) {
+	if errors.Is(err, doguc.ErrNotFound) || errors.Is(err, incompatuc.ErrNotFound) || errors.Is(err, activityuc.ErrNotFound) || errors.Is(err, passuc.ErrNotFound) || errors.Is(err, reservationuc.ErrNotFound) || errors.Is(err, reservationuc.ErrInvalidReservation) || errors.Is(err, reservationuc.ErrReservationNotOwned) || errors.Is(err, useruc.ErrNotFound) || errors.Is(err, domain.ErrNotFound) || errors.Is(err, authuc.ErrNotFound) || errors.Is(err, invitationuc.ErrNotFound) {
 		c.JSON(http.StatusNotFound, errorResponse{Error: "not_found"})
 		return
 	}
@@ -1003,6 +1011,14 @@ func writeError(c *gin.Context, err error) {
 	}
 	if errors.Is(err, domain.ErrDuplicateEmail) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "duplicate_email"})
+		return
+	}
+	if errors.Is(err, domain.ErrInvitationInvalid) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "invitation_invalid"})
+		return
+	}
+	if errors.Is(err, domain.ErrDuplicateToken) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "duplicate_token"})
 		return
 	}
 	if errors.Is(err, domain.ErrIncompatibilityInUse) {

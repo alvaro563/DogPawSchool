@@ -12,6 +12,7 @@ import (
 )
 
 func TestNewDeactivateUserInput(t *testing.T) {
+	t.Parallel()
 	t.Run("valid_id", func(t *testing.T) {
 		in, err := NewDeactivateUserInput(1)
 		require.NoError(t, err)
@@ -36,6 +37,7 @@ func TestNewDeactivateUserInput(t *testing.T) {
 }
 
 func TestDeactivateUserUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("success_flips_flag_and_persists", func(t *testing.T) {
 		existing := newTestUser(42)
 		require.True(t, existing.IsActive(), "precondition: user must start active")

@@ -29,6 +29,7 @@ func newTestDogForRemove(t *testing.T, incompats ...*domain.Incompatibility) *do
 }
 
 func TestNewRemoveDogIncompatibilityInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name          string
 		dogID         int
@@ -52,6 +53,7 @@ func TestNewRemoveDogIncompatibilityInput(t *testing.T) {
 }
 
 func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path_removes_when_present", func(t *testing.T) {
 		existingDog := newTestDogForRemove(t,
 			validIncompatibility(),
@@ -69,7 +71,7 @@ func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewRemoveDogIncompatibilityUseCase(mock)
+		uc := NewRemoveDogIncompatibilityUseCase(&stubTransactor{}, mock)
 
 		out, err := uc.Execute(context.Background(), validRemoveInput())
 
@@ -95,7 +97,7 @@ func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewRemoveDogIncompatibilityUseCase(mock)
+		uc := NewRemoveDogIncompatibilityUseCase(&stubTransactor{}, mock)
 
 		out, err := uc.Execute(context.Background(), validRemoveInput())
 
@@ -115,7 +117,7 @@ func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewRemoveDogIncompatibilityUseCase(mock)
+		uc := NewRemoveDogIncompatibilityUseCase(&stubTransactor{}, mock)
 
 		out1, err := uc.Execute(context.Background(), validRemoveInput())
 		assert.NoError(t, err)
@@ -135,7 +137,7 @@ func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil, repoErr
 			},
 		}
-		uc := NewRemoveDogIncompatibilityUseCase(mock)
+		uc := NewRemoveDogIncompatibilityUseCase(&stubTransactor{}, mock)
 
 		_, err := uc.Execute(context.Background(), validRemoveInput())
 
@@ -149,7 +151,7 @@ func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return nil, nil
 			},
 		}
-		uc := NewRemoveDogIncompatibilityUseCase(mock)
+		uc := NewRemoveDogIncompatibilityUseCase(&stubTransactor{}, mock)
 
 		_, err := uc.Execute(context.Background(), validRemoveInput())
 
@@ -167,7 +169,7 @@ func TestRemoveDogIncompatibilityUseCase_Execute(t *testing.T) {
 				return repoErr
 			},
 		}
-		uc := NewRemoveDogIncompatibilityUseCase(mock)
+		uc := NewRemoveDogIncompatibilityUseCase(&stubTransactor{}, mock)
 
 		_, err := uc.Execute(context.Background(), validRemoveInput())
 

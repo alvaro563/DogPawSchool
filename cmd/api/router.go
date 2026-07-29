@@ -14,8 +14,11 @@ import (
 	"dogpaw/internal/handler"
 	"dogpaw/internal/repository/postgres"
 	activityuc "dogpaw/internal/usecase/activity"
+	authuc "dogpaw/internal/usecase/auth"
+	"dogpaw/internal/crypto"
 	doguc "dogpaw/internal/usecase/dog"
 	incompatuc "dogpaw/internal/usecase/incompatibility"
+	invitationuc "dogpaw/internal/usecase/invitation"
 	passuc "dogpaw/internal/usecase/pass"
 	reservationuc "dogpaw/internal/usecase/reservation"
 	useruc "dogpaw/internal/usecase/user"
@@ -38,6 +41,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 
 	repo := postgres.NewDogRepository(db)
 	incompatRepo := postgres.NewIncompatibilityRepository(db)
+	transactor := postgres.NewTransactor(db)
 	registerUC := doguc.NewRegisterDogUseCase(repo)
 	getDogUC := doguc.NewGetDogUseCase(repo)
 	listAllUC := doguc.NewListAllDogsUseCase(repo)
@@ -51,12 +55,12 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	listByHeatUC := doguc.NewListByHeatUseCase(repo)
 	listByAgeBracketUC := doguc.NewListByAgeBracketUseCase(repo)
 	listBySizeBracketUC := doguc.NewListBySizeBracketUseCase(repo)
-	modifyUC := doguc.NewModifyDogUseCase(repo)
-	addIncompatUC := doguc.NewAddDogIncompatibilityUseCase(repo, incompatRepo)
-	removeIncompatUC := doguc.NewRemoveDogIncompatibilityUseCase(repo)
+	modifyUC := doguc.NewModifyDogUseCase(transactor, repo)
+	addIncompatUC := doguc.NewAddDogIncompatibilityUseCase(transactor, repo, incompatRepo)
+	removeIncompatUC := doguc.NewRemoveDogIncompatibilityUseCase(transactor, repo)
 	deleteDogUC := doguc.NewDeleteDogUseCase(repo)
-	setNeuteredUC := doguc.NewSetDogNeuteredUseCase(repo)
-	setHeatUC := doguc.NewSetDogHeatUseCase(repo)
+	setNeuteredUC := doguc.NewSetDogNeuteredUseCase(transactor, repo)
+	setHeatUC := doguc.NewSetDogHeatUseCase(transactor, repo)
 
 	registerIncompatUC := incompatuc.NewRegisterIncompatibilityUseCase(incompatRepo)
 	listIncompatUC := incompatuc.NewListIncompatibilitiesUseCase(incompatRepo)
@@ -82,7 +86,6 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	listByUserPassUC := passuc.NewListByUserPassesUseCase(passRepo)
 	passH := handler.NewPassHandler(registerPassUC, modifyPassUC, getPassUC, listAllPassUC, listByUserPassUC)
 
-	transactor := postgres.NewTransactor(db)
 	reservationRepo := postgres.NewReservationRepository(db)
 	dogRepo := postgres.NewDogRepository(db)
 	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
@@ -149,12 +152,23 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	deactivateUserUC := useruc.NewDeactivateUserUseCase(userRepo)
 	userH := handler.NewUserHandler(getUserUC, listUsersUC, updateUserUC, deactivateUserUC)
 
+	invRepo := postgres.NewInvitationRepository(db)
+	createInvUC := invitationuc.NewCreateInvitationUseCase(invRepo)
+	registerAuthUC := authuc.NewRegisterWithInvitationUseCase(
+		transactor, invRepo, userRepo, crypto.NewDefaultBcryptHasher(),
+	)
+	invH := handler.NewInvitationHandler(createInvUC)
+	authH := handler.NewAuthHandler(registerAuthUC)
+
 	v1 := r.Group("/api/v1")
 	{
 		v1.GET("/users", userH.List)
 		v1.GET("/users/:user_id", userH.GetByID)
 		v1.PATCH("/users/:user_id", userH.Update)
 		v1.POST("/users/:user_id/deactivate", userH.Deactivate)
+
+		v1.POST("/invitations", invH.Create)
+		v1.POST("/auth/register", authH.RegisterWithInvitation)
 
 		v1.POST("/dogs", dogH.Register)
 		v1.GET("/dogs/:id", dogH.GetByID)

@@ -25,8 +25,7 @@ func (in RegisterWithInvitationInput) Password() string { return in.password }
 func (in RegisterWithInvitationInput) Now() time.Time   { return in.now }
 
 // NewRegisterWithInvitationInput validates the fields. Password must
-// be at least 60 characters (matching the DB CHECK on users.password).
-// A nil now provider defaults to time.Now.
+// be at least 8 characters. A nil now provider defaults to time.Now.
 func NewRegisterWithInvitationInput(token, name, password string, now func() time.Time) (RegisterWithInvitationInput, error) {
 	if token == "" {
 		return RegisterWithInvitationInput{}, &ValidationError{Field: "token"}
@@ -34,7 +33,7 @@ func NewRegisterWithInvitationInput(token, name, password string, now func() tim
 	if name == "" {
 		return RegisterWithInvitationInput{}, &ValidationError{Field: "name"}
 	}
-	if len(password) < 60 {
+	if len(password) < 8 {
 		return RegisterWithInvitationInput{}, &ValidationError{Field: "password"}
 	}
 	if now == nil {
@@ -94,45 +93,58 @@ func NewRegisterWithInvitationUseCase(
 }
 
 func (uc *RegisterWithInvitationUseCase) Execute(ctx context.Context, input RegisterWithInvitationInput) (RegisterWithInvitationOutput, error) {
-	// 1. Load invitation by token.
-	inv, err := uc.invitationRepo.GetByToken(ctx, input.Token())
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			return RegisterWithInvitationOutput{}, ErrNotFound
-		}
-		return RegisterWithInvitationOutput{}, fmt.Errorf("get invitation by token: %w", err)
-	}
-
-	// 2. Validate invitation can be used.
-	if !inv.CanBeUsed(input.Now()) {
-		return RegisterWithInvitationOutput{}, domain.ErrInvitationInvalid
-	}
-
-	// 3. Hash the password. The algorithm is an infrastructure
-	// decision injected as PasswordHasher; this layer only knows that
-	// the plaintext must never reach the repository.
+	// 1. Hash the password outside the transaction (bcrypt is expensive
+	// and would hold the row lock unnecessarily).
 	hashedPw, err := uc.hasher.Hash(input.Password())
 	if err != nil {
 		return RegisterWithInvitationOutput{}, fmt.Errorf("hash password: %w", err)
 	}
 
-	// 4. Create user entity.
-	user, err := domain.NewUser(0, input.Name(), inv.Email(), hashedPw, inv.Role())
-	if err != nil {
-		return RegisterWithInvitationOutput{}, fmt.Errorf("build user: %w", err)
-	}
+	var user *domain.User
 
-	// 5. Persist user + accept invitation in a transaction.
+	// 2. Persist user + accept invitation in a single transaction.
+	// The invitation row is locked with FOR UPDATE so that a concurrent
+	// request with the same token blocks here instead of racing past
+	// CanBeUsed.
 	err = uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		if err := uc.userRepo.Create(txCtx, user); err != nil {
+		// a. Load invitation by token with row-level lock.
+		inv, err := uc.invitationRepo.GetByTokenForUpdate(txCtx, input.Token())
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("get invitation by token: %w", err)
+		}
+
+		// b. Validate invitation can still be used. Because the row
+		// is locked, no concurrent request can accept or revoke it
+		// between this check and the Update below.
+		if !inv.CanBeUsed(input.Now()) {
+			return domain.ErrInvitationInvalid
+		}
+
+		// c. Create the user entity.
+		user, err = domain.NewUser(0, input.Name(), inv.Email(), hashedPw, inv.Role())
+		if err != nil {
+			return fmt.Errorf("build user: %w", err)
+		}
+		userID, err := uc.userRepo.Create(txCtx, user)
+		if err != nil {
 			return fmt.Errorf("create user: %w", err)
 		}
+		user, err = domain.NewUser(userID, user.Name(), user.Email(), user.Password(), user.Role())
+		if err != nil {
+			return fmt.Errorf("rebuild user with db id: %w", err)
+		}
+
+		// d. Accept invitation (in-memory) and persist.
 		if err := inv.Accept(); err != nil {
 			return fmt.Errorf("accept invitation: %w", err)
 		}
 		if err := uc.invitationRepo.Update(txCtx, inv); err != nil {
 			return fmt.Errorf("update invitation: %w", err)
 		}
+
 		return nil
 	})
 	if err != nil {

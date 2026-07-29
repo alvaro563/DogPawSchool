@@ -38,6 +38,13 @@ func (m *mockPassRepository) GetByID(ctx context.Context, id int) (*domain.Pass,
 	return nil, nil
 }
 
+func (m *mockPassRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Pass, error) {
+	if m.getByID != nil {
+		return m.getByID(ctx, id)
+	}
+	return nil, nil
+}
+
 func (m *mockPassRepository) Update(ctx context.Context, pass *domain.Pass) error {
 	if m.update != nil {
 		return m.update(ctx, pass)

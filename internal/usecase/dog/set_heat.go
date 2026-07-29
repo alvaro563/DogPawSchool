@@ -46,36 +46,46 @@ type SetDogHeatOutput struct {
 // SetDogHeatUseCase toggles the heat flag through the aggregate. The
 // "heat only on female dogs" invariant lives in the entity
 // (dog.SetHeat); a DogValidationError from the entity is translated
-// into the use-case-facing ErrInvalidHeatForSex sentinel.
+// into the use-case-facing ErrInvalidHeatForSex sentinel. Runs inside
+// a single transaction with FOR UPDATE on the dog row, preventing
+// lost updates (B4).
 type SetDogHeatUseCase struct {
-	repo domain.DogRepository
+	transactor Transactor
+	repo       domain.DogRepository
 }
 
-func NewSetDogHeatUseCase(repo domain.DogRepository) *SetDogHeatUseCase {
-	return &SetDogHeatUseCase{repo: repo}
+func NewSetDogHeatUseCase(transactor Transactor, repo domain.DogRepository) *SetDogHeatUseCase {
+	return &SetDogHeatUseCase{transactor: transactor, repo: repo}
 }
 
 func (uc *SetDogHeatUseCase) Execute(ctx context.Context, input SetDogHeatInput) (SetDogHeatOutput, error) {
-	dog, err := uc.repo.GetByID(ctx, input.ID())
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			return SetDogHeatOutput{}, ErrNotFound
+	var out SetDogHeatOutput
+	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+		dog, err := uc.repo.GetByIDForUpdate(txCtx, input.ID())
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("set dog heat: %w", err)
 		}
-		return SetDogHeatOutput{}, fmt.Errorf("set dog heat: %w", err)
-	}
-	if err := dog.SetHeat(input.Heat()); err != nil {
-		var validationErr *domain.DogValidationError
-		if errors.As(err, &validationErr) && validationErr.Field == "heat" {
-			return SetDogHeatOutput{}, ErrInvalidHeatForSex
+
+		if err := dog.SetHeat(input.Heat()); err != nil {
+			var validationErr *domain.DogValidationError
+			if errors.As(err, &validationErr) && validationErr.Field == "heat" {
+				return ErrInvalidHeatForSex
+			}
+			return fmt.Errorf("set dog heat: %w", err)
 		}
-		return SetDogHeatOutput{}, fmt.Errorf("set dog heat: %w", err)
-	}
-	if err := uc.repo.Update(ctx, dog); err != nil {
-		return SetDogHeatOutput{}, fmt.Errorf("set dog heat: %w", err)
-	}
-	return SetDogHeatOutput{
-		ID:   dog.ID(),
-		Heat: dog.Heat(),
-		Sex:  dog.Sex(),
-	}, nil
+
+		if err := uc.repo.Update(txCtx, dog); err != nil {
+			return fmt.Errorf("set dog heat: %w", err)
+		}
+		out = SetDogHeatOutput{
+			ID:   dog.ID(),
+			Heat: dog.Heat(),
+			Sex:  dog.Sex(),
+		}
+		return nil
+	})
+	return out, err
 }

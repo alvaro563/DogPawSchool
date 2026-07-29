@@ -1,0 +1,29 @@
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - prealloc
+  disable:
+    - exhaustruct
+    - wrapcheck
+    - nlreturn
+    - wsl
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+  staticcheck:
+    checks:
+      - all
+      - -SA1019
+  misspell:
+    locale: US

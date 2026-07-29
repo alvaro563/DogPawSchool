@@ -12,12 +12,14 @@ import (
 )
 
 func TestGetDogInput_Factory(t *testing.T) {
+	t.Parallel()
 	in, err := NewGetDogInput(5)
 	require.NoError(t, err)
 	assert.Equal(t, 5, in.ID())
 }
 
 func TestGetDogInput_InvalidID(t *testing.T) {
+	t.Parallel()
 	for _, id := range []int{0, -1} {
 		_, err := NewGetDogInput(id)
 		assert.Error(t, err)
@@ -26,6 +28,7 @@ func TestGetDogInput_InvalidID(t *testing.T) {
 }
 
 func TestGetDogUseCase_Success(t *testing.T) {
+	t.Parallel()
 	dog := newTestDog(1)
 	repo := &mockDogRepository{
 		getByID: func(_ context.Context, id int) (*domain.Dog, error) {
@@ -40,6 +43,7 @@ func TestGetDogUseCase_Success(t *testing.T) {
 }
 
 func TestGetDogUseCase_NotFound(t *testing.T) {
+	t.Parallel()
 	repo := &mockDogRepository{
 		getByID: func(_ context.Context, id int) (*domain.Dog, error) {
 			return nil, nil
@@ -51,6 +55,7 @@ func TestGetDogUseCase_NotFound(t *testing.T) {
 }
 
 func TestGetDogUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockDogRepository{
 		getByID: func(_ context.Context, id int) (*domain.Dog, error) {
 			return nil, errors.New("db down")

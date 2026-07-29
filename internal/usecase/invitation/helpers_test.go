@@ -11,12 +11,13 @@ import (
 // tests can customize behavior; any unset field returns the zero value
 // with no error.
 type mockInvitationRepository struct {
-	create      func(ctx context.Context, inv *domain.Invitation) (int, error)
-	getByID     func(ctx context.Context, id int) (*domain.Invitation, error)
-	getByToken  func(ctx context.Context, token string) (*domain.Invitation, error)
-	update      func(ctx context.Context, inv *domain.Invitation) error
-	listPending func(ctx context.Context, limit, offset int) ([]*domain.Invitation, error)
-	listByEmail func(ctx context.Context, email string) ([]*domain.Invitation, error)
+	create              func(ctx context.Context, inv *domain.Invitation) (int, error)
+	getByID             func(ctx context.Context, id int) (*domain.Invitation, error)
+	getByToken          func(ctx context.Context, token string) (*domain.Invitation, error)
+	getByTokenForUpdate func(ctx context.Context, token string) (*domain.Invitation, error)
+	update              func(ctx context.Context, inv *domain.Invitation) error
+	listPending         func(ctx context.Context, limit, offset int) ([]*domain.Invitation, error)
+	listByEmail         func(ctx context.Context, email string) ([]*domain.Invitation, error)
 }
 
 func (m *mockInvitationRepository) Create(ctx context.Context, inv *domain.Invitation) (int, error) {
@@ -36,6 +37,13 @@ func (m *mockInvitationRepository) GetByID(ctx context.Context, id int) (*domain
 func (m *mockInvitationRepository) GetByToken(ctx context.Context, token string) (*domain.Invitation, error) {
 	if m.getByToken != nil {
 		return m.getByToken(ctx, token)
+	}
+	return nil, nil
+}
+
+func (m *mockInvitationRepository) GetByTokenForUpdate(ctx context.Context, token string) (*domain.Invitation, error) {
+	if m.getByTokenForUpdate != nil {
+		return m.getByTokenForUpdate(ctx, token)
 	}
 	return nil, nil
 }

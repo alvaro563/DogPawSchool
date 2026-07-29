@@ -97,6 +97,31 @@ func (repo *DogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, er
 	return dog, nil
 }
 
+// GetByIDForUpdate fetches a single dog by id, locks the row with FOR
+// UPDATE until the transaction commits, and loads its incompatibility
+// list. Returns ErrNotFound when no row matches.
+func (repo *DogRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Dog, error) {
+	const query = `
+		SELECT id, user_id, name, breed, age_in_months, sex,
+		       neutered, heat, weight_kg,
+		       photo_url, medical_notes, educator_notes,
+		       passport, is_active
+		FROM dogs WHERE id = $1 FOR UPDATE
+	`
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
+	dog, err := scanDog(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if err := repo.loadIncompatibilitiesForDogs(ctx, []*domain.Dog{dog}); err != nil {
+		return nil, fmt.Errorf("load dog incompatibilities: %w", err)
+	}
+	return dog, nil
+}
+
 // loadIncompatibilities returns all incompatibilities currently attached to
 // the given dog, in insertion order (oldest first).
 func (repo *DogRepository) loadIncompatibilities(ctx context.Context, dogID int) ([]*domain.Incompatibility, error) {

@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewActivity(t *testing.T) {
+	t.Parallel()
 	date := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 
 	t.Run("happy_path", func(t *testing.T) {
@@ -52,6 +53,7 @@ func TestNewActivity(t *testing.T) {
 }
 
 func TestMustNewActivity(t *testing.T) {
+	t.Parallel()
 	date := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 
 	t.Run("happy_path", func(t *testing.T) {
@@ -69,7 +71,8 @@ func TestMustNewActivity(t *testing.T) {
 }
 
 func TestActivity_IsFull(t *testing.T) {
-	date := time.Now()
+	t.Parallel()
+	date := fixedNow
 	a, _ := domain.NewActivity(1, "n", "l", domain.TypeRoute, 5, 2, date)
 	assert.False(t, a.IsFull(0))
 	assert.False(t, a.IsFull(4))
@@ -78,6 +81,7 @@ func TestActivity_IsFull(t *testing.T) {
 }
 
 func TestActivity_IsInThePast_IsUpcoming(t *testing.T) {
+	t.Parallel()
 	past := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	future := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -92,6 +96,7 @@ func TestActivity_IsInThePast_IsUpcoming(t *testing.T) {
 }
 
 func TestActivity_IsFinished(t *testing.T) {
+	t.Parallel()
 	// Activity starts at 10:00, duration 2h → ends at 12:00.
 	start := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
 	a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 2, start)
@@ -123,7 +128,8 @@ func TestActivity_IsFinished(t *testing.T) {
 }
 
 func TestActivity_TypePredicates(t *testing.T) {
-	date := time.Now()
+	t.Parallel()
+	date := fixedNow
 	individual, _ := domain.NewActivity(1, "n", "l", domain.TypeIndividual, 1, 1, date)
 	social, _ := domain.NewActivity(2, "n", "l", domain.TypeSocialization, 5, 1, date)
 	route, _ := domain.NewActivity(3, "n", "l", domain.TypeRoute, 8, 2, date)
@@ -142,6 +148,7 @@ func TestActivity_TypePredicates(t *testing.T) {
 }
 
 func TestActivityType_IsValid(t *testing.T) {
+	t.Parallel()
 	assert.True(t, domain.TypeSocialization.IsValid())
 	assert.True(t, domain.TypeRoute.IsValid())
 	assert.True(t, domain.TypeIndividual.IsValid())
@@ -151,6 +158,7 @@ func TestActivityType_IsValid(t *testing.T) {
 }
 
 func TestActivity_ApplyPatch(t *testing.T) {
+	t.Parallel()
 	originalDate := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	newDate := time.Date(2026, 8, 1, 14, 0, 0, 0, time.UTC)
 
@@ -235,20 +243,22 @@ func TestActivity_ApplyPatch(t *testing.T) {
 }
 
 func TestActivityValidationError_Error(t *testing.T) {
+	t.Parallel()
 	err := &domain.ActivityValidationError{Field: "name"}
 	assert.Equal(t, "activity: invalid value for name", err.Error())
 }
 
 func TestActivity_Close(t *testing.T) {
+	t.Parallel()
 	t.Run("success", func(t *testing.T) {
-		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, time.Now())
+		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, fixedNow)
 		assert.False(t, a.IsClosed())
 		assert.NoError(t, a.Close())
 		assert.True(t, a.IsClosed())
 	})
 
 	t.Run("already_closed", func(t *testing.T) {
-		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, time.Now())
+		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, fixedNow)
 		assert.NoError(t, a.Close())
 		assert.Error(t, a.Close(), "second Close should fail")
 		assert.True(t, a.IsClosed())
@@ -256,6 +266,7 @@ func TestActivity_Close(t *testing.T) {
 }
 
 func TestReconstituteActivity(t *testing.T) {
+	t.Parallel()
 	date := time.Date(2030, 3, 1, 10, 0, 0, 0, time.UTC)
 
 	t.Run("restores the closed flag", func(t *testing.T) {

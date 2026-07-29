@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewSetDogHeatInput(t *testing.T) {
+	t.Parallel()
 	t.Run("zero_id", func(t *testing.T) {
 		_, err := NewSetDogHeatInput(0, true)
 		assert.Error(t, err)
@@ -27,13 +28,14 @@ func TestNewSetDogHeatInput(t *testing.T) {
 }
 
 func TestSetDogHeatUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("not_found", func(t *testing.T) {
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
 				return nil, domain.ErrNotFound
 			},
 		}
-		uc := NewSetDogHeatUseCase(mock)
+		uc := NewSetDogHeatUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewSetDogHeatInput(9999, true))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrNotFound))
@@ -54,7 +56,7 @@ func TestSetDogHeatUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewSetDogHeatUseCase(mock)
+		uc := NewSetDogHeatUseCase(&stubTransactor{}, mock)
 		out, err := uc.Execute(context.Background(), MustNewSetDogHeatInput(2, true))
 		assert.NoError(t, err)
 		assert.True(t, updateCalled, "repo Update must be called")
@@ -73,7 +75,7 @@ func TestSetDogHeatUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewSetDogHeatUseCase(mock)
+		uc := NewSetDogHeatUseCase(&stubTransactor{}, mock)
 		out, err := uc.Execute(context.Background(), MustNewSetDogHeatInput(2, false))
 		assert.NoError(t, err)
 		assert.False(t, out.Heat)
@@ -93,7 +95,7 @@ func TestSetDogHeatUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewSetDogHeatUseCase(mock)
+		uc := NewSetDogHeatUseCase(&stubTransactor{}, mock)
 		out, err := uc.Execute(context.Background(), MustNewSetDogHeatInput(9, false))
 		assert.NoError(t, err)
 		assert.True(t, updateCalled)
@@ -113,7 +115,7 @@ func TestSetDogHeatUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewSetDogHeatUseCase(mock)
+		uc := NewSetDogHeatUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewSetDogHeatInput(7, true))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidHeatForSex),
@@ -133,7 +135,7 @@ func TestSetDogHeatUseCase_Execute(t *testing.T) {
 				return repoErr
 			},
 		}
-		uc := NewSetDogHeatUseCase(mock)
+		uc := NewSetDogHeatUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewSetDogHeatInput(2, true))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))

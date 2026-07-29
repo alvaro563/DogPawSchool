@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewDeleteIncompatibilityInput(t *testing.T) {
+	t.Parallel()
 	t.Run("zero_id", func(t *testing.T) {
 		_, err := NewDeleteIncompatibilityInput(0)
 		assert.Error(t, err)
@@ -29,6 +30,7 @@ func TestNewDeleteIncompatibilityInput(t *testing.T) {
 }
 
 func TestDeleteIncompatibilityUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("not_found", func(t *testing.T) {
 		mock := &mockIncompatibilityRepository{
 			delete: func(ctx context.Context, id int) error { return domain.ErrNotFound },

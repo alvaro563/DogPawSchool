@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewUser(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		u, err := domain.NewUser(1, "Ana Such", "ana@dogpaw.es", "hashed_pw", domain.RoleAdmin)
 		assert.NoError(t, err)
@@ -48,6 +49,7 @@ func TestNewUser(t *testing.T) {
 }
 
 func TestUser_IsAdmin(t *testing.T) {
+	t.Parallel()
 	admin, _ := domain.NewUser(1, "A", "a@a", "p", domain.RoleAdmin)
 	regular, _ := domain.NewUser(2, "B", "b@b", "p", domain.RoleRegular)
 	assert.True(t, admin.IsAdmin())
@@ -55,6 +57,7 @@ func TestUser_IsAdmin(t *testing.T) {
 }
 
 func TestUser_CanLogin(t *testing.T) {
+	t.Parallel()
 	u, _ := domain.NewUser(1, "A", "a@a", "p", domain.RoleAdmin)
 	assert.True(t, u.CanLogin())
 	u.Deactivate()
@@ -64,6 +67,7 @@ func TestUser_CanLogin(t *testing.T) {
 }
 
 func TestUser_Activate_Deactivate(t *testing.T) {
+	t.Parallel()
 	u, _ := domain.NewUser(1, "A", "a@a", "p", domain.RoleAdmin)
 	u.Deactivate()
 	assert.False(t, u.IsActive())
@@ -72,6 +76,7 @@ func TestUser_Activate_Deactivate(t *testing.T) {
 }
 
 func TestUserRole_IsValid(t *testing.T) {
+	t.Parallel()
 	assert.True(t, domain.RoleAdmin.IsValid())
 	assert.True(t, domain.RoleRegular.IsValid())
 	assert.False(t, domain.UserRole("").IsValid())
@@ -79,6 +84,7 @@ func TestUserRole_IsValid(t *testing.T) {
 }
 
 func TestUser_ApplyPatch(t *testing.T) {
+	t.Parallel()
 	t.Run("empty_patch_is_noop", func(t *testing.T) {
 		u, err := domain.NewUser(1, "Ana", "ana@dogpaw.es", "hashed_pw_60chars_xxxxxxxxxxxxxxxxxxxxxxxxxxxx", domain.RoleAdmin)
 		require.NoError(t, err)
@@ -156,6 +162,7 @@ func TestUser_ApplyPatch(t *testing.T) {
 }
 
 func TestUserPatch_IsEmpty(t *testing.T) {
+	t.Parallel()
 	assert.True(t, domain.UserPatch{}.IsEmpty())
 	assert.True(t, (domain.UserPatch{}).IsEmpty())
 	name := "x"

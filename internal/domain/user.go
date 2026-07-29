@@ -136,7 +136,7 @@ func (user *User) ApplyPatch(patch UserPatch) error {
 // UserRepository is the persistence contract for User. Implemented by
 // internal/repository/postgres (future).
 type UserRepository interface {
-	Create(ctx context.Context, user *User) error
+	Create(ctx context.Context, user *User) (int, error)
 	Update(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id int) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)

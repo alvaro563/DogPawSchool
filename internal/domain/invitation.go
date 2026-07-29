@@ -191,6 +191,7 @@ type InvitationRepository interface {
 	Create(ctx context.Context, inv *Invitation) (int, error)
 	GetByID(ctx context.Context, id int) (*Invitation, error)
 	GetByToken(ctx context.Context, token string) (*Invitation, error)
+	GetByTokenForUpdate(ctx context.Context, token string) (*Invitation, error)
 	Update(ctx context.Context, inv *Invitation) error
 	ListPending(ctx context.Context, limit, offset int) ([]*Invitation, error)
 	ListByEmail(ctx context.Context, email string) ([]*Invitation, error)

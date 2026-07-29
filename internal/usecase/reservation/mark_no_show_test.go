@@ -48,6 +48,7 @@ func validMarkInput() MarkReservationNoShowInput {
 }
 
 func TestNewMarkReservationNoShowInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name  string
 		user  int
@@ -71,6 +72,7 @@ func TestNewMarkReservationNoShowInput(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_Success_ActivityStarted(t *testing.T) {
+	t.Parallel()
 	userID := 1
 	activity := markPastActivity(10)
 	dog := validDog(20, userID)
@@ -106,6 +108,7 @@ func TestMarkReservationNoShow_Success_ActivityStarted(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_NotFound(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{} // not reached
 	dogRepo := &stubDogRepository{}           // not reached
 	reservationRepo := &mockReservationRepository{
@@ -119,6 +122,7 @@ func TestMarkReservationNoShow_NotFound(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_ActivityNotFound(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return nil, domain.ErrNotFound
@@ -136,6 +140,7 @@ func TestMarkReservationNoShow_ActivityNotFound(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_ActivityNotYetStarted(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return markFutureActivity(10), nil
@@ -157,6 +162,7 @@ func TestMarkReservationNoShow_ActivityNotYetStarted(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_AlreadyNotCancellable(t *testing.T) {
+	t.Parallel()
 	// Try each non-Confirmed status. The use case should translate
 	// the domain's "cannot mark no-show, current status is X"
 	// error into ErrNotCancellable.
@@ -191,6 +197,7 @@ func TestMarkReservationNoShow_AlreadyNotCancellable(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_DogNotOwnedByUser(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) { return markPastActivity(10), nil },
 	}
@@ -213,6 +220,7 @@ func TestMarkReservationNoShow_DogNotOwnedByUser(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_NoPassUpdateOrMovement(t *testing.T) {
+	t.Parallel()
 	// The use case must NOT call the pass repo at all: no
 	// ConsumeSession, no RefundSession, no AddMovement. The
 	// stub for the pass repo is intentionally nil (we use a
@@ -241,6 +249,7 @@ func TestMarkReservationNoShow_NoPassUpdateOrMovement(t *testing.T) {
 }
 
 func TestMarkReservationNoShow_ReservationRepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
 	repoErr := errors.New("db connection lost")
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return nil, repoErr },

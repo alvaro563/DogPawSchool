@@ -358,6 +358,7 @@ type DogRepository interface {
 	Create(ctx context.Context, dog *Dog) (int, error)
 	Update(ctx context.Context, dog *Dog) error
 	GetByID(ctx context.Context, id int) (*Dog, error)
+	GetByIDForUpdate(ctx context.Context, id int) (*Dog, error)
 	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Dog, error)
 	ListAll(ctx context.Context, activeOnly bool, limit, offset int) ([]*Dog, error)
 	ListByIncompatibility(ctx context.Context, incompatibilityID, limit, offset int) ([]*Dog, error)

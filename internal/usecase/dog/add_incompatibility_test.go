@@ -58,7 +58,7 @@ func validAddInput() AddDogIncompatibilityInput {
 }
 
 func newAddUseCase(dogRepo domain.DogRepository, incompatRepo domain.IncompatibilityRepository) *AddDogIncompatibilityUseCase {
-	return NewAddDogIncompatibilityUseCase(dogRepo, incompatRepo)
+	return NewAddDogIncompatibilityUseCase(&stubTransactor{}, dogRepo, incompatRepo)
 }
 
 func newTestDogWithIncompatibilities(t *testing.T, incompats ...*domain.Incompatibility) *domain.Dog {
@@ -76,6 +76,7 @@ func newTestDogWithIncompatibilities(t *testing.T, incompats ...*domain.Incompat
 }
 
 func TestNewAddDogIncompatibilityInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name          string
 		dogID         int
@@ -99,6 +100,7 @@ func TestNewAddDogIncompatibilityInput(t *testing.T) {
 }
 
 func TestAddDogIncompatibilityUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path_adds_when_not_present", func(t *testing.T) {
 		existingDog := newTestDogWithIncompatibilities(t,
 			newIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia),

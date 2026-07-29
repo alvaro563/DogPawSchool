@@ -12,6 +12,7 @@ import (
 )
 
 func TestNewListUsersInput(t *testing.T) {
+	t.Parallel()
 	t.Run("normalizes_zero_limit", func(t *testing.T) {
 		in, err := NewListUsersInput(0, 0)
 		require.NoError(t, err)
@@ -51,6 +52,7 @@ func TestNewListUsersInput(t *testing.T) {
 }
 
 func TestListUsersUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("success", func(t *testing.T) {
 		users := []*domain.User{newTestUser(1), newTestUser(2)}
 		repo := &mockUserRepository{

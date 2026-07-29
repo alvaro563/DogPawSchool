@@ -86,6 +86,7 @@ func newIncompatHandlerDel(del IncompatibilityDeleter) *IncompatibilityHandler {
 }
 
 func TestIncompatRegister_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubIncompatibilityRegisterer{fn: func(ctx context.Context, in incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{ID: 5}, nil
 	}}
@@ -101,6 +102,7 @@ func TestIncompatRegister_Success(t *testing.T) {
 }
 
 func TestIncompatRegister_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, nil
 	}})
@@ -110,6 +112,7 @@ func TestIncompatRegister_InvalidJSON(t *testing.T) {
 }
 
 func TestIncompatRegister_BindingValidation(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, nil
 	}})
@@ -119,6 +122,7 @@ func TestIncompatRegister_BindingValidation(t *testing.T) {
 }
 
 func TestIncompatRegister_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, &incompatuc.ValidationError{Field: "level"}
 	}})
@@ -128,6 +132,7 @@ func TestIncompatRegister_UseCaseValidation(t *testing.T) {
 }
 
 func TestIncompatRegister_DuplicateName(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, incompatuc.ErrDuplicateName
 	}})
@@ -137,6 +142,7 @@ func TestIncompatRegister_DuplicateName(t *testing.T) {
 }
 
 func TestIncompatRegister_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, errors.New("db down")
 	}})
@@ -146,6 +152,7 @@ func TestIncompatRegister_InternalError(t *testing.T) {
 }
 
 func TestIncompatList_Success(t *testing.T) {
+	t.Parallel()
 	incompats := []*domain.Incompatibility{
 		domain.MustNewIncompatibility(1, "A", domain.IncompatibilityLevelBaja),
 		domain.MustNewIncompatibility(2, "B", domain.IncompatibilityLevelMedia),
@@ -164,6 +171,7 @@ func TestIncompatList_Success(t *testing.T) {
 }
 
 func TestIncompatList_FilteredByLevel(t *testing.T) {
+	t.Parallel()
 	var captured *domain.IncompatibilityLevel
 	stub := &stubIncompatibilityLister{fn: func(ctx context.Context, in incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error) {
 		captured = in.Level()
@@ -178,6 +186,7 @@ func TestIncompatList_FilteredByLevel(t *testing.T) {
 }
 
 func TestIncompatList_InvalidLevelFilter(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerLst(&stubIncompatibilityLister{fn: func(context.Context, incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error) {
 		return incompatuc.ListIncompatibilitiesOutput{}, &incompatuc.ValidationError{Field: "level"}
 	}})
@@ -187,6 +196,7 @@ func TestIncompatList_InvalidLevelFilter(t *testing.T) {
 }
 
 func TestIncompatList_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerLst(&stubIncompatibilityLister{fn: func(context.Context, incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error) {
 		return incompatuc.ListIncompatibilitiesOutput{}, errors.New("db down")
 	}})
@@ -196,6 +206,7 @@ func TestIncompatList_InternalError(t *testing.T) {
 }
 
 func TestIncompatGetByID_Success(t *testing.T) {
+	t.Parallel()
 	want := domain.MustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
 	h := newIncompatHandlerGet(&stubIncompatibilityGetter{fn: func(ctx context.Context, in incompatuc.GetIncompatibilityInput) (incompatuc.GetIncompatibilityOutput, error) {
 		assert.Equal(t, 3, in.ID())
@@ -212,6 +223,7 @@ func TestIncompatGetByID_Success(t *testing.T) {
 }
 
 func TestIncompatGetByID_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerGet(&stubIncompatibilityGetter{fn: func(context.Context, incompatuc.GetIncompatibilityInput) (incompatuc.GetIncompatibilityOutput, error) {
 		return incompatuc.GetIncompatibilityOutput{}, nil
 	}})
@@ -222,6 +234,7 @@ func TestIncompatGetByID_InvalidID(t *testing.T) {
 }
 
 func TestIncompatGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerGet(&stubIncompatibilityGetter{fn: func(context.Context, incompatuc.GetIncompatibilityInput) (incompatuc.GetIncompatibilityOutput, error) {
 		return incompatuc.GetIncompatibilityOutput{}, incompatuc.ErrNotFound
 	}})
@@ -232,6 +245,7 @@ func TestIncompatGetByID_NotFound(t *testing.T) {
 }
 
 func TestIncompatModify_Success(t *testing.T) {
+	t.Parallel()
 	existing := domain.MustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
 	h := newIncompatHandlerMod(&stubIncompatibilityModifier{fn: func(ctx context.Context, in incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error) {
 		assert.Equal(t, 3, in.ID())
@@ -246,6 +260,7 @@ func TestIncompatModify_Success(t *testing.T) {
 }
 
 func TestIncompatModify_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerMod(&stubIncompatibilityModifier{fn: func(context.Context, incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error) {
 		return incompatuc.ModifyIncompatibilityOutput{}, nil
 	}})
@@ -256,6 +271,7 @@ func TestIncompatModify_InvalidID(t *testing.T) {
 }
 
 func TestIncompatModify_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerMod(&stubIncompatibilityModifier{fn: func(context.Context, incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error) {
 		return incompatuc.ModifyIncompatibilityOutput{}, incompatuc.ErrNotFound
 	}})
@@ -266,6 +282,7 @@ func TestIncompatModify_NotFound(t *testing.T) {
 }
 
 func TestIncompatModify_DuplicateName(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerMod(&stubIncompatibilityModifier{fn: func(context.Context, incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error) {
 		return incompatuc.ModifyIncompatibilityOutput{}, incompatuc.ErrDuplicateName
 	}})
@@ -276,6 +293,7 @@ func TestIncompatModify_DuplicateName(t *testing.T) {
 }
 
 func TestIncompatModify_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerMod(&stubIncompatibilityModifier{fn: func(context.Context, incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error) {
 		return incompatuc.ModifyIncompatibilityOutput{}, errors.New("db down")
 	}})
@@ -286,6 +304,7 @@ func TestIncompatModify_InternalError(t *testing.T) {
 }
 
 func TestIncompatDelete_Success(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerDel(&stubIncompatibilityDeleter{fn: func(ctx context.Context, in incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error) {
 		assert.Equal(t, 3, in.ID())
 		return incompatuc.DeleteIncompatibilityOutput{ID: 3}, nil
@@ -297,6 +316,7 @@ func TestIncompatDelete_Success(t *testing.T) {
 }
 
 func TestIncompatDelete_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerDel(&stubIncompatibilityDeleter{fn: func(context.Context, incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error) {
 		return incompatuc.DeleteIncompatibilityOutput{}, nil
 	}})
@@ -307,6 +327,7 @@ func TestIncompatDelete_InvalidID(t *testing.T) {
 }
 
 func TestIncompatDelete_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerDel(&stubIncompatibilityDeleter{fn: func(context.Context, incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error) {
 		return incompatuc.DeleteIncompatibilityOutput{}, incompatuc.ErrNotFound
 	}})
@@ -317,6 +338,7 @@ func TestIncompatDelete_NotFound(t *testing.T) {
 }
 
 func TestIncompatDelete_InUse(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerDel(&stubIncompatibilityDeleter{fn: func(context.Context, incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error) {
 		return incompatuc.DeleteIncompatibilityOutput{}, postgres.ErrIncompatibilityInUse
 	}})
@@ -327,6 +349,7 @@ func TestIncompatDelete_InUse(t *testing.T) {
 }
 
 func TestIncompatDelete_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newIncompatHandlerDel(&stubIncompatibilityDeleter{fn: func(context.Context, incompatuc.DeleteIncompatibilityInput) (incompatuc.DeleteIncompatibilityOutput, error) {
 		return incompatuc.DeleteIncompatibilityOutput{}, errors.New("db down")
 	}})

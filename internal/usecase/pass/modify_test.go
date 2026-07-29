@@ -16,6 +16,7 @@ func newTestPass(id int) *domain.Pass {
 }
 
 func TestModifyPassUseCase_Success_AppliesAllFields(t *testing.T) {
+	t.Parallel()
 	original := newTestPass(1)
 	var saved *domain.Pass
 	repo := &mockPassRepository{
@@ -49,6 +50,7 @@ func TestModifyPassUseCase_Success_AppliesAllFields(t *testing.T) {
 }
 
 func TestModifyPassUseCase_Success_EmptyPatchIsNoOp(t *testing.T) {
+	t.Parallel()
 	original := newTestPass(1)
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
@@ -68,6 +70,7 @@ func TestModifyPassUseCase_Success_EmptyPatchIsNoOp(t *testing.T) {
 }
 
 func TestModifyPassUseCase_NotFound(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return nil, nil
@@ -84,6 +87,7 @@ func TestModifyPassUseCase_NotFound(t *testing.T) {
 }
 
 func TestNewModifyPassInput_InvalidID(t *testing.T) {
+	t.Parallel()
 	for _, id := range []int{0, -1} {
 		_, err := NewModifyPassInput(id, domain.PassPatch{})
 		assertValidationError(t, err, "id")
@@ -91,6 +95,7 @@ func TestNewModifyPassInput_InvalidID(t *testing.T) {
 }
 
 func TestModifyPassUseCase_PatchValidationErrors(t *testing.T) {
+	t.Parallel()
 	original := newTestPass(1)
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
@@ -130,6 +135,7 @@ func TestModifyPassUseCase_PatchValidationErrors(t *testing.T) {
 }
 
 func TestModifyPassUseCase_NonEditableFieldsUnchanged(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	original := domain.MustNewPass(42, 10, 10, 100, domain.PassGeneric, 7, now, now, nil)
 	repo := &mockPassRepository{
@@ -155,6 +161,7 @@ func TestModifyPassUseCase_NonEditableFieldsUnchanged(t *testing.T) {
 }
 
 func TestModifyPassUseCase_RepoError_OnGet(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return nil, sentinelErr
@@ -169,6 +176,7 @@ func TestModifyPassUseCase_RepoError_OnGet(t *testing.T) {
 }
 
 func TestModifyPassUseCase_RepoError_OnUpdate(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return newTestPass(1), nil

@@ -10,9 +10,11 @@ import (
 	"dogpaw/internal/domain"
 )
 
+var fixedNow = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+
 func newTestPass(t *testing.T, opts ...func(*domain.Pass)) *domain.Pass {
 	t.Helper()
-	now := time.Now()
+	now := fixedNow
 	p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
 	if err != nil {
 		t.Fatalf("newTestPass: %v", err)
@@ -24,8 +26,9 @@ func newTestPass(t *testing.T, opts ...func(*domain.Pass)) *domain.Pass {
 }
 
 func TestNewPass(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
-		now := time.Now()
+		now := fixedNow
 		exp := now.Add(30 * 24 * time.Hour)
 		p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, &exp)
 		assert.NoError(t, err)
@@ -34,7 +37,7 @@ func TestNewPass(t *testing.T) {
 	})
 
 	t.Run("validation_errors", func(t *testing.T) {
-		now := time.Now()
+		now := fixedNow
 		tests := []struct {
 			name      string
 			id        int
@@ -67,6 +70,7 @@ func TestNewPass(t *testing.T) {
 }
 
 func TestPass_IsExpired(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	creationTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
@@ -91,6 +95,7 @@ func TestPass_IsExpired(t *testing.T) {
 }
 
 func TestPass_IsExhausted(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		remaining int
@@ -106,7 +111,7 @@ func TestPass_IsExhausted(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newTestPass(t)
 			for i := 0; i < 10-tt.remaining; i++ {
-				_, _ = p.ConsumeSession("consume", time.Now())
+				_, _ = p.ConsumeSession("consume", fixedNow)
 			}
 			assert.Equal(t, tt.expected, p.IsExhausted())
 		})
@@ -114,18 +119,20 @@ func TestPass_IsExhausted(t *testing.T) {
 }
 
 func TestPass_CanConsume(t *testing.T) {
+	t.Parallel()
 	p := newTestPass(t)
-	assert.True(t, p.CanConsume(time.Now()))
+	assert.True(t, p.CanConsume(fixedNow))
 	for i := 0; i < 10; i++ {
-		_, _ = p.ConsumeSession("consume", time.Now())
+		_, _ = p.ConsumeSession("consume", fixedNow)
 	}
-	assert.False(t, p.CanConsume(time.Now()))
+	assert.False(t, p.CanConsume(fixedNow))
 }
 
 func TestPass_ConsumeSession(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		p := newTestPass(t)
-		now := time.Now()
+		now := fixedNow
 		mov, err := p.ConsumeSession("Booking Route", now)
 		assert.NoError(t, err)
 		assert.Equal(t, -1, mov.Amount())
@@ -136,33 +143,34 @@ func TestPass_ConsumeSession(t *testing.T) {
 
 	t.Run("empty_reason_returns_error", func(t *testing.T) {
 		p := newTestPass(t)
-		_, err := p.ConsumeSession("", time.Now())
+		_, err := p.ConsumeSession("", fixedNow)
 		assert.Error(t, err)
 	})
 
 	t.Run("exhausted_returns_error", func(t *testing.T) {
 		p := newTestPass(t)
 		for i := 0; i < 10; i++ {
-			_, _ = p.ConsumeSession("consume", time.Now())
+			_, _ = p.ConsumeSession("consume", fixedNow)
 		}
-		_, err := p.ConsumeSession("one more", time.Now())
+		_, err := p.ConsumeSession("one more", fixedNow)
 		assert.Error(t, err)
 	})
 }
 
 func TestPass_CanRefund_RefundSession(t *testing.T) {
+	t.Parallel()
 	t.Run("cannot_refund_when_full", func(t *testing.T) {
 		p := newTestPass(t)
 		assert.False(t, p.CanRefund())
-		_, err := p.RefundSession("refund", time.Now())
+		_, err := p.RefundSession("refund", fixedNow)
 		assert.Error(t, err)
 	})
 
 	t.Run("can_refund_after_consume", func(t *testing.T) {
 		p := newTestPass(t)
-		_, _ = p.ConsumeSession("consume", time.Now())
+		_, _ = p.ConsumeSession("consume", fixedNow)
 		assert.True(t, p.CanRefund())
-		mov, err := p.RefundSession("Cancellation in time", time.Now())
+		mov, err := p.RefundSession("Cancellation in time", fixedNow)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, mov.Amount())
 		assert.Equal(t, 10, p.RemainingSessions())
@@ -170,8 +178,8 @@ func TestPass_CanRefund_RefundSession(t *testing.T) {
 
 	t.Run("empty_reason_returns_error", func(t *testing.T) {
 		p := newTestPass(t)
-		_, _ = p.ConsumeSession("consume", time.Now())
-		_, err := p.RefundSession("", time.Now())
+		_, _ = p.ConsumeSession("consume", fixedNow)
+		_, err := p.RefundSession("", fixedNow)
 		assert.Error(t, err)
 	})
 
@@ -194,7 +202,8 @@ func TestPass_CanRefund_RefundSession(t *testing.T) {
 }
 
 func TestNewPassMovement(t *testing.T) {
-	now := time.Now()
+	t.Parallel()
+	now := fixedNow
 	t.Run("happy_path", func(t *testing.T) {
 		m, err := domain.NewPassMovement(1, 1, -1, "Booking", now)
 		assert.NoError(t, err)
@@ -232,6 +241,7 @@ func TestNewPassMovement(t *testing.T) {
 }
 
 func TestPassType_IsValid(t *testing.T) {
+	t.Parallel()
 	assert.True(t, domain.PassGeneric.IsValid())
 	assert.True(t, domain.PassSpecial.IsValid())
 	assert.False(t, domain.PassType("").IsValid())
@@ -243,6 +253,7 @@ func ptrTime(t time.Time) *time.Time {
 }
 
 func TestPass_ApplyPatch(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	newExpiry := time.Date(2027, 12, 31, 23, 59, 59, 0, time.UTC)
 	originalExpiry := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
@@ -335,8 +346,9 @@ func TestPass_ApplyPatch(t *testing.T) {
 }
 
 func TestMustNewPass(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
-		now := time.Now()
+		now := fixedNow
 		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
 		assert.NotNil(t, pass)
 		assert.Equal(t, 1, pass.ID())
@@ -348,7 +360,7 @@ func TestMustNewPass(t *testing.T) {
 	})
 
 	t.Run("panics_on_invalid_input", func(t *testing.T) {
-		now := time.Now()
+		now := fixedNow
 		assert.Panics(t, func() {
 			domain.MustNewPass(1, 0, 0, 100, domain.PassGeneric, 1, now, now, nil)
 		})

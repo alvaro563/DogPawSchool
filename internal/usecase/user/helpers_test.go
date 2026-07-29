@@ -11,7 +11,7 @@ import (
 // customize behavior on a per-method basis; any unset field returns
 // the zero value with no error.
 type mockUserRepository struct {
-	create       func(ctx context.Context, user *domain.User) error
+	create       func(ctx context.Context, user *domain.User) (int, error)
 	update       func(ctx context.Context, user *domain.User) error
 	getByID      func(ctx context.Context, id int) (*domain.User, error)
 	getByEmail   func(ctx context.Context, email string) (*domain.User, error)
@@ -20,11 +20,11 @@ type mockUserRepository struct {
 	delete       func(ctx context.Context, id int) error
 }
 
-func (m *mockUserRepository) Create(ctx context.Context, user *domain.User) error {
+func (m *mockUserRepository) Create(ctx context.Context, user *domain.User) (int, error) {
 	if m.create != nil {
 		return m.create(ctx, user)
 	}
-	return nil
+	return 0, nil
 }
 
 func (m *mockUserRepository) Update(ctx context.Context, user *domain.User) error {

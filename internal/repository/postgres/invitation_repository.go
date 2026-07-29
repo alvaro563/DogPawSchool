@@ -80,6 +80,22 @@ func (repo *InvitationRepository) GetByToken(ctx context.Context, token string) 
 	return inv, nil
 }
 
+// GetByTokenForUpdate is like GetByToken but locks the row with
+// SELECT ... FOR UPDATE so that a concurrent transaction cannot
+// modify or read this invitation until the current tx completes.
+func (repo *InvitationRepository) GetByTokenForUpdate(ctx context.Context, token string) (*domain.Invitation, error) {
+	query := invitationSelectClause + ` WHERE token = $1 FOR UPDATE`
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, token)
+	inv, err := scanInvitation(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get invitation by token for update: %w", err)
+	}
+	return inv, nil
+}
+
 // Update persists the mutable fields (email, token, role, status,
 // expires_at) of the invitation. Returns domain.ErrNotFound if no row
 // matches the id; domain.ErrDuplicateToken if the new token is already

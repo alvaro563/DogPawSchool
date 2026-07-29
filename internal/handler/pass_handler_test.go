@@ -91,6 +91,7 @@ func validRegisterPassBody() string {
 }
 
 func TestPassRegister_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubPassRegisterer{fn: func(ctx context.Context, in passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		// user_id comes from the path param, not the body.
 		assert.Equal(t, 1, in.UserID())
@@ -113,6 +114,7 @@ func TestPassRegister_Success(t *testing.T) {
 }
 
 func TestPassRegister_InvalidUserID_PathParam(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		pathValue string
@@ -137,6 +139,7 @@ func TestPassRegister_InvalidUserID_PathParam(t *testing.T) {
 }
 
 func TestPassRegister_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerReg(&stubPassRegisterer{fn: func(context.Context, passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		t.Fatal("use case should not be invoked for invalid JSON")
 		return passuc.RegisterPassOutput{}, nil
@@ -149,6 +152,7 @@ func TestPassRegister_InvalidJSON(t *testing.T) {
 }
 
 func TestPassRegister_BindingValidation(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerReg(&stubPassRegisterer{fn: func(context.Context, passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		t.Fatal("use case should not be invoked when binding fails")
 		return passuc.RegisterPassOutput{}, nil
@@ -161,6 +165,7 @@ func TestPassRegister_BindingValidation(t *testing.T) {
 }
 
 func TestPassRegister_BindingInvalidPassType(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerReg(&stubPassRegisterer{fn: func(context.Context, passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		t.Fatal("use case should not be invoked for invalid pass_type")
 		return passuc.RegisterPassOutput{}, nil
@@ -173,6 +178,7 @@ func TestPassRegister_BindingInvalidPassType(t *testing.T) {
 }
 
 func TestPassRegister_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerReg(&stubPassRegisterer{fn: func(context.Context, passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		return passuc.RegisterPassOutput{}, &passuc.ValidationError{Field: "pass_type"}
 	}})
@@ -184,6 +190,7 @@ func TestPassRegister_UseCaseValidation(t *testing.T) {
 }
 
 func TestPassRegister_InvalidUserID_FromRepo(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerReg(&stubPassRegisterer{fn: func(context.Context, passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		return passuc.RegisterPassOutput{}, passuc.ErrInvalidUserID
 	}})
@@ -195,6 +202,7 @@ func TestPassRegister_InvalidUserID_FromRepo(t *testing.T) {
 }
 
 func TestPassRegister_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerReg(&stubPassRegisterer{fn: func(context.Context, passuc.RegisterPassInput) (passuc.RegisterPassOutput, error) {
 		return passuc.RegisterPassOutput{}, errors.New("db down")
 	}})
@@ -212,6 +220,7 @@ func newTestPassForHandler(id int) *domain.Pass {
 }
 
 func TestPassModify_Success_AllFields(t *testing.T) {
+	t.Parallel()
 	updated := newTestPassForHandler(1)
 	updatedPrice := 15000
 	updatedType := domain.PassSpecial
@@ -239,6 +248,7 @@ func TestPassModify_Success_AllFields(t *testing.T) {
 }
 
 func TestPassModify_Success_EmptyPatch(t *testing.T) {
+	t.Parallel()
 	original := newTestPassForHandler(1)
 	stub := &stubPassModifier{fn: func(ctx context.Context, in passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
 		return passuc.ModifyPassOutput{Pass: original}, nil
@@ -254,6 +264,7 @@ func TestPassModify_Success_EmptyPatch(t *testing.T) {
 }
 
 func TestPassModify_InvalidID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -278,6 +289,7 @@ func TestPassModify_InvalidID(t *testing.T) {
 }
 
 func TestPassModify_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerMod(&stubPassModifier{fn: func(context.Context, passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
 		t.Fatal("use case should not be invoked for invalid JSON")
 		return passuc.ModifyPassOutput{}, nil
@@ -289,6 +301,7 @@ func TestPassModify_InvalidJSON(t *testing.T) {
 }
 
 func TestPassModify_BindingInvalidPassType(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerMod(&stubPassModifier{fn: func(context.Context, passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
 		// The factory is the sole validator (Q2). An invalid patch
 		// value (BOGUS pass_type) is caught by the domain's
@@ -304,6 +317,7 @@ func TestPassModify_BindingInvalidPassType(t *testing.T) {
 }
 
 func TestPassModify_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	// expires_at = Go zero time ("0001-01-01T00:00:00Z") passes
 	// binding (no tag) but fails the use case's ApplyPatch which
 	// rejects zero values.
@@ -319,6 +333,7 @@ func TestPassModify_UseCaseValidation(t *testing.T) {
 }
 
 func TestPassModify_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerMod(&stubPassModifier{fn: func(context.Context, passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
 		return passuc.ModifyPassOutput{}, passuc.ErrNotFound
 	}})
@@ -329,6 +344,7 @@ func TestPassModify_NotFound(t *testing.T) {
 }
 
 func TestPassModify_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerMod(&stubPassModifier{fn: func(context.Context, passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
 		return passuc.ModifyPassOutput{}, errors.New("db down")
 	}})
@@ -348,6 +364,7 @@ func requireNotNilHandler(t *testing.T, v any) {
 }
 
 func TestPassGetByID_Success(t *testing.T) {
+	t.Parallel()
 	want := newTestPassForHandler(7)
 	stub := &stubPassGetter{fn: func(ctx context.Context, in passuc.GetPassInput) (passuc.GetPassOutput, error) {
 		assert.Equal(t, 7, in.ID())
@@ -368,6 +385,7 @@ func TestPassGetByID_Success(t *testing.T) {
 }
 
 func TestPassGetByID_InvalidID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -392,6 +410,7 @@ func TestPassGetByID_InvalidID(t *testing.T) {
 }
 
 func TestPassGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerGet(&stubPassGetter{fn: func(context.Context, passuc.GetPassInput) (passuc.GetPassOutput, error) {
 		return passuc.GetPassOutput{}, passuc.ErrNotFound
 	}})
@@ -402,6 +421,7 @@ func TestPassGetByID_NotFound(t *testing.T) {
 }
 
 func TestPassGetByID_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerGet(&stubPassGetter{fn: func(context.Context, passuc.GetPassInput) (passuc.GetPassOutput, error) {
 		return passuc.GetPassOutput{}, errors.New("db down")
 	}})
@@ -412,6 +432,7 @@ func TestPassGetByID_InternalError(t *testing.T) {
 }
 
 func TestPassList_Success(t *testing.T) {
+	t.Parallel()
 	passes := []*domain.Pass{
 		newTestPassForHandler(1),
 		newTestPassForHandler(2),
@@ -437,6 +458,7 @@ func TestPassList_Success(t *testing.T) {
 }
 
 func TestPassList_Empty(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerLst(&stubPassLister{fn: func(context.Context, passuc.ListAllPassesInput) (passuc.ListAllPassesOutput, error) {
 		return passuc.ListAllPassesOutput{}, nil
 	}})
@@ -447,6 +469,7 @@ func TestPassList_Empty(t *testing.T) {
 }
 
 func TestPassList_PaginationPassesThrough(t *testing.T) {
+	t.Parallel()
 	stub := &stubPassLister{fn: func(ctx context.Context, in passuc.ListAllPassesInput) (passuc.ListAllPassesOutput, error) {
 		assert.Equal(t, 25, in.Limit())
 		assert.Equal(t, 10, in.Offset())
@@ -463,6 +486,7 @@ func TestPassList_PaginationPassesThrough(t *testing.T) {
 }
 
 func TestPassList_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerLst(&stubPassLister{fn: func(context.Context, passuc.ListAllPassesInput) (passuc.ListAllPassesOutput, error) {
 		return passuc.ListAllPassesOutput{}, errors.New("db down")
 	}})
@@ -472,6 +496,7 @@ func TestPassList_InternalError(t *testing.T) {
 }
 
 func TestPassListByUser_Success(t *testing.T) {
+	t.Parallel()
 	passes := []*domain.Pass{newTestPassForHandler(1)}
 	stub := &stubPassByUserLister{fn: func(ctx context.Context, in passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
 		assert.Equal(t, 1, in.UserID())
@@ -490,6 +515,7 @@ func TestPassListByUser_Success(t *testing.T) {
 }
 
 func TestPassListByUser_Empty(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerByUser(&stubPassByUserLister{fn: func(context.Context, passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
 		return passuc.ListByUserPassesOutput{}, nil
 	}})
@@ -501,6 +527,7 @@ func TestPassListByUser_Empty(t *testing.T) {
 }
 
 func TestPassListByUser_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -525,6 +552,7 @@ func TestPassListByUser_InvalidUserID(t *testing.T) {
 }
 
 func TestPassListByUser_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerByUser(&stubPassByUserLister{fn: func(context.Context, passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
 		return passuc.ListByUserPassesOutput{}, &passuc.ValidationError{Field: "user_id"}
 	}})
@@ -535,6 +563,7 @@ func TestPassListByUser_UseCaseValidation(t *testing.T) {
 }
 
 func TestPassListByUser_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newPassHandlerByUser(&stubPassByUserLister{fn: func(context.Context, passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
 		return passuc.ListByUserPassesOutput{}, errors.New("db down")
 	}})

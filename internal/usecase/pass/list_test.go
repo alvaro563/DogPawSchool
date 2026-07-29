@@ -11,6 +11,7 @@ import (
 )
 
 func TestListAllPassesUseCase_Success(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	expected := []*domain.Pass{
 		domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil),
@@ -31,6 +32,7 @@ func TestListAllPassesUseCase_Success(t *testing.T) {
 }
 
 func TestListAllPassesUseCase_Empty(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		listAll: func(ctx context.Context, limit, offset int) ([]*domain.Pass, error) {
 			return nil, nil
@@ -44,6 +46,7 @@ func TestListAllPassesUseCase_Empty(t *testing.T) {
 }
 
 func TestListAllPassesUseCase_PaginationNormalization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		inputLimit     int
@@ -76,6 +79,7 @@ func TestListAllPassesUseCase_PaginationNormalization(t *testing.T) {
 }
 
 func TestListAllPassesUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		listAll: func(ctx context.Context, limit, offset int) ([]*domain.Pass, error) {
 			return nil, sentinelErr

@@ -12,6 +12,7 @@ import (
 )
 
 func TestNewGetUserInput(t *testing.T) {
+	t.Parallel()
 	t.Run("valid_id", func(t *testing.T) {
 		in, err := NewGetUserInput(5)
 		require.NoError(t, err)
@@ -36,6 +37,7 @@ func TestNewGetUserInput(t *testing.T) {
 }
 
 func TestGetUserUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("success", func(t *testing.T) {
 		expected := newTestUser(7)
 		repo := &mockUserRepository{

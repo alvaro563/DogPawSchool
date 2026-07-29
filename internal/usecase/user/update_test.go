@@ -12,6 +12,7 @@ import (
 )
 
 func TestNewUpdateUserInput(t *testing.T) {
+	t.Parallel()
 	t.Run("zero_id", func(t *testing.T) {
 		_, err := NewUpdateUserInput(0, domain.UserPatch{})
 		assert.Error(t, err)
@@ -37,6 +38,7 @@ func TestNewUpdateUserInput(t *testing.T) {
 }
 
 func TestUpdateUserUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("success_name_only", func(t *testing.T) {
 		existing := newTestUser(42)
 		var updated *domain.User

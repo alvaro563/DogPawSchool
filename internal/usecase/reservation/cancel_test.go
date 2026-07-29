@@ -22,7 +22,7 @@ func validCancelInput() CancelReservationInput {
 // given id, pointing at the given activity/dog/pass. Tests use it
 // to set up the GetByID stub for the reservation repo.
 func validConfirmedReservation(id, activityID, dogID, passID int) *domain.Reservation {
-	return mustNewReservation(id, activityID, dogID, passID, domain.StatusConfirmed, time.Now())
+	return mustNewReservation(id, activityID, dogID, passID, domain.StatusConfirmed, fixedNow)
 }
 
 // farFutureActivity returns an activity 7 days in the future, with
@@ -62,6 +62,7 @@ func newCancelUseCase(
 }
 
 func TestNewCancelReservationInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name   string
 		userID int
@@ -85,6 +86,7 @@ func TestNewCancelReservationInput(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
+	t.Parallel()
 	userID := 1
 	activity := farFutureActivity(10)
 	dog := validDog(20, userID)
@@ -139,6 +141,7 @@ func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
+	t.Parallel()
 	// Activity is 1h in the future. The cancellation late window
 	// is 2h, so the use case classifies this as a LATE cancel.
 	// The pass must NOT be refunded.
@@ -188,6 +191,7 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_ReservationNotFound(t *testing.T) {
+	t.Parallel()
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return nil, domain.ErrNotFound
@@ -199,11 +203,12 @@ func TestCancelReservationUseCase_ReservationNotFound(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_AlreadyCancelled(t *testing.T) {
-	cancelledInTime := mustNewReservation(99, 10, 20, 30, domain.StatusCancelledInTime, time.Now())
-	cancelledLate := mustNewReservation(99, 10, 20, 30, domain.StatusCancelledLate, time.Now())
-	completed := mustNewReservation(99, 10, 20, 30, domain.StatusCompleted, time.Now())
-	forgiven := mustNewReservation(99, 10, 20, 30, domain.StatusForgiven, time.Now())
-	noShow := mustNewReservation(99, 10, 20, 30, domain.StatusNoShow, time.Now())
+	t.Parallel()
+	cancelledInTime := mustNewReservation(99, 10, 20, 30, domain.StatusCancelledInTime, fixedNow)
+	cancelledLate := mustNewReservation(99, 10, 20, 30, domain.StatusCancelledLate, fixedNow)
+	completed := mustNewReservation(99, 10, 20, 30, domain.StatusCompleted, fixedNow)
+	forgiven := mustNewReservation(99, 10, 20, 30, domain.StatusForgiven, fixedNow)
+	noShow := mustNewReservation(99, 10, 20, 30, domain.StatusNoShow, fixedNow)
 
 	cases := []struct {
 		name        string
@@ -229,6 +234,7 @@ func TestCancelReservationUseCase_AlreadyCancelled(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_ActivityInPast(t *testing.T) {
+	t.Parallel()
 	activity := pastActivity(10)
 	dog := validDog(20, 1)
 	pass := validPass(30, 1, 1)
@@ -256,6 +262,7 @@ func TestCancelReservationUseCase_ActivityInPast(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_DogNotFound(t *testing.T) {
+	t.Parallel()
 	activity := farFutureActivity(10)
 	reservation := validConfirmedReservation(99, 10, 20, 30)
 
@@ -276,6 +283,7 @@ func TestCancelReservationUseCase_DogNotFound(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_DogNotOwnedByUser(t *testing.T) {
+	t.Parallel()
 	activity := farFutureActivity(10)
 	// Dog belongs to user 99, but the request is for user 1.
 	dog := validDog(20, 99)
@@ -296,6 +304,7 @@ func TestCancelReservationUseCase_DogNotOwnedByUser(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_PassNotFound(t *testing.T) {
+	t.Parallel()
 	activity := farFutureActivity(10)
 	dog := validDog(20, 1)
 	reservation := validConfirmedReservation(99, 10, 20, 30)
@@ -320,6 +329,7 @@ func TestCancelReservationUseCase_PassNotFound(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_PassNotOwnedByUser(t *testing.T) {
+	t.Parallel()
 	activity := farFutureActivity(10)
 	dog := validDog(20, 1)
 	// Pass belongs to user 99, but the request is for user 1.
@@ -344,6 +354,7 @@ func TestCancelReservationUseCase_PassNotOwnedByUser(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_TransactorRollsBackOnMovementFailure(t *testing.T) {
+	t.Parallel()
 	userID := 1
 	activity := farFutureActivity(10)
 	dog := validDog(20, userID)
@@ -380,6 +391,7 @@ func TestCancelReservationUseCase_TransactorRollsBackOnMovementFailure(t *testin
 }
 
 func TestCancelReservationUseCase_ReservationRepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return nil, errors.New("db connection lost")
@@ -393,6 +405,7 @@ func TestCancelReservationUseCase_ReservationRepoErrorIsWrapped(t *testing.T) {
 }
 
 func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
+	t.Parallel()
 	// The activity is far in the future (in-time cancel), but
 	// the pass is fresh (remaining == num) so CanRefund() returns
 	// false. The use case must NOT call RefundSession and must

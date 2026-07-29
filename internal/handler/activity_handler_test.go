@@ -119,6 +119,7 @@ func mustParseActivityTime(value string) time.Time {
 // TestActivityRegister_Success verifies the happy-path POST creates the
 // resource and returns 201 with the new id and a Location header.
 func TestActivityRegister_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubActivityRegisterer{fn: func(ctx context.Context, in activityuc.RegisterActivityInput) (activityuc.RegisterActivityOutput, error) {
 		return activityuc.RegisterActivityOutput{ID: 42}, nil
 	}}
@@ -137,6 +138,7 @@ func TestActivityRegister_Success(t *testing.T) {
 // TestActivityRegister_InvalidJSON verifies that non-JSON bodies are
 // rejected with 400 invalid_request before any use case is called.
 func TestActivityRegister_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerReg(&stubActivityRegisterer{fn: func(context.Context, activityuc.RegisterActivityInput) (activityuc.RegisterActivityOutput, error) {
 		t.Fatal("use case should not be invoked for invalid JSON")
 		return activityuc.RegisterActivityOutput{}, nil
@@ -150,6 +152,7 @@ func TestActivityRegister_InvalidJSON(t *testing.T) {
 // TestActivityRegister_BindingValidation verifies that Gin's binding
 // rules (required, oneof, gt) reject incomplete payloads with 400.
 func TestActivityRegister_BindingValidation(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerReg(&stubActivityRegisterer{fn: func(context.Context, activityuc.RegisterActivityInput) (activityuc.RegisterActivityOutput, error) {
 		t.Fatal("use case should not be invoked when binding fails")
 		return activityuc.RegisterActivityOutput{}, nil
@@ -163,6 +166,7 @@ func TestActivityRegister_BindingValidation(t *testing.T) {
 // TestActivityRegister_UseCaseValidation verifies that a *ValidationError
 // returned by the use case is mapped to 400 with the field name.
 func TestActivityRegister_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerReg(&stubActivityRegisterer{fn: func(context.Context, activityuc.RegisterActivityInput) (activityuc.RegisterActivityOutput, error) {
 		return activityuc.RegisterActivityOutput{}, &activityuc.ValidationError{Field: "max_capacity"}
 	}})
@@ -175,6 +179,7 @@ func TestActivityRegister_UseCaseValidation(t *testing.T) {
 // TestActivityRegister_InternalError verifies that unexpected errors
 // fall through to a generic 500.
 func TestActivityRegister_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerReg(&stubActivityRegisterer{fn: func(context.Context, activityuc.RegisterActivityInput) (activityuc.RegisterActivityOutput, error) {
 		return activityuc.RegisterActivityOutput{}, errors.New("db down")
 	}})
@@ -186,6 +191,7 @@ func TestActivityRegister_InternalError(t *testing.T) {
 // TestActivityGetByID_Success verifies the happy-path GET returns 200
 // and the full activity payload.
 func TestActivityGetByID_Success(t *testing.T) {
+	t.Parallel()
 	want := newTestActivity(7)
 	stub := &stubActivityGetter{fn: func(ctx context.Context, in activityuc.GetActivityInput) (activityuc.GetActivityOutput, error) {
 		assert.Equal(t, 7, in.ID())
@@ -209,6 +215,7 @@ func TestActivityGetByID_Success(t *testing.T) {
 // TestActivityGetByID_InvalidID verifies that non-integer or non-positive
 // ids are rejected with 400 before the use case is called.
 func TestActivityGetByID_InvalidID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		pathID     string
@@ -235,6 +242,7 @@ func TestActivityGetByID_InvalidID(t *testing.T) {
 // TestActivityGetByID_NotFound verifies that use-case ErrNotFound is
 // mapped to 404.
 func TestActivityGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerGet(&stubActivityGetter{fn: func(context.Context, activityuc.GetActivityInput) (activityuc.GetActivityOutput, error) {
 		return activityuc.GetActivityOutput{}, activityuc.ErrNotFound
 	}})
@@ -247,6 +255,7 @@ func TestActivityGetByID_NotFound(t *testing.T) {
 // TestActivityList_Success verifies the happy-path GET returns 200 with
 // the full activity array, plus the normalized limit/offset echoed back.
 func TestActivityList_Success(t *testing.T) {
+	t.Parallel()
 	activities := []*domain.Activity{
 		domain.MustNewActivity(1, "a", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-01T10:00:00Z")),
 		domain.MustNewActivity(2, "b", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-02T10:00:00Z")),
@@ -276,6 +285,7 @@ func TestActivityList_Success(t *testing.T) {
 // TestActivityList_PaginationPassesThrough verifies that the
 // limit/offset query parameters are passed to the use case.
 func TestActivityList_PaginationPassesThrough(t *testing.T) {
+	t.Parallel()
 	stub := &stubActivityLister{fn: func(ctx context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
 		assert.Equal(t, 25, in.Limit())
 		assert.Equal(t, 10, in.Offset())
@@ -290,6 +300,7 @@ func TestActivityList_PaginationPassesThrough(t *testing.T) {
 // TestActivityList_Empty verifies that the list endpoint returns an
 // empty array (not null) when no activities are found.
 func TestActivityList_Empty(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerLst(&stubActivityLister{fn: func(context.Context, activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
 		return activityuc.ListAllActivitiesOutput{}, nil
 	}})
@@ -303,6 +314,7 @@ func TestActivityList_Empty(t *testing.T) {
 // TestActivityList_InternalError verifies that an unexpected repo
 // error is mapped to 500.
 func TestActivityList_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerLst(&stubActivityLister{fn: func(context.Context, activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
 		return activityuc.ListAllActivitiesOutput{}, errors.New("db down")
 	}})
@@ -314,6 +326,7 @@ func TestActivityList_InternalError(t *testing.T) {
 // TestActivityListUpcoming_Success verifies the upcoming endpoint
 // delegates to the dedicated use case.
 func TestActivityListUpcoming_Success(t *testing.T) {
+	t.Parallel()
 	future := domain.MustNewActivity(1, "a", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2030-01-01T10:00:00Z"))
 	stub := &stubActivityUpcomingLister{fn: func(ctx context.Context, in activityuc.ListUpcomingActivitiesInput) (activityuc.ListUpcomingActivitiesOutput, error) {
 		return activityuc.ListUpcomingActivitiesOutput{Activities: []*domain.Activity{future}}, nil
@@ -331,6 +344,7 @@ func TestActivityListUpcoming_Success(t *testing.T) {
 // TestActivityListUpcoming_Empty verifies the upcoming endpoint
 // returns an empty array when nothing is scheduled.
 func TestActivityListUpcoming_Empty(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerUp(&stubActivityUpcomingLister{fn: func(context.Context, activityuc.ListUpcomingActivitiesInput) (activityuc.ListUpcomingActivitiesOutput, error) {
 		return activityuc.ListUpcomingActivitiesOutput{}, nil
 	}})
@@ -343,6 +357,7 @@ func TestActivityListUpcoming_Empty(t *testing.T) {
 // TestActivityModify_Success verifies the PATCH endpoint returns 200
 // with the updated activity.
 func TestActivityModify_Success(t *testing.T) {
+	t.Parallel()
 	updated := domain.MustNewActivity(1, "Paseo Largo", "Central", domain.TypeRoute, 12, 2,
 		mustParseActivityTime("2026-08-01T10:00:00Z"))
 	stub := &stubActivityModifier{fn: func(ctx context.Context, in activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
@@ -371,6 +386,7 @@ func TestActivityModify_Success(t *testing.T) {
 // TestActivityModify_InvalidID verifies that non-positive ids are
 // rejected with 400.
 func TestActivityModify_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerMod(&stubActivityModifier{fn: func(context.Context, activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
 		t.Fatal("use case should not be invoked for invalid id")
 		return activityuc.ModifyActivityOutput{}, nil
@@ -384,6 +400,7 @@ func TestActivityModify_InvalidID(t *testing.T) {
 // TestActivityModify_InvalidJSON verifies that a malformed body is
 // rejected with 400.
 func TestActivityModify_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerMod(&stubActivityModifier{fn: func(context.Context, activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
 		t.Fatal("use case should not be invoked for invalid JSON")
 		return activityuc.ModifyActivityOutput{}, nil
@@ -397,6 +414,7 @@ func TestActivityModify_InvalidJSON(t *testing.T) {
 // TestActivityModify_UseCaseValidation verifies that a
 // *ValidationError is mapped to 400 with the field name.
 func TestActivityModify_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerMod(&stubActivityModifier{fn: func(context.Context, activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
 		return activityuc.ModifyActivityOutput{}, &activityuc.ValidationError{Field: "activity_type"}
 	}})
@@ -410,6 +428,7 @@ func TestActivityModify_UseCaseValidation(t *testing.T) {
 // TestActivityModify_NotFound verifies that use-case ErrNotFound is
 // mapped to 404.
 func TestActivityModify_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerMod(&stubActivityModifier{fn: func(context.Context, activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
 		return activityuc.ModifyActivityOutput{}, activityuc.ErrNotFound
 	}})
@@ -420,6 +439,7 @@ func TestActivityModify_NotFound(t *testing.T) {
 }
 
 func TestActivityClose_Success(t *testing.T) {
+	t.Parallel()
 	act := domain.MustNewActivity(42, "Paseo", "Río", domain.TypeRoute, 8, 2, time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
 	act.Close()
 	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
@@ -434,6 +454,7 @@ func TestActivityClose_Success(t *testing.T) {
 }
 
 func TestActivityClose_InvalidID(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
 		t.Fatal("should not be called")
 		return activityuc.CloseActivityOutput{}, nil
@@ -446,6 +467,7 @@ func TestActivityClose_InvalidID(t *testing.T) {
 }
 
 func TestActivityClose_NotFinished(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
 		return activityuc.CloseActivityOutput{}, activityuc.ErrNotFinished
 	}})
@@ -457,6 +479,7 @@ func TestActivityClose_NotFinished(t *testing.T) {
 }
 
 func TestActivityClose_AlreadyClosed(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
 		return activityuc.CloseActivityOutput{}, activityuc.ErrAlreadyClosed
 	}})
@@ -468,6 +491,7 @@ func TestActivityClose_AlreadyClosed(t *testing.T) {
 }
 
 func TestActivityClose_ReservationNotConfirmed(t *testing.T) {
+	t.Parallel()
 	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
 		return activityuc.CloseActivityOutput{}, activityuc.ErrReservationNotConfirmed
 	}})

@@ -44,30 +44,38 @@ type SetDogNeuteredOutput struct {
 
 // SetDogNeuteredUseCase toggles the neutered flag through the
 // aggregate: load the Dog, mutate it via its domain method, then
-// persist the whole aggregate.
+// persist the whole aggregate. Runs inside a single transaction with
+// FOR UPDATE on the dog row, preventing lost updates (B4).
 type SetDogNeuteredUseCase struct {
-	repo domain.DogRepository
+	transactor Transactor
+	repo       domain.DogRepository
 }
 
-func NewSetDogNeuteredUseCase(repo domain.DogRepository) *SetDogNeuteredUseCase {
-	return &SetDogNeuteredUseCase{repo: repo}
+func NewSetDogNeuteredUseCase(transactor Transactor, repo domain.DogRepository) *SetDogNeuteredUseCase {
+	return &SetDogNeuteredUseCase{transactor: transactor, repo: repo}
 }
 
 func (uc *SetDogNeuteredUseCase) Execute(ctx context.Context, input SetDogNeuteredInput) (SetDogNeuteredOutput, error) {
-	dog, err := uc.repo.GetByID(ctx, input.ID())
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			return SetDogNeuteredOutput{}, ErrNotFound
+	var out SetDogNeuteredOutput
+	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+		dog, err := uc.repo.GetByIDForUpdate(txCtx, input.ID())
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("set dog neutered: %w", err)
 		}
-		return SetDogNeuteredOutput{}, fmt.Errorf("set dog neutered: %w", err)
-	}
-	dog.SetNeutered(input.Neutered())
-	if err := uc.repo.Update(ctx, dog); err != nil {
-		return SetDogNeuteredOutput{}, fmt.Errorf("set dog neutered: %w", err)
-	}
-	return SetDogNeuteredOutput{
-		ID:       dog.ID(),
-		Neutered: dog.Neutered(),
-		Sex:      dog.Sex(),
-	}, nil
+
+		dog.SetNeutered(input.Neutered())
+		if err := uc.repo.Update(txCtx, dog); err != nil {
+			return fmt.Errorf("set dog neutered: %w", err)
+		}
+		out = SetDogNeuteredOutput{
+			ID:       dog.ID(),
+			Neutered: dog.Neutered(),
+			Sex:      dog.Sex(),
+		}
+		return nil
+	})
+	return out, err
 }

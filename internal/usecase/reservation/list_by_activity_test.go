@@ -12,6 +12,7 @@ import (
 )
 
 func TestListByActivityReservationsUseCase_Success(t *testing.T) {
+	t.Parallel()
 	views := []*domain.ReservationView{makeOwnedView(1, 1)}
 	repo := &mockReservationRepository{
 		listByActivityView: func(_ context.Context, activityID, limit, offset int) ([]*domain.ReservationView, error) {
@@ -26,6 +27,7 @@ func TestListByActivityReservationsUseCase_Success(t *testing.T) {
 }
 
 func TestNewListByActivityReservationsInput_ZeroActivityID(t *testing.T) {
+	t.Parallel()
 	_, err := NewListByActivityReservationsInput(0, 50, 0)
 	assert.Error(t, err)
 	var verr *ValidationError

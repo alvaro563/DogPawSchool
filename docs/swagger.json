@@ -349,6 +349,64 @@
                 }
             }
         },
+        "/api/v1/auth/register": {
+            "post": {
+                "description": "Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 60 characters (bcrypt output length). Returns the created user profile without the password hash.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Register a new user with an invitation token",
+                "parameters": [
+                    {
+                        "description": "Registration data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerWithInvitationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "User registered",
+                        "schema": {
+                            "$ref": "#/definitions/handler.registerWithInvitationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body, missing fields, or validation error (e.g. short password)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Token not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Token already used, expired, or revoked",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/dogs": {
             "get": {
                 "description": "Returns a paginated list of all dogs across all owners. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
@@ -956,60 +1014,52 @@
                 }
             }
         },
-        "/api/v1/dogs/{dog_id}/reservations": {
+        "/api/v1/dogs/{id}": {
             "get": {
-                "description": "Returns the views of every reservation for the\ngiven dog, ordered by created_at DESC.",
+                "description": "Returns the full dog record including incompatibilities.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "reservations"
+                    "dogs"
                 ],
-                "summary": "List a dog's reservations",
+                "summary": "Get a dog by ID",
                 "parameters": [
                     {
                         "type": "integer",
                         "description": "Dog ID",
-                        "name": "dog_id",
+                        "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Maximum number of reservations to return (default 50, max 100)",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Number of reservations to skip for pagination (default 0)",
-                        "name": "offset",
-                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.listReservationsResponse"
+                            "$ref": "#/definitions/handler.dogDTO"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Dog not found",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
                     }
                 }
-            }
-        },
-        "/api/v1/dogs/{id}": {
+            },
             "delete": {
                 "description": "Removes a dog by id. Associated dog_incompatibilities and reservations rows are deleted automatically by the database (ON DELETE CASCADE). Returns 404 if the dog does not exist.",
                 "produces": [
@@ -1353,6 +1403,59 @@
                 }
             }
         },
+        "/api/v1/dogs/{id}/reservations": {
+            "get": {
+                "description": "Returns the views of every reservation for the\ngiven dog, ordered by created_at DESC.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List a dog's reservations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of reservations to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of reservations to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listReservationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/incompatibilities": {
             "get": {
                 "description": "Returns all incompatibilities, optionally filtered by level.",
@@ -1601,6 +1704,58 @@
                 }
             }
         },
+        "/api/v1/invitations": {
+            "post": {
+                "description": "Creates a new PENDING invitation for a client to register. The returned 64-hex token must be delivered to the client's email. The invitation expires in 48 hours. The created_by field must reference an existing admin user id.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "invitations"
+                ],
+                "summary": "Create an invitation",
+                "parameters": [
+                    {
+                        "description": "Invitation to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.createInvitationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Invitation created with token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.createInvitationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body, missing fields, or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Duplicate token (unlikely — 256-bit random)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/passes": {
             "get": {
                 "description": "Returns a paginated list of all passes in the system.\nTODO: gate this route behind an admin-role middleware\nbefore production. Currently any client can read all\npasses, which exposes other users' data.",
@@ -1791,6 +1946,203 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users": {
+            "get": {
+                "description": "Returns a paginated list of every user in the system. Intended for the admin panel. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "List all users (admin view)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of users to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of users to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listUsersResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}": {
+            "get": {
+                "description": "Returns the public profile of a user. The password hash is never included in the response.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get a user by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.userDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Applies a partial update to an existing user. Only the fields present in the request body are modified; omitted fields are preserved. An empty body is a no-op and returns 200 without touching the database. The password is never writable through this endpoint.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Patch a user (name and/or email)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to patch (only the fields you want to change)",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.updateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User patched (or no-op if body was empty)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.updateUserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, invalid request body, or validation error (e.g. empty name, malformed email)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Email already in use",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/deactivate": {
+            "post": {
+                "description": "Flips the user's is_active flag to false. Idempotent: deactivating an already-inactive user is a no-op and returns 200. The user's data is preserved. Use this for off-boarding instead of hard delete.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Deactivate a user (soft delete)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User deactivated (or already inactive)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.deactivateUserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -2332,6 +2684,10 @@
                     "type": "string",
                     "example": "ROUTE"
                 },
+                "closed": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "date": {
                     "type": "string",
                     "example": "2026-08-01T10:00:00Z"
@@ -2364,6 +2720,10 @@
                 "activity_type": {
                     "type": "string",
                     "example": "ROUTE"
+                },
+                "closed": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "date": {
                     "type": "string",
@@ -2458,6 +2818,49 @@
                 "status": {
                     "type": "string",
                     "example": "COMPLETED"
+                }
+            }
+        },
+        "handler.createInvitationRequest": {
+            "type": "object",
+            "required": [
+                "created_by",
+                "email",
+                "role"
+            ],
+            "properties": {
+                "created_by": {
+                    "type": "integer"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.createInvitationResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.deactivateUserResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": false
                 }
             }
         },
@@ -2679,6 +3082,29 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/handler.reservationViewDTO"
+                    }
+                }
+            }
+        },
+        "handler.listUsersResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.userDTO"
                     }
                 }
             }
@@ -3058,6 +3484,33 @@
                 }
             }
         },
+        "handler.registerWithInvitationRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "password",
+                "token"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.registerWithInvitationResponse": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "$ref": "#/definitions/handler.userDTO"
+                }
+            }
+        },
         "handler.removeIncompatibilityResponse": {
             "type": "object",
             "properties": {
@@ -3080,6 +3533,10 @@
         "handler.reservationViewDTO": {
             "type": "object",
             "properties": {
+                "activity_closed": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "activity_date": {
                     "type": "string",
                     "example": "2026-08-01T10:00:00Z"
@@ -3187,6 +3644,53 @@
                 "sex": {
                     "type": "string",
                     "example": "FEMALE"
+                }
+            }
+        },
+        "handler.updateUserRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "ana.such@dogpaw.es"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Ana Such"
+                }
+            }
+        },
+        "handler.updateUserResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "handler.userDTO": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "admin@dogpaw.com"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Carlos Admin"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "ADMIN"
                 }
             }
         }

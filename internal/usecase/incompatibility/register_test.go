@@ -15,6 +15,7 @@ func validRegisterInput() RegisterIncompatibilityInput {
 }
 
 func TestNewRegisterIncompatibilityInput(t *testing.T) {
+	t.Parallel()
 	t.Run("empty_name", func(t *testing.T) {
 		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia)
 		assert.Error(t, err)
@@ -33,6 +34,7 @@ func TestNewRegisterIncompatibilityInput(t *testing.T) {
 }
 
 func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("factory_blocks_invalid_before_use_case_runs", func(t *testing.T) {
 		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia)
 		assert.Error(t, err)

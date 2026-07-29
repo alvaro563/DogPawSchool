@@ -18,20 +18,23 @@ func fixedNow() func() time.Time {
 	return func() time.Time { return now }
 }
 
-// validPassword returns a 60-char string that satisfies the DB CHECK.
+// validPassword returns a string that satisfies the DB CHECK on
+// users.password (LENGTH >= 60). bcrypt produces a 60-char hash,
+// so the password itself just needs to be at least 8 characters.
 func validPassword() string {
-	return strings.Repeat("a", 60)
+	return "securepassword123"
 }
 
 // --- Mocks ---
 
 type mockInvitationRepository struct {
-	getByID     func(ctx context.Context, id int) (*domain.Invitation, error)
-	getByToken  func(ctx context.Context, token string) (*domain.Invitation, error)
-	create      func(ctx context.Context, inv *domain.Invitation) (int, error)
-	update      func(ctx context.Context, inv *domain.Invitation) error
-	listPending func(ctx context.Context, limit, offset int) ([]*domain.Invitation, error)
-	listByEmail func(ctx context.Context, email string) ([]*domain.Invitation, error)
+	getByID             func(ctx context.Context, id int) (*domain.Invitation, error)
+	getByToken          func(ctx context.Context, token string) (*domain.Invitation, error)
+	getByTokenForUpdate func(ctx context.Context, token string) (*domain.Invitation, error)
+	create              func(ctx context.Context, inv *domain.Invitation) (int, error)
+	update              func(ctx context.Context, inv *domain.Invitation) error
+	listPending         func(ctx context.Context, limit, offset int) ([]*domain.Invitation, error)
+	listByEmail         func(ctx context.Context, email string) ([]*domain.Invitation, error)
 }
 
 func (m *mockInvitationRepository) Create(ctx context.Context, inv *domain.Invitation) (int, error) {
@@ -51,6 +54,13 @@ func (m *mockInvitationRepository) GetByID(ctx context.Context, id int) (*domain
 func (m *mockInvitationRepository) GetByToken(ctx context.Context, token string) (*domain.Invitation, error) {
 	if m.getByToken != nil {
 		return m.getByToken(ctx, token)
+	}
+	return nil, nil
+}
+
+func (m *mockInvitationRepository) GetByTokenForUpdate(ctx context.Context, token string) (*domain.Invitation, error) {
+	if m.getByTokenForUpdate != nil {
+		return m.getByTokenForUpdate(ctx, token)
 	}
 	return nil, nil
 }
@@ -77,7 +87,7 @@ func (m *mockInvitationRepository) ListByEmail(ctx context.Context, email string
 }
 
 type mockUserRepository struct {
-	create       func(ctx context.Context, user *domain.User) error
+	create       func(ctx context.Context, user *domain.User) (int, error)
 	update       func(ctx context.Context, user *domain.User) error
 	getByID      func(ctx context.Context, id int) (*domain.User, error)
 	getByEmail   func(ctx context.Context, email string) (*domain.User, error)
@@ -86,11 +96,11 @@ type mockUserRepository struct {
 	delete       func(ctx context.Context, id int) error
 }
 
-func (m *mockUserRepository) Create(ctx context.Context, user *domain.User) error {
+func (m *mockUserRepository) Create(ctx context.Context, user *domain.User) (int, error) {
 	if m.create != nil {
 		return m.create(ctx, user)
 	}
-	return nil
+	return 0, nil
 }
 
 func (m *mockUserRepository) Update(ctx context.Context, user *domain.User) error {
@@ -182,6 +192,7 @@ func expiredInvitation(now time.Time) *domain.Invitation {
 // --- Tests ---
 
 func TestNewRegisterWithInvitationInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name          string
 		factory       func() (RegisterWithInvitationInput, error)
@@ -209,9 +220,9 @@ func TestNewRegisterWithInvitationInput(t *testing.T) {
 			"password",
 		},
 		{
-			"password_exactly_59_chars",
+			"password_exactly_7_chars",
 			func() (RegisterWithInvitationInput, error) {
-				return NewRegisterWithInvitationInput("tok", "Ana", strings.Repeat("a", 59), fixedNow())
+				return NewRegisterWithInvitationInput("tok", "Ana", strings.Repeat("a", 7), fixedNow())
 			},
 			"password",
 		},
@@ -229,6 +240,7 @@ func TestNewRegisterWithInvitationInput(t *testing.T) {
 }
 
 func TestNewRegisterWithInvitationInput_HappyPath(t *testing.T) {
+	t.Parallel()
 	now := fixedNow()
 	in, err := NewRegisterWithInvitationInput("tok", "Ana", validPassword(), now)
 	require.NoError(t, err)
@@ -239,12 +251,14 @@ func TestNewRegisterWithInvitationInput_HappyPath(t *testing.T) {
 }
 
 func TestNewRegisterWithInvitationInput_NilNowDefaults(t *testing.T) {
+	t.Parallel()
 	in, err := NewRegisterWithInvitationInput("tok", "Ana", validPassword(), nil)
 	require.NoError(t, err)
 	assert.False(t, in.Now().IsZero(), "now should default to time.Now")
 }
 
 func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	fixed := fixedNow()
 
 	t.Run("happy_path", func(t *testing.T) {
@@ -253,7 +267,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 		var capturedInv *domain.Invitation
 
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, token string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, token string) (*domain.Invitation, error) {
 				assert.Equal(t, "valid-token-123", token)
 				return inv, nil
 			},
@@ -263,9 +277,9 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 			},
 		}
 		userRepo := &mockUserRepository{
-			create: func(_ context.Context, u *domain.User) error {
+			create: func(_ context.Context, u *domain.User) (int, error) {
 				capturedUser = u
-				return nil
+				return 1, nil
 			},
 		}
 		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{})
@@ -287,7 +301,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 
 	t.Run("token_not_found", func(t *testing.T) {
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, _ string) (*domain.Invitation, error) {
 				return nil, domain.ErrNotFound
 			},
 		}
@@ -302,7 +316,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 	t.Run("invitation_expired", func(t *testing.T) {
 		inv := expiredInvitation(fixed())
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, _ string) (*domain.Invitation, error) {
 				return inv, nil
 			},
 		}
@@ -317,7 +331,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 	t.Run("invitation_already_accepted", func(t *testing.T) {
 		inv := acceptedInvitation(fixed())
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, _ string) (*domain.Invitation, error) {
 				return inv, nil
 			},
 		}
@@ -332,7 +346,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 	t.Run("invitation_already_revoked", func(t *testing.T) {
 		inv := revokedInvitation(fixed())
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, _ string) (*domain.Invitation, error) {
 				return inv, nil
 			},
 		}
@@ -348,13 +362,13 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 		repoErr := errors.New("duplicate email")
 		inv := pendingInvitation(fixed())
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, _ string) (*domain.Invitation, error) {
 				return inv, nil
 			},
 		}
 		userRepo := &mockUserRepository{
-			create: func(_ context.Context, _ *domain.User) error {
-				return repoErr
+			create: func(_ context.Context, _ *domain.User) (int, error) {
+				return 0, repoErr
 			},
 		}
 		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{})
@@ -372,15 +386,15 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 		var capturedUser *domain.User
 		inv := pendingInvitation(fixed())
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, _ string) (*domain.Invitation, error) {
 				return inv, nil
 			},
 			update: func(_ context.Context, _ *domain.Invitation) error { return nil },
 		}
 		userRepo := &mockUserRepository{
-			create: func(_ context.Context, u *domain.User) error {
+			create: func(_ context.Context, u *domain.User) (int, error) {
 				capturedUser = u
-				return nil
+				return 1, nil
 			},
 		}
 		plaintext := validPassword()
@@ -400,16 +414,11 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 	t.Run("propagates_hasher_failure_without_persisting", func(t *testing.T) {
 		hashErr := errors.New("hasher unavailable")
 		created := false
-		inv := pendingInvitation(fixed())
-		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
-				return inv, nil
-			},
-		}
+		invRepo := &mockInvitationRepository{}
 		userRepo := &mockUserRepository{
-			create: func(_ context.Context, _ *domain.User) error {
+			create: func(_ context.Context, _ *domain.User) (int, error) {
 				created = true
-				return nil
+				return 0, nil
 			},
 		}
 		hasher := &stubHasher{hash: func(string) (string, error) { return "", hashErr }}
@@ -420,21 +429,20 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 
 		assert.ErrorIs(t, err, hashErr, "hasher failure must be wrapped, not swallowed")
 		assert.False(t, created, "no user may be created when hashing fails")
-		assert.Equal(t, domain.InvitationPending, inv.Status())
 	})
 
 	t.Run("transaction_rolls_back_on_user_create_failure", func(t *testing.T) {
 		inv := pendingInvitation(fixed())
 		txCommitted := false
 		invRepo := &mockInvitationRepository{
-			getByToken: func(_ context.Context, _ string) (*domain.Invitation, error) {
+			getByTokenForUpdate: func(_ context.Context, _ string) (*domain.Invitation, error) {
 				return inv, nil
 			},
 			update: func(_ context.Context, _ *domain.Invitation) error { return nil },
 		}
 		userRepo := &mockUserRepository{
-			create: func(_ context.Context, _ *domain.User) error {
-				return errors.New("db constraint violation")
+			create: func(_ context.Context, _ *domain.User) (int, error) {
+				return 0, errors.New("db constraint violation")
 			},
 		}
 		transactor := &stubTransactor{

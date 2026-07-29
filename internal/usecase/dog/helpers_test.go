@@ -10,6 +10,7 @@ type mockDogRepository struct {
 	create                func(ctx context.Context, dog *domain.Dog) (int, error)
 	update                func(ctx context.Context, dog *domain.Dog) error
 	getByID               func(ctx context.Context, id int) (*domain.Dog, error)
+	getByIDForUpdate      func(ctx context.Context, id int) (*domain.Dog, error)
 	listByOwner           func(ctx context.Context, userID, limit, offset int) ([]*domain.Dog, error)
 	listAll               func(ctx context.Context, activeOnly bool, limit, offset int) ([]*domain.Dog, error)
 	listByIncompatibility func(ctx context.Context, incompatibilityID, limit, offset int) ([]*domain.Dog, error)
@@ -38,6 +39,16 @@ func (m *mockDogRepository) Update(ctx context.Context, dog *domain.Dog) error {
 }
 
 func (m *mockDogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, error) {
+	if m.getByID != nil {
+		return m.getByID(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockDogRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Dog, error) {
+	if m.getByIDForUpdate != nil {
+		return m.getByIDForUpdate(ctx, id)
+	}
 	if m.getByID != nil {
 		return m.getByID(ctx, id)
 	}
@@ -119,6 +130,20 @@ func (m *mockDogRepository) Delete(ctx context.Context, id int) error {
 		return m.delete(ctx, id)
 	}
 	return nil
+}
+
+// stubTransactor is a fake Transactor for dog use case tests. By
+// default it invokes the closure synchronously without a real DB
+// transaction; tests can swap fn to inject behaviour.
+type stubTransactor struct {
+	fn func(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+func (s *stubTransactor) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if s.fn != nil {
+		return s.fn(ctx, fn)
+	}
+	return fn(ctx)
 }
 
 func validIncompatibility() *domain.Incompatibility {

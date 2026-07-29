@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewSetDogNeuteredInput(t *testing.T) {
+	t.Parallel()
 	t.Run("zero_id", func(t *testing.T) {
 		_, err := NewSetDogNeuteredInput(0, true)
 		assert.Error(t, err)
@@ -28,13 +29,14 @@ func TestNewSetDogNeuteredInput(t *testing.T) {
 }
 
 func TestSetDogNeuteredUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("not_found", func(t *testing.T) {
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
 				return nil, domain.ErrNotFound
 			},
 		}
-		uc := NewSetDogNeuteredUseCase(mock)
+		uc := NewSetDogNeuteredUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewSetDogNeuteredInput(9999, true))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrNotFound))
@@ -55,7 +57,7 @@ func TestSetDogNeuteredUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewSetDogNeuteredUseCase(mock)
+		uc := NewSetDogNeuteredUseCase(&stubTransactor{}, mock)
 		out, err := uc.Execute(context.Background(), MustNewSetDogNeuteredInput(42, true))
 		assert.NoError(t, err)
 		assert.True(t, updateCalled, "repo Update must be called")
@@ -76,7 +78,7 @@ func TestSetDogNeuteredUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewSetDogNeuteredUseCase(mock)
+		uc := NewSetDogNeuteredUseCase(&stubTransactor{}, mock)
 		out, err := uc.Execute(context.Background(), MustNewSetDogNeuteredInput(7, false))
 		assert.NoError(t, err)
 		assert.False(t, out.Neutered)
@@ -95,7 +97,7 @@ func TestSetDogNeuteredUseCase_Execute(t *testing.T) {
 				return repoErr
 			},
 		}
-		uc := NewSetDogNeuteredUseCase(mock)
+		uc := NewSetDogNeuteredUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewSetDogNeuteredInput(1, true))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))

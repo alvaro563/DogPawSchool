@@ -20,6 +20,7 @@ func validRegisterInput() RegisterActivityInput {
 }
 
 func TestRegisterActivityUseCase_Success(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		create: func(ctx context.Context, activity *domain.Activity) (int, error) {
 			assert.Equal(t, "Paseo Río", activity.Name())
@@ -37,6 +38,7 @@ func TestRegisterActivityUseCase_Success(t *testing.T) {
 }
 
 func TestNewRegisterActivityInput(t *testing.T) {
+	t.Parallel()
 	fixedDate := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
 	base := func() RegisterActivityInput {
 		return MustNewRegisterActivityInput("n", "l", domain.TypeRoute, 8, 2, fixedDate)
@@ -82,6 +84,7 @@ func TestNewRegisterActivityInput(t *testing.T) {
 }
 
 func TestRegisterActivityUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		create: func(ctx context.Context, activity *domain.Activity) (int, error) {
 			return 0, sentinelErr

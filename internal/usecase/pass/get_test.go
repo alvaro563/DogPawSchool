@@ -12,6 +12,7 @@ import (
 )
 
 func TestGetPassUseCase_Success(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	expected := domain.MustNewPass(7, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
 	repo := &mockPassRepository{
@@ -30,6 +31,7 @@ func TestGetPassUseCase_Success(t *testing.T) {
 }
 
 func TestGetPassUseCase_NotFound(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return nil, nil
@@ -42,6 +44,7 @@ func TestGetPassUseCase_NotFound(t *testing.T) {
 }
 
 func TestNewGetPassInput_InvalidID(t *testing.T) {
+	t.Parallel()
 	for _, id := range []int{0, -5} {
 		_, err := NewGetPassInput(id)
 		assertValidationError(t, err, "id")
@@ -49,6 +52,7 @@ func TestNewGetPassInput_InvalidID(t *testing.T) {
 }
 
 func TestGetPassUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return nil, sentinelErr

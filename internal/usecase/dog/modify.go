@@ -46,40 +46,55 @@ type ModifyDogOutput struct {
 
 // ModifyDogUseCase applies a partial update to a dog. An empty patch
 // is a no-op and returns the unmodified dog without touching the DB.
+// Mutations run inside a single transaction with FOR UPDATE on the
+// dog row, preventing lost updates (B4).
 type ModifyDogUseCase struct {
-	repo domain.DogRepository
+	transactor Transactor
+	repo       domain.DogRepository
 }
 
-func NewModifyDogUseCase(repo domain.DogRepository) *ModifyDogUseCase {
-	return &ModifyDogUseCase{repo: repo}
+func NewModifyDogUseCase(transactor Transactor, repo domain.DogRepository) *ModifyDogUseCase {
+	return &ModifyDogUseCase{transactor: transactor, repo: repo}
 }
 
 func (uc *ModifyDogUseCase) Execute(ctx context.Context, input ModifyDogInput) (ModifyDogOutput, error) {
-	dog, err := uc.repo.GetByID(ctx, input.ID())
-	if err != nil {
-		return ModifyDogOutput{}, fmt.Errorf("get dog %d: %w", input.ID(), err)
-	}
-	if dog == nil {
-		return ModifyDogOutput{}, ErrNotFound
-	}
-
 	patch := input.Patch()
-	if err := dog.ApplyPatch(patch); err != nil {
-		var validationErr *domain.DogValidationError
-		if errors.As(err, &validationErr) {
-			return ModifyDogOutput{}, &ValidationError{Field: validationErr.Field}
-		}
-		return ModifyDogOutput{}, err
-	}
-
 	if isEmptyPatch(patch) {
+		dog, err := uc.repo.GetByID(ctx, input.ID())
+		if err != nil {
+			return ModifyDogOutput{}, fmt.Errorf("get dog %d: %w", input.ID(), err)
+		}
+		if dog == nil {
+			return ModifyDogOutput{}, ErrNotFound
+		}
 		return ModifyDogOutput{ID: dog.ID()}, nil
 	}
 
-	if err := uc.repo.Update(ctx, dog); err != nil {
-		return ModifyDogOutput{}, fmt.Errorf("update dog %d: %w", input.ID(), err)
-	}
-	return ModifyDogOutput{ID: dog.ID()}, nil
+	var out ModifyDogOutput
+	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+		dog, err := uc.repo.GetByIDForUpdate(txCtx, input.ID())
+		if err != nil {
+			return fmt.Errorf("get dog %d: %w", input.ID(), err)
+		}
+		if dog == nil {
+			return ErrNotFound
+		}
+
+		if err := dog.ApplyPatch(patch); err != nil {
+			var validationErr *domain.DogValidationError
+			if errors.As(err, &validationErr) {
+				return &ValidationError{Field: validationErr.Field}
+			}
+			return err
+		}
+
+		if err := uc.repo.Update(txCtx, dog); err != nil {
+			return fmt.Errorf("update dog %d: %w", input.ID(), err)
+		}
+		out = ModifyDogOutput{ID: dog.ID()}
+		return nil
+	})
+	return out, err
 }
 
 func isEmptyPatch(patch domain.DogPatch) bool {

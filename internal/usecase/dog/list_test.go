@@ -19,6 +19,7 @@ func newTestDogForList(id int) *domain.Dog {
 }
 
 func TestNewListByOwnerInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name    string
 		ownerID int
@@ -38,6 +39,7 @@ func TestNewListByOwnerInput(t *testing.T) {
 }
 
 func TestListByOwnerUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedLimit, capturedOffset, capturedUserID int
 		mock := &mockDogRepository{
@@ -112,6 +114,7 @@ func TestListByOwnerUseCase_Execute(t *testing.T) {
 }
 
 func TestListAllDogsUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path_with_activeOnly_false", func(t *testing.T) {
 		var capturedActiveOnly bool
 		var capturedLimit, capturedOffset int
@@ -187,6 +190,7 @@ func TestListAllDogsUseCase_Execute(t *testing.T) {
 }
 
 func TestListActiveDogsUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path_with_activeOnly_true", func(t *testing.T) {
 		var capturedActiveOnly bool
 		mock := &mockDogRepository{
@@ -257,6 +261,7 @@ func TestListActiveDogsUseCase_Execute(t *testing.T) {
 }
 
 func TestNewListByIncompatibilityInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name   string
 		incomp int
@@ -276,6 +281,7 @@ func TestNewListByIncompatibilityInput(t *testing.T) {
 }
 
 func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedIncompID, capturedLimit, capturedOffset int
 		mock := &mockDogRepository{
@@ -350,6 +356,7 @@ func TestListByIncompatibilityUseCase_Execute(t *testing.T) {
 }
 
 func TestNormalizePagination(t *testing.T) {
+	t.Parallel()
 	t.Run("defaults_when_zero", func(t *testing.T) {
 		limit, offset := normalizePagination(0, 0)
 		assert.Equal(t, 50, limit)
@@ -374,6 +381,7 @@ func TestNormalizePagination(t *testing.T) {
 }
 
 func TestNewListByBreedInput(t *testing.T) {
+	t.Parallel()
 	_, err := NewListByBreedInput("", 10, 0)
 	assert.Error(t, err)
 	var verr *ValidationError
@@ -382,6 +390,7 @@ func TestNewListByBreedInput(t *testing.T) {
 }
 
 func TestListByBreedUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedBreed string
 		var capturedLimit, capturedOffset int
@@ -455,6 +464,7 @@ func TestListByBreedUseCase_Execute(t *testing.T) {
 }
 
 func TestNewListBySexInput(t *testing.T) {
+	t.Parallel()
 	// empty sex is invalid (zero value)
 	_, err := NewListBySexInput(domain.Sex(""), 10, 0)
 	assert.Error(t, err)
@@ -464,6 +474,7 @@ func TestNewListBySexInput(t *testing.T) {
 }
 
 func TestListBySexUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedSex domain.Sex
 		mock := &mockDogRepository{
@@ -531,6 +542,7 @@ func TestListBySexUseCase_Execute(t *testing.T) {
 }
 
 func TestListByNeuteredUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedNeutered bool
 		mock := &mockDogRepository{
@@ -611,6 +623,7 @@ func TestListByNeuteredUseCase_Execute(t *testing.T) {
 }
 
 func TestListByHeatUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedHeat bool
 		mock := &mockDogRepository{
@@ -678,6 +691,7 @@ func TestListByHeatUseCase_Execute(t *testing.T) {
 }
 
 func TestNewListByAgeBracketInput(t *testing.T) {
+	t.Parallel()
 	// empty bracket
 	_, err := NewListByAgeBracketInput(domain.AgeBracket(""), 10, 0)
 	assert.Error(t, err)
@@ -687,6 +701,7 @@ func TestNewListByAgeBracketInput(t *testing.T) {
 }
 
 func TestListByAgeBracketUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedBracket domain.AgeBracket
 		mock := &mockDogRepository{
@@ -767,6 +782,7 @@ func TestListByAgeBracketUseCase_Execute(t *testing.T) {
 }
 
 func TestNewListBySizeBracketInput(t *testing.T) {
+	t.Parallel()
 	// empty bracket
 	_, err := NewListBySizeBracketInput(domain.SizeBracket(""), 10, 0)
 	assert.Error(t, err)
@@ -776,6 +792,7 @@ func TestNewListBySizeBracketInput(t *testing.T) {
 }
 
 func TestListBySizeBracketUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		var capturedBracket domain.SizeBracket
 		mock := &mockDogRepository{

@@ -11,6 +11,7 @@ import (
 )
 
 func TestListAllActivitiesUseCase_Success(t *testing.T) {
+	t.Parallel()
 	date1 := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	date2 := time.Date(2026, 7, 5, 10, 0, 0, 0, time.UTC)
 	date3 := time.Date(2026, 7, 6, 10, 0, 0, 0, time.UTC)
@@ -34,6 +35,7 @@ func TestListAllActivitiesUseCase_Success(t *testing.T) {
 }
 
 func TestListAllActivitiesUseCase_Empty(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		list: func(ctx context.Context, limit, offset int) ([]*domain.Activity, error) {
 			return nil, nil
@@ -47,6 +49,7 @@ func TestListAllActivitiesUseCase_Empty(t *testing.T) {
 }
 
 func TestListAllActivitiesUseCase_PaginationNormalization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		inputLimit     int
@@ -79,6 +82,7 @@ func TestListAllActivitiesUseCase_PaginationNormalization(t *testing.T) {
 }
 
 func TestListAllActivitiesUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockActivityRepository{
 		list: func(ctx context.Context, limit, offset int) ([]*domain.Activity, error) {
 			return nil, sentinelErr

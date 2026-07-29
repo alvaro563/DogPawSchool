@@ -16,6 +16,7 @@ func validListUpcomingInput() ListUpcomingByUserInput {
 }
 
 func TestListUpcomingByUserUseCase_Success(t *testing.T) {
+	t.Parallel()
 	views := []*domain.ReservationView{
 		makeOwnedView(1, 1),
 		makeOwnedView(2, 1),
@@ -35,6 +36,7 @@ func TestListUpcomingByUserUseCase_Success(t *testing.T) {
 }
 
 func TestNewListUpcomingByUserInput_ZeroUserID(t *testing.T) {
+	t.Parallel()
 	_, err := NewListUpcomingByUserInput(0, 50, 0)
 	assert.Error(t, err)
 	var verr *ValidationError

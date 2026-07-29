@@ -11,6 +11,7 @@ import (
 )
 
 func TestListByUserPassesUseCase_Success(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	expected := []*domain.Pass{
 		domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil),
@@ -32,6 +33,7 @@ func TestListByUserPassesUseCase_Success(t *testing.T) {
 }
 
 func TestListByUserPassesUseCase_Empty(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		listByOwner: func(ctx context.Context, userID, limit, offset int) ([]*domain.Pass, error) {
 			return nil, nil
@@ -45,6 +47,7 @@ func TestListByUserPassesUseCase_Empty(t *testing.T) {
 }
 
 func TestNewListByUserPassesInput_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	for _, userID := range []int{0, -5} {
 		_, err := NewListByUserPassesInput(userID, 0, 0)
 		assertValidationError(t, err, "user_id")
@@ -52,6 +55,7 @@ func TestNewListByUserPassesInput_InvalidUserID(t *testing.T) {
 }
 
 func TestListByUserPassesUseCase_PaginationNormalization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		inputLimit     int
@@ -82,6 +86,7 @@ func TestListByUserPassesUseCase_PaginationNormalization(t *testing.T) {
 }
 
 func TestListByUserPassesUseCase_RepoError(t *testing.T) {
+	t.Parallel()
 	repo := &mockPassRepository{
 		listByOwner: func(ctx context.Context, userID, limit, offset int) ([]*domain.Pass, error) {
 			return nil, sentinelErr

@@ -46,17 +46,21 @@ type AddDogIncompatibilityOutput struct {
 
 // AddDogIncompatibilityUseCase attaches an incompatibility to a dog.
 // Idempotent: a duplicate add returns Added=false and skips the DB
-// write.
+// write. The whole read-modify-write cycle runs inside a single
+// transaction with FOR UPDATE on the dog row, preventing lost
+// updates (B4).
 type AddDogIncompatibilityUseCase struct {
+	transactor   Transactor
 	dogRepo      domain.DogRepository
 	incompatRepo domain.IncompatibilityRepository
 }
 
 func NewAddDogIncompatibilityUseCase(
+	transactor Transactor,
 	dogRepo domain.DogRepository,
 	incompatRepo domain.IncompatibilityRepository,
 ) *AddDogIncompatibilityUseCase {
-	return &AddDogIncompatibilityUseCase{dogRepo: dogRepo, incompatRepo: incompatRepo}
+	return &AddDogIncompatibilityUseCase{transactor: transactor, dogRepo: dogRepo, incompatRepo: incompatRepo}
 }
 
 func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, input AddDogIncompatibilityInput) (AddDogIncompatibilityOutput, error) {
@@ -68,26 +72,31 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, input AddDo
 		return AddDogIncompatibilityOutput{}, ErrNotFound
 	}
 
-	dog, err := uc.dogRepo.GetByID(ctx, input.DogID())
-	if err != nil {
-		return AddDogIncompatibilityOutput{}, fmt.Errorf("get dog %d: %w", input.DogID(), err)
-	}
-	if dog == nil {
-		return AddDogIncompatibilityOutput{}, ErrNotFound
-	}
-
-	added, err := dog.AddIncompatibility(incompat)
-	if err != nil {
-		return AddDogIncompatibilityOutput{}, err
-	}
-	if added {
-		if err := uc.dogRepo.Update(ctx, dog); err != nil {
-			return AddDogIncompatibilityOutput{}, fmt.Errorf("update dog %d: %w", input.DogID(), err)
+	var out AddDogIncompatibilityOutput
+	err = uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+		dog, err := uc.dogRepo.GetByIDForUpdate(txCtx, input.DogID())
+		if err != nil {
+			return fmt.Errorf("get dog %d: %w", input.DogID(), err)
 		}
-	}
-	return AddDogIncompatibilityOutput{
-		ID:                dog.ID(),
-		Incompatibilities: dog.Incompatibilities(),
-		Added:             added,
-	}, nil
+		if dog == nil {
+			return ErrNotFound
+		}
+
+		added, err := dog.AddIncompatibility(incompat)
+		if err != nil {
+			return err
+		}
+		if added {
+			if err := uc.dogRepo.Update(txCtx, dog); err != nil {
+				return fmt.Errorf("update dog %d: %w", input.DogID(), err)
+			}
+		}
+		out = AddDogIncompatibilityOutput{
+			ID:                dog.ID(),
+			Incompatibilities: dog.Incompatibilities(),
+			Added:             added,
+		}
+		return nil
+	})
+	return out, err
 }

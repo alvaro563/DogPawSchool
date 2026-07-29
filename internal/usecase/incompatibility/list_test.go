@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewListIncompatibilitiesInput_InvalidLevel(t *testing.T) {
+	t.Parallel()
 	bad := domain.IncompatibilityLevel("OTHER")
 	_, err := NewListIncompatibilitiesInput(&bad)
 	assert.Error(t, err)
@@ -20,6 +21,7 @@ func TestNewListIncompatibilitiesInput_InvalidLevel(t *testing.T) {
 }
 
 func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("list_all_no_filter", func(t *testing.T) {
 		incompats := []*domain.Incompatibility{
 			mustNewIncompatibility(1, "A", domain.IncompatibilityLevelBaja),

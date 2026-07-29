@@ -17,6 +17,7 @@ func validListByUserInput() ListByUserReservationsInput {
 }
 
 func TestListByUserReservationsUseCase_Success(t *testing.T) {
+	t.Parallel()
 	views := []*domain.ReservationView{
 		makeOwnedView(1, 1),
 		makeOwnedView(2, 1),
@@ -39,6 +40,7 @@ func TestListByUserReservationsUseCase_Success(t *testing.T) {
 }
 
 func TestListByUserReservationsUseCase_WithFilters(t *testing.T) {
+	t.Parallel()
 	status := domain.StatusConfirmed
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
@@ -60,6 +62,7 @@ func TestListByUserReservationsUseCase_WithFilters(t *testing.T) {
 }
 
 func TestNewListByUserReservationsInput(t *testing.T) {
+	t.Parallel()
 	from := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	bad := domain.ReservationStatus("BOGUS")

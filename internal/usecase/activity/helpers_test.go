@@ -38,6 +38,13 @@ func (m *mockActivityRepository) GetByID(ctx context.Context, id int) (*domain.A
 	return nil, nil
 }
 
+func (m *mockActivityRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Activity, error) {
+	if m.getByID != nil {
+		return m.getByID(ctx, id)
+	}
+	return nil, nil
+}
+
 func (m *mockActivityRepository) Update(ctx context.Context, activity *domain.Activity) error {
 	if m.update != nil {
 		return m.update(ctx, activity)

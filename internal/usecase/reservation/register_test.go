@@ -61,6 +61,7 @@ func newRegisterUseCase(
 }
 
 func TestNewRegisterReservationInput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		userID int
@@ -87,6 +88,7 @@ func TestNewRegisterReservationInput(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_Success(t *testing.T) {
+	t.Parallel()
 	now := fixedNow
 	userID := 1
 	activity := validFutureActivity(10)
@@ -151,6 +153,7 @@ func TestRegisterReservationUseCase_Success(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_ActivityNotFound(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return nil, domain.ErrNotFound
@@ -162,6 +165,7 @@ func TestRegisterReservationUseCase_ActivityNotFound(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_ActivityInPast(t *testing.T) {
+	t.Parallel()
 	pastActivity := domain.MustNewActivity(10, "Paseo", "Central", domain.TypeRoute, 5, 1,
 		fixedNow.Add(-24*time.Hour))
 	activityRepo := &stubActivityRepository{
@@ -175,6 +179,7 @@ func TestRegisterReservationUseCase_ActivityInPast(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_ActivityFull(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
@@ -182,11 +187,11 @@ func TestRegisterReservationUseCase_ActivityFull(t *testing.T) {
 		},
 	}
 	existing := []*domain.Reservation{
-		mustNewReservation(1, 10, 100, 30, domain.StatusConfirmed, time.Now()),
-		mustNewReservation(2, 10, 101, 30, domain.StatusConfirmed, time.Now()),
-		mustNewReservation(3, 10, 102, 30, domain.StatusConfirmed, time.Now()),
-		mustNewReservation(4, 10, 103, 30, domain.StatusConfirmed, time.Now()),
-		mustNewReservation(5, 10, 104, 30, domain.StatusConfirmed, time.Now()),
+		mustNewReservation(1, 10, 100, 30, domain.StatusConfirmed, fixedNow),
+		mustNewReservation(2, 10, 101, 30, domain.StatusConfirmed, fixedNow),
+		mustNewReservation(3, 10, 102, 30, domain.StatusConfirmed, fixedNow),
+		mustNewReservation(4, 10, 103, 30, domain.StatusConfirmed, fixedNow),
+		mustNewReservation(5, 10, 104, 30, domain.StatusConfirmed, fixedNow),
 	}
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
@@ -199,6 +204,7 @@ func TestRegisterReservationUseCase_ActivityFull(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_ActivityCancellationsFreeCapacity(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
@@ -206,11 +212,11 @@ func TestRegisterReservationUseCase_ActivityCancellationsFreeCapacity(t *testing
 		},
 	}
 	existing := []*domain.Reservation{
-		mustNewReservation(1, 10, 100, 30, domain.StatusConfirmed, time.Now()),
-		mustNewReservation(2, 10, 101, 30, domain.StatusConfirmed, time.Now()),
-		mustNewReservation(3, 10, 102, 30, domain.StatusConfirmed, time.Now()),
-		mustNewReservation(4, 10, 103, 30, domain.StatusCancelledInTime, time.Now()),
-		mustNewReservation(5, 10, 104, 30, domain.StatusCancelledLate, time.Now()),
+		mustNewReservation(1, 10, 100, 30, domain.StatusConfirmed, fixedNow),
+		mustNewReservation(2, 10, 101, 30, domain.StatusConfirmed, fixedNow),
+		mustNewReservation(3, 10, 102, 30, domain.StatusConfirmed, fixedNow),
+		mustNewReservation(4, 10, 103, 30, domain.StatusCancelledInTime, fixedNow),
+		mustNewReservation(5, 10, 104, 30, domain.StatusCancelledLate, fixedNow),
 	}
 	dog := validDog(20, 1)
 	dogRepo := &stubDogRepository{
@@ -249,6 +255,7 @@ func noListActivity() *mockReservationRepository {
 }
 
 func TestRegisterReservationUseCase_DogNotFound(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
@@ -266,6 +273,7 @@ func TestRegisterReservationUseCase_DogNotFound(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_DogNotOwnedByUser(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
@@ -284,6 +292,7 @@ func TestRegisterReservationUseCase_DogNotOwnedByUser(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_PassNotFound(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
@@ -307,6 +316,7 @@ func TestRegisterReservationUseCase_PassNotFound(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_PassNotOwnedByUser(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
@@ -331,6 +341,7 @@ func TestRegisterReservationUseCase_PassNotOwnedByUser(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_PassExhausted(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
@@ -355,6 +366,7 @@ func TestRegisterReservationUseCase_PassExhausted(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_PassExpired(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	activityRepo := &stubActivityRepository{
@@ -381,6 +393,7 @@ func TestRegisterReservationUseCase_PassExpired(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_DuplicateReservation(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	pass := validPass(30, 1, 5)
@@ -411,6 +424,7 @@ func TestRegisterReservationUseCase_DuplicateReservation(t *testing.T) {
 }
 
 func TestRegisterReservationUseCase_TransactorRollsBackOnRepoError(t *testing.T) {
+	t.Parallel()
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	pass := validPass(30, 1, 5)
@@ -449,6 +463,7 @@ func TestRegisterReservationUseCase_TransactorRollsBackOnRepoError(t *testing.T)
 }
 
 func TestRegisterReservationUseCase_ActivityRepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return nil, errors.New("db connection lost")

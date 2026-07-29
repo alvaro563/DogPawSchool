@@ -75,6 +75,22 @@ func (repo *PassRepository) GetByID(ctx context.Context, id int) (*domain.Pass, 
 	return pass, nil
 }
 
+// GetByIDForUpdate fetches a single pass by id and locks the row with
+// FOR UPDATE until the transaction commits. Returns ErrPassNotFound
+// when no row matches.
+func (repo *PassRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Pass, error) {
+	query := passSelectClause + ` WHERE id = $1 FOR UPDATE`
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
+	pass, err := scanPass(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrPassNotFound
+		}
+		return nil, err
+	}
+	return pass, nil
+}
+
 // Update writes all mutable fields of the pass AND appends the audit
 // rows the aggregate accumulated during this unit of work, in a single
 // transaction. Returns ErrPassNotFound if no row matches the id.

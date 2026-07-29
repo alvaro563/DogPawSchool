@@ -44,6 +44,7 @@ func validCompleteInput() CompleteReservationInput {
 }
 
 func TestNewCompleteReservationInput(t *testing.T) {
+	t.Parallel()
 	scenarios := []struct {
 		name  string
 		user  int
@@ -67,12 +68,14 @@ func TestNewCompleteReservationInput(t *testing.T) {
 }
 
 func TestCompleteReservationInput_NilNow(t *testing.T) {
+	t.Parallel()
 	in, err := NewCompleteReservationInput(1, 99, nil)
 	require.NoError(t, err)
 	assert.False(t, in.Now().IsZero(), "nil now should default to time.Now")
 }
 
 func TestCompleteReservationUseCase_Success_ActivityFinished(t *testing.T) {
+	t.Parallel()
 	userID := 1
 	activity := completeFinishedActivity(10)
 	dog := validDog(20, userID)
@@ -108,6 +111,7 @@ func TestCompleteReservationUseCase_Success_ActivityFinished(t *testing.T) {
 }
 
 func TestCompleteReservationUseCase_NotFound(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{}
 	dogRepo := &stubDogRepository{}
 	reservationRepo := &mockReservationRepository{
@@ -121,6 +125,7 @@ func TestCompleteReservationUseCase_NotFound(t *testing.T) {
 }
 
 func TestCompleteReservationUseCase_ActivityNotFound(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return nil, domain.ErrNotFound
@@ -138,6 +143,7 @@ func TestCompleteReservationUseCase_ActivityNotFound(t *testing.T) {
 }
 
 func TestCompleteReservationUseCase_ActivityNotFinished(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return completeOngoingActivity(10), nil
@@ -159,6 +165,7 @@ func TestCompleteReservationUseCase_ActivityNotFinished(t *testing.T) {
 }
 
 func TestCompleteReservationUseCase_AlreadyNotCompletable(t *testing.T) {
+	t.Parallel()
 	statuses := []domain.ReservationStatus{
 		domain.StatusCancelledInTime,
 		domain.StatusCancelledLate,
@@ -190,6 +197,7 @@ func TestCompleteReservationUseCase_AlreadyNotCompletable(t *testing.T) {
 }
 
 func TestCompleteReservationUseCase_DogNotOwnedByUser(t *testing.T) {
+	t.Parallel()
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) { return completeFinishedActivity(10), nil },
 	}
@@ -212,6 +220,7 @@ func TestCompleteReservationUseCase_DogNotOwnedByUser(t *testing.T) {
 }
 
 func TestCompleteReservationUseCase_NoPassUpdate(t *testing.T) {
+	t.Parallel()
 	userID := 1
 	activity := completeFinishedActivity(10)
 	dog := validDog(20, userID)
@@ -236,6 +245,7 @@ func TestCompleteReservationUseCase_NoPassUpdate(t *testing.T) {
 }
 
 func TestCompleteReservationUseCase_ReservationRepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
 	repoErr := errors.New("db connection lost")
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return nil, repoErr },

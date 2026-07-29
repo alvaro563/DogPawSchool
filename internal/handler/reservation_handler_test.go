@@ -15,6 +15,8 @@ import (
 	reservationuc "dogpaw/internal/usecase/reservation"
 )
 
+var fixedNow = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+
 type stubReservationRegisterer struct {
 	fn func(ctx context.Context, in reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error)
 }
@@ -74,7 +76,7 @@ func newReservationHandlerCancel(cancel ReservationCanceler) *ReservationHandler
 // terminal status. Used by handler tests that need a
 // *domain.Reservation to wrap in a CancelReservationOutput.
 func newCancelledReservation(id int, status domain.ReservationStatus) *domain.Reservation {
-	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, status, time.Now())
+	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, status, fixedNow)
 	if err != nil {
 		panic(err)
 	}
@@ -89,6 +91,7 @@ func validRegisterReservationBody() string {
 // creates the resource, returns 201 with the new id, and sets the
 // Location header.
 func TestReservationRegister_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubReservationRegisterer{
 		fn: func(_ context.Context, in reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			assert.Equal(t, 1, in.UserID(), "user_id comes from the path, not the body")
@@ -114,6 +117,7 @@ func TestReservationRegister_Success(t *testing.T) {
 // TestReservationRegister_InvalidUserID verifies that a non-numeric
 // or non-positive path param yields 400 validation.
 func TestReservationRegister_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -144,6 +148,7 @@ func TestReservationRegister_InvalidUserID(t *testing.T) {
 // TestReservationRegister_InvalidBody verifies that a malformed
 // JSON body yields 400 invalid_request.
 func TestReservationRegister_InvalidBody(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			t.Fatal("use case should not be called on invalid body")
@@ -162,6 +167,7 @@ func TestReservationRegister_InvalidBody(t *testing.T) {
 // TestReservationRegister_MissingFields verifies that Gin's binding
 // rejects a body with zero-valued ids.
 func TestReservationRegister_MissingFields(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			t.Fatal("use case should not be called on missing fields")
@@ -186,6 +192,7 @@ func TestReservationRegister_MissingFields(t *testing.T) {
 // name (here, defending against a future validator that might run
 // in the use case rather than the handler).
 func TestReservationRegister_UseCaseValidation(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			return reservationuc.RegisterReservationOutput{}, &reservationuc.ValidationError{Field: "activity_id"}
@@ -203,6 +210,7 @@ func TestReservationRegister_UseCaseValidation(t *testing.T) {
 // TestReservationRegister_ActivityInPast verifies ErrActivityInPast
 // maps to 400 activity_in_past.
 func TestReservationRegister_ActivityInPast(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrActivityInPast
@@ -220,6 +228,7 @@ func TestReservationRegister_ActivityInPast(t *testing.T) {
 // TestReservationRegister_ActivityFull verifies ErrActivityFull
 // maps to 409 activity_full.
 func TestReservationRegister_ActivityFull(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrActivityFull
@@ -237,6 +246,7 @@ func TestReservationRegister_ActivityFull(t *testing.T) {
 // TestReservationRegister_PassExhausted verifies ErrPassExhausted
 // maps to 400 pass_exhausted.
 func TestReservationRegister_PassExhausted(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrPassExhausted
@@ -254,6 +264,7 @@ func TestReservationRegister_PassExhausted(t *testing.T) {
 // TestReservationRegister_PassExpired verifies ErrPassExpired maps
 // to 400 pass_expired.
 func TestReservationRegister_PassExpired(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrPassExpired
@@ -271,6 +282,7 @@ func TestReservationRegister_PassExpired(t *testing.T) {
 // TestReservationRegister_DuplicateReservation verifies
 // ErrDuplicateReservationForDog maps to 409.
 func TestReservationRegister_DuplicateReservation(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrDuplicateReservationForDog
@@ -288,6 +300,7 @@ func TestReservationRegister_DuplicateReservation(t *testing.T) {
 // TestReservationRegister_InternalError verifies that an unknown
 // error maps to 500 internal.
 func TestReservationRegister_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerReg(&stubReservationRegisterer{
 		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
 			return reservationuc.RegisterReservationOutput{}, errors.New("db connection lost")
@@ -309,6 +322,7 @@ func TestReservationRegister_InternalError(t *testing.T) {
 // TestReservationCancel_SuccessInTime verifies the happy-path POST
 // returns 200 with the new CANCELLED_IN_TIME status.
 func TestReservationCancel_SuccessInTime(t *testing.T) {
+	t.Parallel()
 	reservation := newCancelledReservation(99, domain.StatusCancelledInTime)
 	stub := &stubReservationCanceler{
 		fn: func(_ context.Context, in reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
@@ -334,6 +348,7 @@ func TestReservationCancel_SuccessInTime(t *testing.T) {
 // returns 200 with CANCELLED_LATE (no refund is the client's
 // problem to surface, not the server's).
 func TestReservationCancel_SuccessLate(t *testing.T) {
+	t.Parallel()
 	reservation := newCancelledReservation(99, domain.StatusCancelledLate)
 	stub := &stubReservationCanceler{
 		fn: func(context.Context, reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
@@ -355,6 +370,7 @@ func TestReservationCancel_SuccessLate(t *testing.T) {
 // TestReservationCancel_InvalidUserID verifies that a non-numeric
 // or non-positive path user_id yields 400 validation.
 func TestReservationCancel_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -386,6 +402,7 @@ func TestReservationCancel_InvalidUserID(t *testing.T) {
 // non-numeric or non-positive path reservation id yields 400
 // validation.
 func TestReservationCancel_InvalidReservationID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -416,6 +433,7 @@ func TestReservationCancel_InvalidReservationID(t *testing.T) {
 // TestReservationCancel_AlreadyCancelled verifies ErrAlreadyCancelled
 // maps to 409.
 func TestReservationCancel_AlreadyCancelled(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerCancel(&stubReservationCanceler{
 		fn: func(context.Context, reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
 			return reservationuc.CancelReservationOutput{}, reservationuc.ErrAlreadyCancelled
@@ -433,6 +451,7 @@ func TestReservationCancel_AlreadyCancelled(t *testing.T) {
 // TestReservationCancel_ActivityInPast verifies ErrActivityInPast
 // maps to 400.
 func TestReservationCancel_ActivityInPast(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerCancel(&stubReservationCanceler{
 		fn: func(context.Context, reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
 			return reservationuc.CancelReservationOutput{}, reservationuc.ErrActivityInPast
@@ -450,6 +469,7 @@ func TestReservationCancel_ActivityInPast(t *testing.T) {
 // TestReservationCancel_InvalidReservationID_NotFound verifies
 // ErrInvalidReservation maps to 404.
 func TestReservationCancel_InvalidReservationID_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerCancel(&stubReservationCanceler{
 		fn: func(context.Context, reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
 			return reservationuc.CancelReservationOutput{}, reservationuc.ErrInvalidReservation
@@ -467,6 +487,7 @@ func TestReservationCancel_InvalidReservationID_NotFound(t *testing.T) {
 // TestReservationCancel_InternalError verifies that an unknown
 // error maps to 500 internal.
 func TestReservationCancel_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerCancel(&stubReservationCanceler{
 		fn: func(context.Context, reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
 			return reservationuc.CancelReservationOutput{}, errors.New("db connection lost")
@@ -566,7 +587,7 @@ func newReservationHandlerComplete(complete ReservationCompleter) *ReservationHa
 }
 
 func sampleViewOwnedBy(userID int) *domain.ReservationView {
-	now := time.Now()
+	now := fixedNow
 	return mustSampleReservationView(
 		42, 10, 20, userID, 30, userID,
 		domain.StatusConfirmed, now,
@@ -609,6 +630,7 @@ func mustSampleReservationView(
 }
 
 func TestListByUser_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubReservationListerByUser{
 		fn: func(_ context.Context, in reservationuc.ListByUserReservationsInput) (reservationuc.ListByUserReservationsOutput, error) {
 			assert.Equal(t, 1, in.UserID())
@@ -631,6 +653,7 @@ func TestListByUser_Success(t *testing.T) {
 }
 
 func TestListByUser_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerListByUser(&stubReservationListerByUser{
 		fn: func(context.Context, reservationuc.ListByUserReservationsInput) (reservationuc.ListByUserReservationsOutput, error) {
 			t.Fatal("use case should not be called")
@@ -644,6 +667,7 @@ func TestListByUser_InvalidUserID(t *testing.T) {
 }
 
 func TestListByUser_InvalidStatusFilter(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerListByUser(&stubReservationListerByUser{
 		fn: func(context.Context, reservationuc.ListByUserReservationsInput) (reservationuc.ListByUserReservationsOutput, error) {
 			t.Fatal("use case should not be called on invalid filter")
@@ -658,6 +682,7 @@ func TestListByUser_InvalidStatusFilter(t *testing.T) {
 }
 
 func TestListByUser_InvalidTimeFilter(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerListByUser(&stubReservationListerByUser{
 		fn: func(context.Context, reservationuc.ListByUserReservationsInput) (reservationuc.ListByUserReservationsOutput, error) {
 			t.Fatal("use case should not be called on invalid time")
@@ -671,6 +696,7 @@ func TestListByUser_InvalidTimeFilter(t *testing.T) {
 }
 
 func TestListUpcomingByUser_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubReservationListerUpcomingByUser{
 		fn: func(_ context.Context, in reservationuc.ListUpcomingByUserInput) (reservationuc.ListUpcomingByUserOutput, error) {
 			assert.Equal(t, 1, in.UserID())
@@ -689,6 +715,7 @@ func TestListUpcomingByUser_Success(t *testing.T) {
 }
 
 func TestListUpcomingByUser_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerListUpcoming(&stubReservationListerUpcomingByUser{
 		fn: func(context.Context, reservationuc.ListUpcomingByUserInput) (reservationuc.ListUpcomingByUserOutput, error) {
 			t.Fatal("use case should not be called")
@@ -702,6 +729,7 @@ func TestListUpcomingByUser_InvalidUserID(t *testing.T) {
 }
 
 func TestGetByID_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubReservationGetter{
 		fn: func(_ context.Context, in reservationuc.GetReservationInput) (reservationuc.GetReservationOutput, error) {
 			assert.Equal(t, 1, in.UserID())
@@ -722,6 +750,7 @@ func TestGetByID_Success(t *testing.T) {
 }
 
 func TestGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerGet(&stubReservationGetter{
 		fn: func(context.Context, reservationuc.GetReservationInput) (reservationuc.GetReservationOutput, error) {
 			return reservationuc.GetReservationOutput{}, reservationuc.ErrInvalidReservation
@@ -734,6 +763,7 @@ func TestGetByID_NotFound(t *testing.T) {
 }
 
 func TestGetByID_NotOwned(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerGet(&stubReservationGetter{
 		fn: func(context.Context, reservationuc.GetReservationInput) (reservationuc.GetReservationOutput, error) {
 			return reservationuc.GetReservationOutput{}, reservationuc.ErrReservationNotOwned
@@ -746,6 +776,7 @@ func TestGetByID_NotOwned(t *testing.T) {
 }
 
 func TestListByDog_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubReservationListerByDog{
 		fn: func(_ context.Context, in reservationuc.ListByDogReservationsInput) (reservationuc.ListByDogReservationsOutput, error) {
 			assert.Equal(t, 20, in.DogID())
@@ -760,6 +791,7 @@ func TestListByDog_Success(t *testing.T) {
 }
 
 func TestListByDog_InvalidDogID(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerListByDog(&stubReservationListerByDog{
 		fn: func(context.Context, reservationuc.ListByDogReservationsInput) (reservationuc.ListByDogReservationsOutput, error) {
 			t.Fatal("use case should not be called")
@@ -773,6 +805,7 @@ func TestListByDog_InvalidDogID(t *testing.T) {
 }
 
 func TestListByPass_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubReservationListerByPass{
 		fn: func(_ context.Context, in reservationuc.ListByPassReservationsInput) (reservationuc.ListByPassReservationsOutput, error) {
 			assert.Equal(t, 30, in.PassID())
@@ -787,6 +820,7 @@ func TestListByPass_Success(t *testing.T) {
 }
 
 func TestListByActivity_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubReservationListerByActivity{
 		fn: func(_ context.Context, in reservationuc.ListByActivityReservationsInput) (reservationuc.ListByActivityReservationsOutput, error) {
 			assert.Equal(t, 10, in.ActivityID())
@@ -809,7 +843,7 @@ func TestListByActivity_Success(t *testing.T) {
 // StatusConfirmed → StatusNoShow; the handler only serialises the
 // result, so the stub returns the post-transition state.
 func newNoShowReservation(id int) *domain.Reservation {
-	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, domain.StatusNoShow, time.Now())
+	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, domain.StatusNoShow, fixedNow)
 	if err != nil {
 		panic(err)
 	}
@@ -819,6 +853,7 @@ func newNoShowReservation(id int) *domain.Reservation {
 // TestReservationMarkNoShow_Success verifies the happy-path POST
 // returns 200 with StatusNoShow.
 func TestReservationMarkNoShow_Success(t *testing.T) {
+	t.Parallel()
 	reservation := newNoShowReservation(99)
 	stub := &stubReservationNoShower{
 		fn: func(_ context.Context, in reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
@@ -843,6 +878,7 @@ func TestReservationMarkNoShow_Success(t *testing.T) {
 // TestReservationMarkNoShow_InvalidUserID verifies that a
 // non-numeric or non-positive path user_id yields 400 validation.
 func TestReservationMarkNoShow_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -874,6 +910,7 @@ func TestReservationMarkNoShow_InvalidUserID(t *testing.T) {
 // non-numeric or non-positive path reservation id yields 400
 // validation.
 func TestReservationMarkNoShow_InvalidReservationID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -904,6 +941,7 @@ func TestReservationMarkNoShow_InvalidReservationID(t *testing.T) {
 // TestReservationMarkNoShow_ActivityNotStarted verifies
 // ErrActivityNotStarted maps to 400 activity_not_started.
 func TestReservationMarkNoShow_ActivityNotStarted(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerNoShow(&stubReservationNoShower{
 		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
 			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrActivityNotStarted
@@ -921,6 +959,7 @@ func TestReservationMarkNoShow_ActivityNotStarted(t *testing.T) {
 // TestReservationMarkNoShow_NotFound verifies ErrInvalidReservation
 // maps to 404.
 func TestReservationMarkNoShow_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerNoShow(&stubReservationNoShower{
 		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
 			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrInvalidReservation
@@ -938,6 +977,7 @@ func TestReservationMarkNoShow_NotFound(t *testing.T) {
 // TestReservationMarkNoShow_NotCancellable verifies ErrNotCancellable
 // maps to 409 not_cancellable.
 func TestReservationMarkNoShow_NotCancellable(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerNoShow(&stubReservationNoShower{
 		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
 			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrNotCancellable
@@ -955,6 +995,7 @@ func TestReservationMarkNoShow_NotCancellable(t *testing.T) {
 // TestReservationMarkNoShow_InternalError verifies that an unknown
 // error maps to 500 internal.
 func TestReservationMarkNoShow_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerNoShow(&stubReservationNoShower{
 		fn: func(context.Context, reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error) {
 			return reservationuc.MarkReservationNoShowOutput{}, errors.New("db connection lost")
@@ -979,7 +1020,7 @@ func TestReservationMarkNoShow_InternalError(t *testing.T) {
 // only serialises the result, so the stub returns the
 // post-transition state.
 func newCompletedReservation(id int) *domain.Reservation {
-	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, domain.StatusCompleted, time.Now())
+	reservation, err := domain.NewReservationWithStatus(id, 10, 20, 30, domain.StatusCompleted, fixedNow)
 	if err != nil {
 		panic(err)
 	}
@@ -989,6 +1030,7 @@ func newCompletedReservation(id int) *domain.Reservation {
 // TestReservationComplete_Success verifies the happy-path POST
 // returns 200 with StatusCompleted.
 func TestReservationComplete_Success(t *testing.T) {
+	t.Parallel()
 	reservation := newCompletedReservation(99)
 	stub := &stubReservationCompleter{
 		fn: func(_ context.Context, in reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
@@ -1013,6 +1055,7 @@ func TestReservationComplete_Success(t *testing.T) {
 // TestReservationComplete_InvalidUserID verifies that a non-numeric
 // or non-positive path user_id yields 400 validation.
 func TestReservationComplete_InvalidUserID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -1044,6 +1087,7 @@ func TestReservationComplete_InvalidUserID(t *testing.T) {
 // non-numeric or non-positive path reservation id yields 400
 // validation.
 func TestReservationComplete_InvalidReservationID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		pathID string
@@ -1074,6 +1118,7 @@ func TestReservationComplete_InvalidReservationID(t *testing.T) {
 // TestReservationComplete_ActivityNotFinished verifies
 // ErrActivityNotFinished maps to 400 activity_not_finished.
 func TestReservationComplete_ActivityNotFinished(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerComplete(&stubReservationCompleter{
 		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
 			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrActivityNotFinished
@@ -1091,6 +1136,7 @@ func TestReservationComplete_ActivityNotFinished(t *testing.T) {
 // TestReservationComplete_NotFound verifies ErrInvalidReservation
 // maps to 404.
 func TestReservationComplete_NotFound(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerComplete(&stubReservationCompleter{
 		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
 			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrInvalidReservation
@@ -1108,6 +1154,7 @@ func TestReservationComplete_NotFound(t *testing.T) {
 // TestReservationComplete_NotCompletable verifies ErrNotCompletable
 // maps to 409 not_completable.
 func TestReservationComplete_NotCompletable(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerComplete(&stubReservationCompleter{
 		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
 			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrNotCompletable
@@ -1125,6 +1172,7 @@ func TestReservationComplete_NotCompletable(t *testing.T) {
 // TestReservationComplete_InternalError verifies that an unknown
 // error maps to 500 internal.
 func TestReservationComplete_InternalError(t *testing.T) {
+	t.Parallel()
 	h := newReservationHandlerComplete(&stubReservationCompleter{
 		fn: func(context.Context, reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error) {
 			return reservationuc.CompleteReservationOutput{}, errors.New("db connection lost")

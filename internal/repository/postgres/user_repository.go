@@ -29,24 +29,23 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 // Create inserts a new user. The database assigns the id via
-// GENERATED ALWAYS AS IDENTITY; this method does not return it because
-// domain.UserRepository.Create returns only an error (unlike the other
-// aggregate repositories, which return (int, error)). Callers that
-// need the new id must read it back with GetByEmail. A unique
-// violation on the email column is mapped to domain.ErrDuplicateEmail;
-// any other postgres error is wrapped with context.
-func (repo *UserRepository) Create(ctx context.Context, user *domain.User) error {
+// GENERATED ALWAYS AS IDENTITY. A unique violation on the email column
+// is mapped to domain.ErrDuplicateEmail; any other postgres error is
+// wrapped with context.
+func (repo *UserRepository) Create(ctx context.Context, user *domain.User) (int, error) {
 	const query = `
 		INSERT INTO users (name, email, password, role, is_active)
 		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
 	`
-	_, err := runner(ctx, repo.db).ExecContext(ctx, query,
+	var id int
+	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
 		user.Name(), user.Email(), user.Password(), string(user.Role()), user.IsActive(),
-	)
+	).Scan(&id)
 	if err != nil {
-		return mapUserUniqueError(err, "create user")
+		return 0, mapUserUniqueError(err, "create user")
 	}
-	return nil
+	return id, nil
 }
 
 // GetByID fetches a single user by id. Returns domain.ErrNotFound when

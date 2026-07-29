@@ -228,6 +228,7 @@ func (activity *Activity) ApplyPatch(patch ActivityPatch) error {
 type ActivityRepository interface {
 	Create(ctx context.Context, activity *Activity) (int, error)
 	GetByID(ctx context.Context, id int) (*Activity, error)
+	GetByIDForUpdate(ctx context.Context, id int) (*Activity, error)
 	Update(ctx context.Context, activity *Activity) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context, limit, offset int) ([]*Activity, error)

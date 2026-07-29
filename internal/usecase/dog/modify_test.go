@@ -25,6 +25,7 @@ func validPatch() domain.DogPatch {
 }
 
 func TestNewModifyDogInput(t *testing.T) {
+	t.Parallel()
 	t.Run("zero_id", func(t *testing.T) {
 		_, err := NewModifyDogInput(0, validPatch())
 		assert.Error(t, err)
@@ -43,6 +44,7 @@ func TestNewModifyDogInput(t *testing.T) {
 }
 
 func TestModifyDogUseCase_Execute(t *testing.T) {
+	t.Parallel()
 	t.Run("empty_patch_is_noop", func(t *testing.T) {
 		existingDog := newTestDogForModify(t)
 		updateCalled := false
@@ -50,7 +52,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return existingDog, nil },
 			update:  func(ctx context.Context, dog *domain.Dog) error { updateCalled = true; return nil },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		out, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, domain.DogPatch{}))
 		assert.NoError(t, err)
 		assert.Equal(t, 42, out.ID)
@@ -64,7 +66,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return existingDog, nil },
 			update:  func(ctx context.Context, dog *domain.Dog) error { updatedDog = dog; return nil },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		out, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.NoError(t, err)
 		assert.Equal(t, 42, out.ID)
@@ -83,7 +85,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return existingDog, nil },
 			update:  func(ctx context.Context, dog *domain.Dog) error { return nil },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		newName := "Luna"
 		newBreed := "Husky"
 		neutered := true
@@ -104,7 +106,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return existingDog, nil },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		empty := ""
 		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, domain.DogPatch{Name: &empty}))
 		assert.Error(t, err)
@@ -118,7 +120,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return existingDog, nil },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		invalidSex := domain.Sex("OTHER")
 		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, domain.DogPatch{Sex: &invalidSex}))
 		assert.Error(t, err)
@@ -132,7 +134,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return nil, repoErr },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))
@@ -142,7 +144,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return nil, nil },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrNotFound), "expected ErrNotFound, got %T", err)
@@ -154,7 +156,7 @@ func TestModifyDogUseCase_Execute(t *testing.T) {
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) { return newTestDogForModify(t), nil },
 			update:  func(ctx context.Context, dog *domain.Dog) error { return repoErr },
 		}
-		uc := NewModifyDogUseCase(mock)
+		uc := NewModifyDogUseCase(&stubTransactor{}, mock)
 		_, err := uc.Execute(context.Background(), MustNewModifyDogInput(42, validPatch()))
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr))

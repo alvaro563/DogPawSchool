@@ -23,6 +23,7 @@ func newTestDog(t *testing.T, ageInMonths int, sex domain.Sex, weightKg float64,
 }
 
 func TestNewDog(t *testing.T) {
+	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		d, err := domain.NewDog(1, "Buddy", "Labrador", "ES12345", 24, domain.SexMale, 25.0, 1)
 		assert.NoError(t, err)
@@ -67,6 +68,7 @@ func TestNewDog(t *testing.T) {
 }
 
 func TestDog_AgeBracket(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		age      int
@@ -91,6 +93,7 @@ func TestDog_AgeBracket(t *testing.T) {
 }
 
 func TestDog_SizeBracket(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		weight   float64
@@ -113,6 +116,7 @@ func TestDog_SizeBracket(t *testing.T) {
 }
 
 func TestDog_IsIntactMale(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		sex      domain.Sex
@@ -134,6 +138,7 @@ func TestDog_IsIntactMale(t *testing.T) {
 }
 
 func TestDog_AddIncompatibility(t *testing.T) {
+	t.Parallel()
 	incompat, _ := domain.NewIncompatibility(1, "Reactivo a machos", domain.IncompatibilityLevelAbsoluta)
 	incompat2, _ := domain.NewIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia)
 
@@ -172,6 +177,7 @@ func TestDog_AddIncompatibility(t *testing.T) {
 }
 
 func TestDog_RemoveIncompatibility(t *testing.T) {
+	t.Parallel()
 	incompat, _ := domain.NewIncompatibility(1, "Reactivo a machos", domain.IncompatibilityLevelAbsoluta)
 	incompat2, _ := domain.NewIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia)
 
@@ -212,6 +218,7 @@ func TestDog_RemoveIncompatibility(t *testing.T) {
 }
 
 func TestDog_ApplyPatch(t *testing.T) {
+	t.Parallel()
 	t.Run("empty_patch_is_noop", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexMale, 20.0, false)
 		originalName := d.Name()
@@ -290,6 +297,7 @@ func TestDog_ApplyPatch(t *testing.T) {
 }
 
 func TestDog_Activate_Deactivate(t *testing.T) {
+	t.Parallel()
 	t.Run("activate_sets_isactive_true", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
 		d.Deactivate()
@@ -300,6 +308,7 @@ func TestDog_Activate_Deactivate(t *testing.T) {
 }
 
 func TestSex_IsValid(t *testing.T) {
+	t.Parallel()
 	assert.True(t, domain.SexMale.IsValid())
 	assert.True(t, domain.SexFemale.IsValid())
 	assert.False(t, domain.Sex("").IsValid())
@@ -307,6 +316,7 @@ func TestSex_IsValid(t *testing.T) {
 }
 
 func TestDog_SetHeat(t *testing.T) {
+	t.Parallel()
 	t.Run("female_can_enter_heat", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexFemale, 10.0, false)
 		assert.NoError(t, d.SetHeat(true))
@@ -339,6 +349,7 @@ func TestDog_SetHeat(t *testing.T) {
 }
 
 func TestDog_SetNeutered(t *testing.T) {
+	t.Parallel()
 	t.Run("toggle_neutered", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
 		assert.False(t, d.Neutered())
