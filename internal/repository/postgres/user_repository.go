@@ -79,18 +79,18 @@ func (repo *UserRepository) GetByEmail(ctx context.Context, email string) (*doma
 	return user, nil
 }
 
-// Update persists the mutable fields (name, email, is_active) of the
-// user. Returns domain.ErrNotFound if no row matches the id;
+// Update persists the mutable fields (name, email, password, is_active)
+// of the user. Returns domain.ErrNotFound if no row matches the id;
 // domain.ErrDuplicateEmail if the new email is already in use by
 // another user.
 func (repo *UserRepository) Update(ctx context.Context, user *domain.User) error {
 	const query = `
 		UPDATE users
-		SET name = $1, email = $2, is_active = $3
-		WHERE id = $4
+		SET name = $1, email = $2, password = $3, is_active = $4
+		WHERE id = $5
 	`
 	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
-		user.Name(), user.Email(), user.IsActive(), user.ID(),
+		user.Name(), user.Email(), user.Password(), user.IsActive(), user.ID(),
 	)
 	if err != nil {
 		return mapUserUniqueError(err, "update user")

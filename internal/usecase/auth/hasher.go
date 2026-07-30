@@ -10,3 +10,12 @@ package auth
 type PasswordHasher interface {
 	Hash(plain string) (string, error)
 }
+
+// PasswordVerifier checks a plaintext password against a previously
+// stored hash. Separated from PasswordHasher because RegisterWith-
+// InvitationUseCase only needs to hash, not verify; adding a Verify
+// method to PasswordHasher would force every stub and fake to implement
+// it for no reason (Interface Segregation Principle).
+type PasswordVerifier interface {
+	Verify(hash, plain string) error
+}

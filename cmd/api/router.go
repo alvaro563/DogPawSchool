@@ -157,8 +157,19 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	registerAuthUC := authuc.NewRegisterWithInvitationUseCase(
 		transactor, invRepo, userRepo, crypto.NewDefaultBcryptHasher(),
 	)
+	jwtSecret := "change-me-in-production"
+	loginAuthUC := authuc.NewLoginUseCase(
+		userRepo,
+		crypto.NewDefaultBcryptHasher(),
+		crypto.NewJWTTokenGenerator(jwtSecret, 24*time.Hour),
+	)
+	changePasswordUC := authuc.NewChangePasswordUseCase(
+		userRepo,
+		crypto.NewDefaultBcryptHasher(),
+		crypto.NewDefaultBcryptHasher(),
+	)
 	invH := handler.NewInvitationHandler(createInvUC)
-	authH := handler.NewAuthHandler(registerAuthUC)
+	authH := handler.NewAuthHandler(registerAuthUC, loginAuthUC, changePasswordUC)
 
 	v1 := r.Group("/api/v1")
 	{
@@ -169,6 +180,12 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 
 		v1.POST("/invitations", invH.Create)
 		v1.POST("/auth/register", authH.RegisterWithInvitation)
+		v1.POST("/auth/login", authH.Login)
+
+		// Protected routes (require valid JWT)
+		authProtected := v1.Group("/auth")
+		authProtected.Use(handler.AuthRequired(jwtSecret))
+		authProtected.PATCH("/password", authH.ChangePassword)
 
 		v1.POST("/dogs", dogH.Register)
 		v1.GET("/dogs/:id", dogH.GetByID)

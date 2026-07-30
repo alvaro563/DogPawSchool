@@ -49,3 +49,11 @@ func (hasher *BcryptHasher) Compare(hash, plain string) error {
 	}
 	return nil
 }
+
+// Verify implements auth.PasswordVerifier by delegating to Compare.
+// The two methods exist so that BcryptHasher satisfies both the
+// PasswordVerifier interface (Verify) and the existing Compare API
+// used by internal/crypto tests.
+func (hasher *BcryptHasher) Verify(hash, plain string) error {
+	return hasher.Compare(hash, plain)
+}

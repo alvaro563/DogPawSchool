@@ -1025,6 +1025,14 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "incompatibility_in_use"})
 		return
 	}
+	if errors.Is(err, authuc.ErrInvalidCredentials) || errors.Is(err, authuc.ErrUserInactive) {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+		return
+	}
+	if errors.Is(err, authuc.ErrSamePassword) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "same_password"})
+		return
+	}
 	if errors.Is(err, incompatuc.ErrDuplicateName) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "duplicate_name"})
 		return

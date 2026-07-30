@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
-// UserRole determines what a User can do in the system.
 type UserRole string
 
 const (
@@ -15,7 +15,6 @@ const (
 	RoleRegular UserRole = "REGULAR"
 )
 
-// IsValid reports whether the value is a recognized UserRole.
 func (role UserRole) IsValid() bool {
 	switch role {
 	case RoleAdmin, RoleRegular:
@@ -24,14 +23,14 @@ func (role UserRole) IsValid() bool {
 	return false
 }
 
-// User owns dogs and passes.
 type User struct {
-	id       int
-	name     string
-	email    string
-	password string
-	role     UserRole
-	isActive bool
+	id        int
+	name      string
+	email     string
+	password  string
+	role      UserRole
+	isActive  bool
+	updatedAt time.Time
 }
 
 // NewUser creates a User. New users start as is_active=true.
@@ -80,6 +79,24 @@ func (user *User) Activate() { user.isActive = true }
 
 // Deactivate marks the user as inactive (soft delete).
 func (user *User) Deactivate() { user.isActive = false }
+
+// UpdatedAt returns the last time the user was modified. The database
+// sets this automatically via a BEFORE UPDATE trigger; the domain model
+// may also bump it through MarkUpdated.
+func (user *User) UpdatedAt() time.Time { return user.updatedAt }
+
+// SetPassword replaces the stored password hash. Use cases should call
+// MarkUpdated afterward so the domain timestamp stays in sync with the
+// DB trigger.
+func (user *User) SetPassword(password string) {
+	user.password = password
+}
+
+// MarkUpdated sets updatedAt to the provided time. Intended to be called
+// after any mutation that the DB trigger will also reflect.
+func (user *User) MarkUpdated(now time.Time) {
+	user.updatedAt = now
+}
 
 // UserPatch is a partial update for User: only the non-nil fields are
 // applied. Each field has its own validation rules; see ApplyPatch.
