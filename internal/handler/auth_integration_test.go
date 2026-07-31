@@ -224,6 +224,8 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 	completeUC := reservationuc.NewCompleteReservationUseCase(
 		transactor, activityRepo, dogRepo, reservationRepo,
 	)
+	confirmPendingUC := reservationuc.NewConfirmPendingReservationUseCase(transactor, reservationRepo)
+	rejectPendingUC := reservationuc.NewRejectPendingReservationUseCase(transactor, passRepo, reservationRepo)
 	getReservationUC := reservationuc.NewGetReservationUseCase(reservationRepo)
 	listByUserReservationsUC := reservationuc.NewListByUserReservationsUseCase(reservationRepo)
 	listUpcomingByUserReservationsUC := reservationuc.NewListUpcomingByUserUseCase(reservationRepo)
@@ -235,6 +237,7 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
 		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
 		markNoShowUC, completeUC,
+		confirmPendingUC, rejectPendingUC,
 	)
 
 	v1 := r.Group("/api/v1")

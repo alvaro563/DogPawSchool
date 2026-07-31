@@ -99,7 +99,7 @@ func insertBasePass(t *testing.T, db *sql.DB, userID int) *domain.Pass {
 func insertBaseIncompatibility(t *testing.T, db *sql.DB) *domain.Incompatibility {
 	t.Helper()
 	repo := NewIncompatibilityRepository(db)
-	incomp, err := domain.NewIncompatibility(0, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta)
+	incomp, err := domain.NewTriggerIncompatibility(0, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")
 	require.NoError(t, err)
 	id, err := repo.Create(context.Background(), incomp)
 	require.NoError(t, err)

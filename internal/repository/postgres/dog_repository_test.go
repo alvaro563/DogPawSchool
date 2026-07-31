@@ -246,7 +246,7 @@ func TestConcurrency_DogIncompatibilities(t *testing.T) {
 
 	dog := insertBaseDog(t, db, user.ID())
 
-	incompA, err := domain.NewIncompatibility(0, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta)
+	incompA, err := domain.NewTriggerIncompatibility(0, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")
 	require.NoError(t, err)
 	incompRepo := NewIncompatibilityRepository(db)
 	idA, err := incompRepo.Create(ctx, incompA)
@@ -254,7 +254,7 @@ func TestConcurrency_DogIncompatibilities(t *testing.T) {
 	incompA, err = incompRepo.GetIncompatibilityByID(ctx, idA)
 	require.NoError(t, err)
 
-	incompB, err := domain.NewIncompatibility(0, "Miedo a perros grandes", domain.IncompatibilityLevelMedia)
+	incompB, err := domain.NewTriggerIncompatibility(0, "Miedo a perros grandes", domain.IncompatibilityLevelMedia, "OTRO_PERRO")
 	require.NoError(t, err)
 	idB, err := incompRepo.Create(ctx, incompB)
 	require.NoError(t, err)

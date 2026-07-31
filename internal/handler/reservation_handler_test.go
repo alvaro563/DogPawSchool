@@ -49,6 +49,22 @@ func (s *stubReservationCompleter) Execute(ctx context.Context, in reservationuc
 	return s.fn(ctx, in)
 }
 
+type stubReservationConfirmer struct {
+	fn func(ctx context.Context, in reservationuc.ConfirmPendingReservationInput) (reservationuc.ConfirmPendingReservationOutput, error)
+}
+
+func (s *stubReservationConfirmer) Execute(ctx context.Context, in reservationuc.ConfirmPendingReservationInput) (reservationuc.ConfirmPendingReservationOutput, error) {
+	return s.fn(ctx, in)
+}
+
+type stubReservationRejecter struct {
+	fn func(ctx context.Context, in reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error)
+}
+
+func (s *stubReservationRejecter) Execute(ctx context.Context, in reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error) {
+	return s.fn(ctx, in)
+}
+
 func newReservationHandler(
 	reg ReservationRegisterer,
 	cancel ReservationCanceler,
@@ -60,16 +76,18 @@ func newReservationHandler(
 	listByActivity ReservationListerByActivity,
 	noShow ReservationNoShower,
 	complete ReservationCompleter,
+	confirm ReservationConfirmer,
+	reject ReservationRejecter,
 ) *ReservationHandler {
-	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity, noShow, complete)
+	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity, noShow, complete, confirm, reject)
 }
 
 func newReservationHandlerReg(reg ReservationRegisterer) *ReservationHandler {
-	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerCancel(cancel ReservationCanceler) *ReservationHandler {
-	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // newCancelledReservation builds a domain.Reservation in the given
@@ -581,35 +599,35 @@ func (s *stubReservationListerByActivity) Execute(ctx context.Context, in reserv
 }
 
 func newReservationHandlerGet(get ReservationGetter) *ReservationHandler {
-	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByUser(l ReservationListerByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListUpcoming(l ReservationListerUpcomingByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByDog(l ReservationListerByDog) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByPass(l ReservationListerByPass) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByActivity(l ReservationListerByActivity) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil)
 }
 
 func newReservationHandlerNoShow(noShow ReservationNoShower) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, noShow, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, noShow, nil, nil, nil)
 }
 
 func newReservationHandlerComplete(complete ReservationCompleter) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, complete)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, complete, nil, nil)
 }
 
 func sampleViewOwnedBy(userID int) *domain.ReservationView {
@@ -1250,4 +1268,160 @@ func TestReservationComplete_InternalError(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"internal"`)
+}
+
+// TestReservationRegister_PendingStatus exposes the resolved status in
+// the response when a MEDIA/BAJA conflict holds the slot.
+func TestReservationRegister_PendingStatus(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationRegisterer{
+		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+			return reservationuc.RegisterReservationOutput{ID: 99, Status: domain.StatusPendingToConfirm}, nil
+		},
+	}
+	h := newReservationHandlerReg(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	var body registerReservationResponse
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 99, body.ID)
+	assert.Equal(t, string(domain.StatusPendingToConfirm), body.Status)
+}
+
+// TestReservationRegister_IncompatibleDogsConflict verifies an
+// IncompatibleDogsError maps to 409 dog_incompatible.
+func TestReservationRegister_IncompatibleDogsConflict(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationRegisterer{
+		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+			return reservationuc.RegisterReservationOutput{}, &reservationuc.IncompatibleDogsError{
+				Conflicts: []domain.CompatibilityConflict{sampleHandlerConflict()},
+			}
+		},
+	}
+	h := newReservationHandlerReg(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"dog_incompatible"`)
+}
+
+func sampleHandlerConflict() domain.CompatibilityConflict {
+	return domain.CompatibilityConflict{
+		TriggerName:     "Reactivo a machos enteros",
+		TriggerLevel:    domain.IncompatibilityLevelAbsoluta,
+		TriggerDogID:    7,
+		TriggerDogName:  "Rex",
+		TargetTraitCode: "MACHO_ENTERO",
+		TargetTraitName: "Macho entero (no castrado)",
+		TargetDogID:     5,
+		TargetDogName:   "Luna",
+	}
+}
+
+// TestReservationConfirmPending_Success verifies the happy-path admin
+// confirm.
+func TestReservationConfirmPending_Success(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationConfirmer{
+		fn: func(_ context.Context, in reservationuc.ConfirmPendingReservationInput) (reservationuc.ConfirmPendingReservationOutput, error) {
+			assert.Equal(t, 99, in.ReservationID())
+			reservation := newCancelledReservation(99, domain.StatusConfirmed)
+			return reservationuc.ConfirmPendingReservationOutput{Reservation: reservation}, nil
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.ConfirmPending(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"status":"CONFIRMED"`)
+}
+
+// TestReservationConfirmPending_InvalidID verifies a non-numeric id
+// yields 400 validation.
+func TestReservationConfirmPending_InvalidID(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationConfirmer{
+		fn: func(context.Context, reservationuc.ConfirmPendingReservationInput) (reservationuc.ConfirmPendingReservationOutput, error) {
+			t.Fatal("use case should not be called on invalid id")
+			return reservationuc.ConfirmPendingReservationOutput{}, nil
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/abc/confirm", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "abc"}}
+
+	h.ConfirmPending(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"reservation_id"`)
+}
+
+// TestReservationConfirmPending_NotPending verifies ErrNotPending maps
+// to 409 not_pending.
+func TestReservationConfirmPending_NotPending(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationConfirmer{
+		fn: func(context.Context, reservationuc.ConfirmPendingReservationInput) (reservationuc.ConfirmPendingReservationOutput, error) {
+			return reservationuc.ConfirmPendingReservationOutput{}, reservationuc.ErrNotPending
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.ConfirmPending(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_pending"`)
+}
+
+// TestReservationRejectPending_Success verifies the happy-path admin
+// reject returns the CANCELLED_IN_TIME status.
+func TestReservationRejectPending_Success(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationRejecter{
+		fn: func(_ context.Context, in reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error) {
+			assert.Equal(t, 99, in.ReservationID())
+			reservation := newCancelledReservation(99, domain.StatusCancelledInTime)
+			return reservationuc.RejectPendingReservationOutput{Reservation: reservation}, nil
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.RejectPending(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"status":"CANCELLED_IN_TIME"`)
+}
+
+// TestReservationRejectPending_NotFound verifies ErrNotFound maps to
+// 404.
+func TestReservationRejectPending_NotFound(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationRejecter{
+		fn: func(context.Context, reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error) {
+			return reservationuc.RejectPendingReservationOutput{}, reservationuc.ErrNotFound
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.RejectPending(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
 }

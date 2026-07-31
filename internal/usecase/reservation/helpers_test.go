@@ -160,14 +160,22 @@ func (s *stubActivityRepository) ListUpcoming(ctx context.Context, _, _ int) ([]
 }
 
 // stubDogRepository is the local mock for the dog repo. The use
-// case only calls GetByID, so other methods are zero-value fallbacks.
+// case calls GetByID and GetByIDs, so other methods are zero-value
+// fallbacks.
 type stubDogRepository struct {
-	getByID func(ctx context.Context, id int) (*domain.Dog, error)
+	getByID  func(ctx context.Context, id int) (*domain.Dog, error)
+	getByIDs func(ctx context.Context, ids []int) ([]*domain.Dog, error)
 }
 
 func (s *stubDogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, error) {
 	if s.getByID != nil {
 		return s.getByID(ctx, id)
+	}
+	return nil, nil
+}
+func (s *stubDogRepository) GetByIDs(ctx context.Context, ids []int) ([]*domain.Dog, error) {
+	if s.getByIDs != nil {
+		return s.getByIDs(ctx, ids)
 	}
 	return nil, nil
 }

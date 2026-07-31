@@ -89,6 +89,7 @@ type Dog struct {
 	educatorNotes     string
 	passport          string
 	incompatibilities []Incompatibility
+	traits            []Incompatibility
 	userID            int
 	isActive          bool
 }
@@ -185,6 +186,90 @@ func (dog *Dog) Incompatibilities() []Incompatibility {
 	return out
 }
 
+// Traits returns a defensive copy of the dog's traits. Traits are the
+// tags the dog presents (MACHO_ENTERO, ALTA_ENERGIA...); they are the
+// targets that other dogs' triggers may fire on.
+func (dog *Dog) Traits() []Incompatibility {
+	out := make([]Incompatibility, len(dog.traits))
+	copy(out, dog.traits)
+	return out
+}
+
+// hasTraitCode reports whether the dog presents a trait with the given code.
+func (dog *Dog) hasTraitCode(code string) bool {
+	if code == "" {
+		return false
+	}
+	for _, trait := range dog.traits {
+		if trait.Code() == code {
+			return true
+		}
+	}
+	return false
+}
+
+// CompatibilityConflict is one detected trigger->trait match between two
+// dogs: TriggerDog carries a trigger whose target trait code matches one of
+// TargetDog's traits.
+type CompatibilityConflict struct {
+	TriggerName     string
+	TriggerLevel    IncompatibilityLevel
+	TriggerDogID    int
+	TriggerDogName  string
+	TargetTraitCode string
+	TargetTraitName string
+	TargetDogID     int
+	TargetDogName   string
+}
+
+// ConflictsWith returns every trigger->trait collision between the
+// receiver and other, in both directions (the receiver's triggers against
+// the other's traits, and vice versa). Nil and self are no-ops. An empty
+// result means no conflict.
+func (dog *Dog) ConflictsWith(other *Dog) []CompatibilityConflict {
+	if other == nil || other.ID() == dog.ID() {
+		return nil
+	}
+	conflicts := make([]CompatibilityConflict, 0)
+	conflicts = append(conflicts, conflictsFrom(dog, other)...)
+	conflicts = append(conflicts, conflictsFrom(other, dog)...)
+	return conflicts
+}
+
+// conflictsFrom returns the collisions where triggerDog's triggers fire on
+// targetDog's traits. A trigger fires when its target trait code equals one
+// of targetDog's trait codes (see Incompatibility.FiresOn).
+func conflictsFrom(triggerDog, targetDog *Dog) []CompatibilityConflict {
+	targetTraits := make(map[string]Incompatibility, len(targetDog.traits))
+	for _, trait := range targetDog.traits {
+		if trait.Code() != "" {
+			targetTraits[trait.Code()] = trait
+		}
+	}
+	if len(targetTraits) == 0 {
+		return nil
+	}
+
+	conflicts := make([]CompatibilityConflict, 0)
+	for _, trigger := range triggerDog.incompatibilities {
+		if !trigger.FiresOn(targetDog) {
+			continue
+		}
+		target := targetTraits[trigger.TargetTraitCode()]
+		conflicts = append(conflicts, CompatibilityConflict{
+			TriggerName:     trigger.Name(),
+			TriggerLevel:    trigger.Type(),
+			TriggerDogID:    triggerDog.ID(),
+			TriggerDogName:  triggerDog.Name(),
+			TargetTraitCode: target.Code(),
+			TargetTraitName: target.Name(),
+			TargetDogID:     targetDog.ID(),
+			TargetDogName:   targetDog.Name(),
+		})
+	}
+	return conflicts
+}
+
 // AgeBracket derives the age category from ageInMonths.
 func (dog *Dog) AgeBracket() AgeBracket {
 	switch {
@@ -263,6 +348,32 @@ func (dog *Dog) RemoveIncompatibility(id int) (bool, error) {
 		return false, nil
 	}
 	dog.incompatibilities = removeIncompatibility(dog.incompatibilities, id)
+	return true, nil
+}
+
+// AddTrait attaches a trait to the dog. Returns (false, nil) if it is
+// already attached — AddTrait is idempotent on duplicates.
+func (dog *Dog) AddTrait(trait *Incompatibility) (bool, error) {
+	if trait == nil {
+		return false, fmt.Errorf("dog: trait cannot be nil")
+	}
+	if containsIncompatibility(dog.traits, trait.ID()) {
+		return false, nil
+	}
+	dog.traits = append(dog.traits, *trait)
+	return true, nil
+}
+
+// RemoveTrait detaches the trait with the given id. Returns (false, nil)
+// if the id is not attached.
+func (dog *Dog) RemoveTrait(id int) (bool, error) {
+	if id <= 0 {
+		return false, fmt.Errorf("dog: id must be greater than 0")
+	}
+	if !containsIncompatibility(dog.traits, id) {
+		return false, nil
+	}
+	dog.traits = removeIncompatibility(dog.traits, id)
 	return true, nil
 }
 
@@ -359,6 +470,7 @@ type DogRepository interface {
 	Update(ctx context.Context, dog *Dog) error
 	GetByID(ctx context.Context, id int) (*Dog, error)
 	GetByIDForUpdate(ctx context.Context, id int) (*Dog, error)
+	GetByIDs(ctx context.Context, ids []int) ([]*Dog, error)
 	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Dog, error)
 	ListAll(ctx context.Context, activeOnly bool, limit, offset int) ([]*Dog, error)
 	ListByIncompatibility(ctx context.Context, incompatibilityID, limit, offset int) ([]*Dog, error)

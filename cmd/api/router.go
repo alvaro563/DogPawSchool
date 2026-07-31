@@ -100,6 +100,8 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	completeReservationUC := reservationuc.NewCompleteReservationUseCase(
 		transactor, activityRepo, dogRepo, reservationRepo,
 	)
+	confirmPendingReservationUC := reservationuc.NewConfirmPendingReservationUseCase(transactor, reservationRepo)
+	rejectPendingReservationUC := reservationuc.NewRejectPendingReservationUseCase(transactor, passRepo, reservationRepo)
 	getReservationUC := reservationuc.NewGetReservationUseCase(reservationRepo)
 	listByUserReservationsUC := reservationuc.NewListByUserReservationsUseCase(reservationRepo)
 	listUpcomingByUserReservationsUC := reservationuc.NewListUpcomingByUserUseCase(reservationRepo)
@@ -111,6 +113,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
 		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
 		markNoShowReservationUC, completeReservationUC,
+		confirmPendingReservationUC, rejectPendingReservationUC,
 	)
 
 	closeActivityUC := activityuc.NewCloseActivityUseCase(
@@ -249,6 +252,8 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 
 			admin.POST("/users/:user_id/reservations/:id/no-show", reservationH.MarkNoShow)
 			admin.POST("/users/:user_id/reservations/:id/complete", reservationH.CompleteReservation)
+			admin.POST("/users/:user_id/reservations/:id/confirm", reservationH.ConfirmPending)
+			admin.POST("/users/:user_id/reservations/:id/reject", reservationH.RejectPending)
 			admin.GET("/dogs/:id/reservations", reservationH.ListByDog)
 			admin.GET("/passes/:id/reservations", reservationH.ListByPass)
 			admin.GET("/activities/:id/reservations", reservationH.ListByActivity)

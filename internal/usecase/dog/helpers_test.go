@@ -11,6 +11,7 @@ type mockDogRepository struct {
 	update                func(ctx context.Context, dog *domain.Dog) error
 	getByID               func(ctx context.Context, id int) (*domain.Dog, error)
 	getByIDForUpdate      func(ctx context.Context, id int) (*domain.Dog, error)
+	getByIDs              func(ctx context.Context, ids []int) ([]*domain.Dog, error)
 	listByOwner           func(ctx context.Context, userID, limit, offset int) ([]*domain.Dog, error)
 	listAll               func(ctx context.Context, activeOnly bool, limit, offset int) ([]*domain.Dog, error)
 	listByIncompatibility func(ctx context.Context, incompatibilityID, limit, offset int) ([]*domain.Dog, error)
@@ -51,6 +52,13 @@ func (m *mockDogRepository) GetByIDForUpdate(ctx context.Context, id int) (*doma
 	}
 	if m.getByID != nil {
 		return m.getByID(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockDogRepository) GetByIDs(ctx context.Context, ids []int) ([]*domain.Dog, error) {
+	if m.getByIDs != nil {
+		return m.getByIDs(ctx, ids)
 	}
 	return nil, nil
 }

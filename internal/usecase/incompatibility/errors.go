@@ -19,7 +19,9 @@ func IsValidationError(err error) bool {
 }
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrDuplicateName = errors.New("incompatibility name already exists")
-	ErrInUse         = errors.New("incompatibility is in use by at least one dog")
+	ErrNotFound       = errors.New("not found")
+	ErrDuplicateName  = errors.New("incompatibility name already exists")
+	ErrDuplicateCode  = errors.New("incompatibility trait code already exists")
+	ErrInUse          = errors.New("incompatibility is in use by at least one dog")
+	ErrInvalidTarget  = errors.New("trigger target trait does not exist")
 )

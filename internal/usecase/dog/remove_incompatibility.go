@@ -41,6 +41,7 @@ func MustNewRemoveDogIncompatibilityInput(dogID, incompatibilityID int) RemoveDo
 type RemoveDogIncompatibilityOutput struct {
 	ID                int
 	Incompatibilities []domain.Incompatibility
+	Traits            []domain.Incompatibility
 	Removed           bool
 }
 
@@ -69,9 +70,15 @@ func (uc *RemoveDogIncompatibilityUseCase) Execute(ctx context.Context, input Re
 			return ErrNotFound
 		}
 
-		removed, err := dog.RemoveIncompatibility(input.IncompatibilityID())
+		removed, err := dog.RemoveTrait(input.IncompatibilityID())
 		if err != nil {
 			return err
+		}
+		if !removed {
+			removed, err = dog.RemoveIncompatibility(input.IncompatibilityID())
+			if err != nil {
+				return err
+			}
 		}
 		if removed {
 			if err := uc.repo.Update(txCtx, dog); err != nil {
@@ -81,6 +88,7 @@ func (uc *RemoveDogIncompatibilityUseCase) Execute(ctx context.Context, input Re
 		out = RemoveDogIncompatibilityOutput{
 			ID:                dog.ID(),
 			Incompatibilities: dog.Incompatibilities(),
+			Traits:            dog.Traits(),
 			Removed:           removed,
 		}
 		return nil

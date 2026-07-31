@@ -12,8 +12,9 @@ import (
 
 type mockIncompatibilityRepository struct {
 	getIncompatibilityByID func(ctx context.Context, id int) (*domain.Incompatibility, error)
+	getByCode              func(ctx context.Context, code string) (*domain.Incompatibility, error)
 	create                 func(ctx context.Context, incomp *domain.Incompatibility) (int, error)
-	list                   func(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error)
+	list                   func(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error)
 	update                 func(ctx context.Context, incomp *domain.Incompatibility) error
 	delete                 func(ctx context.Context, id int) error
 }
@@ -25,6 +26,13 @@ func (m *mockIncompatibilityRepository) GetIncompatibilityByID(ctx context.Conte
 	return nil, nil
 }
 
+func (m *mockIncompatibilityRepository) GetByCode(ctx context.Context, code string) (*domain.Incompatibility, error) {
+	if m.getByCode != nil {
+		return m.getByCode(ctx, code)
+	}
+	return nil, nil
+}
+
 func (m *mockIncompatibilityRepository) Create(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
 	if m.create != nil {
 		return m.create(ctx, incomp)
@@ -32,9 +40,9 @@ func (m *mockIncompatibilityRepository) Create(ctx context.Context, incomp *doma
 	return 0, nil
 }
 
-func (m *mockIncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
+func (m *mockIncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error) {
 	if m.list != nil {
-		return m.list(ctx, level)
+		return m.list(ctx, level, kind)
 	}
 	return nil, nil
 }

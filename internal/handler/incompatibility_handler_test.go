@@ -91,7 +91,7 @@ func TestIncompatRegister_Success(t *testing.T) {
 		return incompatuc.RegisterIncompatibilityOutput{ID: 5}, nil
 	}}
 	h := newIncompatHandlerReg(stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"Reacciona mal al transportin","level":"MEDIA"}`)
+	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"Reacciona mal al transportin","level":"MEDIA","kind":"TRIGGER","target_trait_code":"MIEDOSO"}`)
 
 	h.Register(c)
 
@@ -126,7 +126,7 @@ func TestIncompatRegister_UseCaseValidation(t *testing.T) {
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, &incompatuc.ValidationError{Field: "level"}
 	}})
-	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"x","level":"MEDIA"}`)
+	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"x","level":"MEDIA","kind":"TRIGGER","target_trait_code":"MIEDOSO"}`)
 	h.Register(c)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
@@ -136,7 +136,7 @@ func TestIncompatRegister_DuplicateName(t *testing.T) {
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, incompatuc.ErrDuplicateName
 	}})
-	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"x","level":"MEDIA"}`)
+	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"x","level":"MEDIA","kind":"TRIGGER","target_trait_code":"MIEDOSO"}`)
 	h.Register(c)
 	assert.Equal(t, http.StatusConflict, w.Code)
 }
@@ -146,7 +146,7 @@ func TestIncompatRegister_InternalError(t *testing.T) {
 	h := newIncompatHandlerReg(&stubIncompatibilityRegisterer{fn: func(context.Context, incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error) {
 		return incompatuc.RegisterIncompatibilityOutput{}, errors.New("db down")
 	}})
-	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"x","level":"MEDIA"}`)
+	c, w := setupCtx(http.MethodPost, "/api/v1/incompatibilities", `{"name":"x","level":"MEDIA","kind":"TRIGGER","target_trait_code":"MIEDOSO"}`)
 	h.Register(c)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

@@ -1724,7 +1724,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all incompatibilities, optionally filtered by level.",
+                "description": "Returns all incompatibilities, optionally filtered by\nlevel and/or kind.",
                 "produces": [
                     "application/json"
                 ],
@@ -1738,6 +1738,12 @@ const docTemplate = `{
                         "description": "Filter by level (ABSOLUTA, MEDIA, BAJA)",
                         "name": "level",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by kind (TRAIT, TRIGGER)",
+                        "name": "kind",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1748,7 +1754,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid level filter",
+                        "description": "Invalid level or kind filter",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -1767,7 +1773,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a new incompatibility category. The name must be unique (case-insensitive).",
+                "description": "Creates a new incompatibility category (a TRAIT with a\nstable code, or a TRIGGER pointing at the code of the\ntrait it reacts to). The name must be unique\n(case-insensitive); trait codes must be unique too.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1803,7 +1809,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "Name already exists",
+                        "description": "Name or trait code already exists",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -1927,7 +1933,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Partially updates an incompatibility (name and/or level). An empty body is a no-op.",
+                "description": "Partially updates an incompatibility (name, level, kind,\ncode and/or target_trait_code). An empty body is a no-op.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1976,7 +1982,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "Name already exists",
+                        "description": "Name or trait code already exists",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -3017,6 +3023,71 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/users/{user_id}/reservations/{id}/confirm": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin-only. Promotes a PENDING_TO_CONFIRM reservation\n(created with only MEDIA/BAJA compatibility conflicts)\nto CONFIRMED. The slot is already held, so no capacity\nre-check is performed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Confirm a pending reservation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reservation confirmed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.confirmPendingReservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Reservation is not pending (not_pending)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/users/{user_id}/reservations/{id}/no-show": {
             "post": {
                 "security": [
@@ -3069,6 +3140,71 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Reservation not in CONFIRMED state (not_cancellable)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/reservations/{id}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin-only. Demotes a PENDING_TO_CONFIRM reservation to\nCANCELLED_IN_TIME (freeing the slot) and refunds the\npass session consumed at booking.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Reject a pending reservation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Owner user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reservation rejected",
+                        "schema": {
+                            "$ref": "#/definitions/handler.confirmPendingReservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Reservation is not pending (not_pending)",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -3183,6 +3319,12 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handler.incompatibilityDTO"
                     }
+                },
+                "traits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.incompatibilityDTO"
+                    }
                 }
             }
         },
@@ -3248,6 +3390,19 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "example": "COMPLETED"
+                }
+            }
+        },
+        "handler.confirmPendingReservationResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 99
+                },
+                "status": {
+                    "type": "string",
+                    "example": "CONFIRMED"
                 }
             }
         },
@@ -3351,6 +3506,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "FEMALE"
                 },
+                "traits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.incompatibilityDTO"
+                    }
+                },
                 "user_id": {
                     "type": "integer",
                     "example": 1
@@ -3381,9 +3542,17 @@ const docTemplate = `{
         "handler.incompatibilityDTO": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "MIEDOSO"
+                },
                 "id": {
                     "type": "integer",
                     "example": 3
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "TRIGGER"
                 },
                 "level": {
                     "type": "string",
@@ -3392,15 +3561,27 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Reactivo a machos enteros"
+                },
+                "target_trait_code": {
+                    "type": "string",
+                    "example": "MACHO_ENTERO"
                 }
             }
         },
         "handler.incompatibilityResponse": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "MIEDOSO"
+                },
                 "id": {
                     "type": "integer",
                     "example": 3
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "TRIGGER"
                 },
                 "level": {
                     "type": "string",
@@ -3409,6 +3590,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Miedo a petardos"
+                },
+                "target_trait_code": {
+                    "type": "string",
+                    "example": "MACHO_ENTERO"
                 }
             }
         },
@@ -3686,6 +3871,14 @@ const docTemplate = `{
         "handler.modifyIncompatibilityRequest": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "MIEDOSO"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "TRAIT"
+                },
                 "level": {
                     "type": "string",
                     "example": "ABSOLUTA"
@@ -3693,6 +3886,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Miedo a petardos y cohetes"
+                },
+                "target_trait_code": {
+                    "type": "string",
+                    "example": "MACHO_ENTERO"
                 }
             }
         },
@@ -3879,6 +4076,14 @@ const docTemplate = `{
         "handler.registerIncompatibilityRequest": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "MIEDOSO"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "TRIGGER"
+                },
                 "level": {
                     "type": "string",
                     "example": "MEDIA"
@@ -3886,6 +4091,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Reacciona mal al transportin"
+                },
+                "target_trait_code": {
+                    "type": "string",
+                    "example": "MACHO_ENTERO"
                 }
             }
         },
@@ -3951,6 +4160,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 99
+                },
+                "status": {
+                    "type": "string",
+                    "example": "CONFIRMED"
                 }
             }
         },
@@ -3997,6 +4210,12 @@ const docTemplate = `{
                 "removed": {
                     "type": "boolean",
                     "example": true
+                },
+                "traits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.incompatibilityDTO"
+                    }
                 }
             }
         },

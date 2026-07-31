@@ -52,10 +52,19 @@ type ReservationCompleter interface {
 	Execute(ctx context.Context, input reservationuc.CompleteReservationInput) (reservationuc.CompleteReservationOutput, error)
 }
 
+type ReservationConfirmer interface {
+	Execute(ctx context.Context, input reservationuc.ConfirmPendingReservationInput) (reservationuc.ConfirmPendingReservationOutput, error)
+}
+
+type ReservationRejecter interface {
+	Execute(ctx context.Context, input reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error)
+}
+
 // ReservationHandler owns the HTTP entry points for reservation
-// use cases. It exposes 10 use cases (Register, Cancel, Get,
+// use cases. It exposes 12 use cases (Register, Cancel, Get,
 // ListByUser, ListUpcomingByUser, ListByDog, ListByPass,
-// ListByActivity, MarkNoShow, CompleteReservation).
+// ListByActivity, MarkNoShow, CompleteReservation, ConfirmPending,
+// RejectPending).
 type ReservationHandler struct {
 	register       ReservationRegisterer
 	cancel         ReservationCanceler
@@ -67,6 +76,8 @@ type ReservationHandler struct {
 	listByActivity ReservationListerByActivity
 	noShow         ReservationNoShower
 	complete       ReservationCompleter
+	confirm        ReservationConfirmer
+	reject         ReservationRejecter
 }
 
 func NewReservationHandler(
@@ -80,6 +91,8 @@ func NewReservationHandler(
 	listByActivity ReservationListerByActivity,
 	noShow ReservationNoShower,
 	complete ReservationCompleter,
+	confirm ReservationConfirmer,
+	reject ReservationRejecter,
 ) *ReservationHandler {
 	return &ReservationHandler{
 		register:       register,
@@ -92,6 +105,8 @@ func NewReservationHandler(
 		listByActivity: listByActivity,
 		noShow:         noShow,
 		complete:       complete,
+		confirm:        confirm,
+		reject:         reject,
 	}
 }
 
@@ -150,7 +165,7 @@ func (h *ReservationHandler) Register(c *gin.Context) {
 		return
 	}
 	c.Header("Location", "/api/v1/reservations/"+strconv.Itoa(output.ID))
-	c.JSON(http.StatusCreated, registerReservationResponse{ID: output.ID})
+	c.JSON(http.StatusCreated, registerReservationResponse{ID: output.ID, Status: string(output.Status)})
 }
 
 // registerReservationRequest is the wire format for creating a
@@ -163,7 +178,94 @@ type registerReservationRequest struct {
 }
 
 type registerReservationResponse struct {
-	ID int `json:"id" example:"99"`
+	ID     int    `json:"id"     example:"99"`
+	Status string `json:"status" example:"CONFIRMED"`
+}
+
+// confirmPendingReservationResponse is the wire format for a
+// successful admin confirm/reject. Same shape as cancelReservationResponse
+// (id + status); the status field will be CONFIRMED after a confirm and
+// CANCELLED_IN_TIME after a reject.
+type confirmPendingReservationResponse struct {
+	ID     int    `json:"id"     example:"99"`
+	Status string `json:"status" example:"CONFIRMED"`
+}
+
+// ConfirmPending godoc
+// @Summary      Confirm a pending reservation
+// @Description  Admin-only. Promotes a PENDING_TO_CONFIRM reservation
+// @Description  (created with only MEDIA/BAJA compatibility conflicts)
+// @Description  to CONFIRMED. The slot is already held, so no capacity
+// @Description  re-check is performed.
+// @Tags         reservations
+// @Produce      json
+// @Param        user_id  path      int                              true   "Owner user ID"
+// @Param        id       path      int                              true   "Reservation ID"
+// @Success      200      {object}  confirmPendingReservationResponse "Reservation confirmed"
+// @Failure      400      {object}  errorResponse                     "Invalid id"
+// @Failure      404      {object}  errorResponse                     "Reservation not found"
+// @Failure      409      {object}  errorResponse                     "Reservation is not pending (not_pending)"
+// @Failure      500      {object}  errorResponse                     "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/users/{user_id}/reservations/{id}/confirm [post]
+func (h *ReservationHandler) ConfirmPending(c *gin.Context) {
+	reservationID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || reservationID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
+		return
+	}
+	in, err := reservationuc.NewConfirmPendingReservationInput(reservationID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.confirm.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, confirmPendingReservationResponse{
+		ID:     output.Reservation.ID(),
+		Status: string(output.Reservation.Status()),
+	})
+}
+
+// RejectPending godoc
+// @Summary      Reject a pending reservation
+// @Description  Admin-only. Demotes a PENDING_TO_CONFIRM reservation to
+// @Description  CANCELLED_IN_TIME (freeing the slot) and refunds the
+// @Description  pass session consumed at booking.
+// @Tags         reservations
+// @Produce      json
+// @Param        user_id  path      int                              true   "Owner user ID"
+// @Param        id       path      int                              true   "Reservation ID"
+// @Success      200      {object}  confirmPendingReservationResponse "Reservation rejected"
+// @Failure      400      {object}  errorResponse                     "Invalid id"
+// @Failure      404      {object}  errorResponse                     "Reservation not found"
+// @Failure      409      {object}  errorResponse                     "Reservation is not pending (not_pending)"
+// @Failure      500      {object}  errorResponse                     "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/users/{user_id}/reservations/{id}/reject [post]
+func (h *ReservationHandler) RejectPending(c *gin.Context) {
+	reservationID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || reservationID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
+		return
+	}
+	in, err := reservationuc.NewRejectPendingReservationInput(reservationID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.reject.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, confirmPendingReservationResponse{
+		ID:     output.Reservation.ID(),
+		Status: string(output.Reservation.Status()),
+	})
 }
 
 // Cancel godoc

@@ -53,14 +53,17 @@ func NewIncompatibilityHandler(
 
 // Register godoc
 // @Summary      Register a new incompatibility
-// @Description  Creates a new incompatibility category. The name must be unique (case-insensitive).
+// @Description  Creates a new incompatibility category (a TRAIT with a
+// @Description  stable code, or a TRIGGER pointing at the code of the
+// @Description  trait it reacts to). The name must be unique
+// @Description  (case-insensitive); trait codes must be unique too.
 // @Tags         incompatibilities
 // @Accept       json
 // @Produce      json
 // @Param        body  body      registerIncompatibilityRequest   true  "Incompatibility to create"
 // @Success      201   {object}  registerIncompatibilityResponse  "Incompatibility created"
 // @Failure      400   {object}  errorResponse                    "Validation error"
-// @Failure      409   {object}  errorResponse                    "Name already exists"
+// @Failure      409   {object}  errorResponse                    "Name or trait code already exists"
 // @Failure      500   {object}  errorResponse                    "Internal server error"
 // @Security     BearerAuth
 // @Router       /api/v1/incompatibilities [post]
@@ -70,7 +73,13 @@ func (h *IncompatibilityHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	in, err := incompatuc.NewRegisterIncompatibilityInput(request.Name, domain.IncompatibilityLevel(request.Level))
+	kind := domain.IncompatibilityKindTrigger
+	if request.Kind != "" {
+		kind = domain.IncompatibilityKind(request.Kind)
+	}
+	in, err := incompatuc.NewRegisterIncompatibilityInput(
+		request.Name, domain.IncompatibilityLevel(request.Level), kind, request.Code, request.TargetTraitCode,
+	)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -85,12 +94,14 @@ func (h *IncompatibilityHandler) Register(c *gin.Context) {
 
 // List godoc
 // @Summary      List incompatibilities
-// @Description  Returns all incompatibilities, optionally filtered by level.
+// @Description  Returns all incompatibilities, optionally filtered by
+// @Description  level and/or kind.
 // @Tags         incompatibilities
 // @Produce      json
 // @Param        level  query  string  false  "Filter by level (ABSOLUTA, MEDIA, BAJA)"
+// @Param        kind   query  string  false  "Filter by kind (TRAIT, TRIGGER)"
 // @Success      200    {object}  listIncompatibilitiesResponse  "List of incompatibilities"
-// @Failure      400    {object}  errorResponse                  "Invalid level filter"
+// @Failure      400    {object}  errorResponse                  "Invalid level or kind filter"
 // @Failure      500    {object}  errorResponse                  "Internal server error"
 // @Security     BearerAuth
 // @Router       /api/v1/incompatibilities [get]
@@ -100,7 +111,12 @@ func (h *IncompatibilityHandler) List(c *gin.Context) {
 		parsedLevel := domain.IncompatibilityLevel(levelString)
 		levelPtr = &parsedLevel
 	}
-	in, err := incompatuc.NewListIncompatibilitiesInput(levelPtr)
+	var kindPtr *domain.IncompatibilityKind
+	if kindString := c.Query("kind"); kindString != "" {
+		parsedKind := domain.IncompatibilityKind(kindString)
+		kindPtr = &parsedKind
+	}
+	in, err := incompatuc.NewListIncompatibilitiesInput(levelPtr, kindPtr)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -150,7 +166,8 @@ func (h *IncompatibilityHandler) GetByID(c *gin.Context) {
 
 // Modify godoc
 // @Summary      Patch an incompatibility
-// @Description  Partially updates an incompatibility (name and/or level). An empty body is a no-op.
+// @Description  Partially updates an incompatibility (name, level, kind,
+// @Description  code and/or target_trait_code). An empty body is a no-op.
 // @Tags         incompatibilities
 // @Accept       json
 // @Produce      json
@@ -159,7 +176,7 @@ func (h *IncompatibilityHandler) GetByID(c *gin.Context) {
 // @Success      200   {object}  incompatibilityResponse        "Updated incompatibility"
 // @Failure      400   {object}  errorResponse                   "Invalid id, body, or validation error"
 // @Failure      404   {object}  errorResponse                   "Incompatibility not found"
-// @Failure      409   {object}  errorResponse                   "Name already exists"
+// @Failure      409   {object}  errorResponse                   "Name or trait code already exists"
 // @Failure      500   {object}  errorResponse                   "Internal server error"
 // @Security     BearerAuth
 // @Router       /api/v1/incompatibilities/{id} [patch]
@@ -174,10 +191,14 @@ func (h *IncompatibilityHandler) Modify(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	patch := domain.IncompatibilityPatch{Name: request.Name}
+	patch := domain.IncompatibilityPatch{Name: request.Name, Code: request.Code, TargetTraitCode: request.TargetTraitCode}
 	if request.Level != nil {
 		levelValue := domain.IncompatibilityLevel(*request.Level)
 		patch.Level = &levelValue
+	}
+	if request.Kind != nil {
+		kindValue := domain.IncompatibilityKind(*request.Kind)
+		patch.Kind = &kindValue
 	}
 	in, err := incompatuc.NewModifyIncompatibilityInput(id, patch)
 	if err != nil {
@@ -225,8 +246,11 @@ func (h *IncompatibilityHandler) Delete(c *gin.Context) {
 }
 
 type registerIncompatibilityRequest struct {
-	Name  string `json:"name" example:"Reacciona mal al transportin"`
-	Level string `json:"level" example:"MEDIA"`
+	Name            string `json:"name" example:"Reacciona mal al transportin"`
+	Level           string `json:"level" example:"MEDIA"`
+	Kind            string `json:"kind,omitempty" example:"TRIGGER"`
+	Code            string `json:"code,omitempty" example:"MIEDOSO"`
+	TargetTraitCode string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }
 
 type registerIncompatibilityResponse struct {
@@ -239,12 +263,20 @@ type listIncompatibilitiesResponse struct {
 }
 
 type modifyIncompatibilityRequest struct {
-	Name  *string `json:"name,omitempty" example:"Miedo a petardos y cohetes"`
-	Level *string `json:"level,omitempty" example:"ABSOLUTA"`
+	Name            *string `json:"name,omitempty" example:"Miedo a petardos y cohetes"`
+	Level           *string `json:"level,omitempty" example:"ABSOLUTA"`
+	Kind            *string `json:"kind,omitempty" example:"TRAIT"`
+	Code            *string `json:"code,omitempty" example:"MIEDOSO"`
+	TargetTraitCode *string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }
 
+// incompatibilityResponse is the wire format for a single
+// incompatibility on the incompatibilities endpoints.
 type incompatibilityResponse struct {
-	ID    int    `json:"id" example:"3"`
-	Name  string `json:"name" example:"Miedo a petardos"`
-	Level string `json:"level" example:"BAJA"`
+	ID              int    `json:"id" example:"3"`
+	Name            string `json:"name" example:"Miedo a petardos"`
+	Level           string `json:"level" example:"BAJA"`
+	Kind            string `json:"kind" example:"TRIGGER"`
+	Code            string `json:"code,omitempty" example:"MIEDOSO"`
+	TargetTraitCode string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }

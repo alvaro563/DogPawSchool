@@ -122,48 +122,14 @@ func (repo *DogRepository) GetByIDForUpdate(ctx context.Context, id int) (*domai
 	return dog, nil
 }
 
-// loadIncompatibilities returns all incompatibilities currently attached to
-// the given dog, in insertion order (oldest first).
-func (repo *DogRepository) loadIncompatibilities(ctx context.Context, dogID int) ([]*domain.Incompatibility, error) {
-	const query = `
-		SELECT i.id, i.name, i.level_type
-		FROM incompatibilities i
-		JOIN dog_incompatibilities di ON di.incompatibility_id = i.id
-		WHERE di.dog_id = $1
-		ORDER BY di.created_at ASC
-	`
-	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, dogID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]*domain.Incompatibility, 0)
-	for rows.Next() {
-		var (
-			incompID     int
-			incompatName string
-			levelType    string
-		)
-		if err := rows.Scan(&incompID, &incompatName, &levelType); err != nil {
-			return nil, err
-		}
-		incompat, err := domain.NewIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType))
-		if err != nil {
-			return nil, fmt.Errorf("reconstruct incompatibility %d: %w", incompID, err)
-		}
-		out = append(out, incompat)
-	}
-	return out, rows.Err()
-}
-
-// loadIncompatibilitiesForDogs fetches incompatibilities for every dog in
-// the slice in a single query (no N+1), then attaches them to each dog via
-// AddIncompatibility. The dogs slice is modified in place.
+// loadIncompatibilitiesForDogs fetches traits and triggers for every dog
+// in the slice in a single query (no N+1), then attaches them to each dog
+// via AddTrait/AddIncompatibility depending on the row kind. The dogs slice
+// is modified in place.
 //
 // Called by every List* method right after the main query, so the response
-// always includes the dog's full incompatibilities. Total round-trips per
-// list call: 2 (one for the dogs, one for the incompats) regardless of
+// always includes the dog's full traits and triggers. Total round-trips per
+// list call: 2 (one for the dogs, one for the associations) regardless of
 // the result size.
 func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dogs []*domain.Dog) error {
 	if len(dogs) == 0 {
@@ -180,7 +146,7 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 		args[i] = dog.ID()
 	}
 	query := `
-		SELECT di.dog_id, i.id, i.name, i.level_type
+		SELECT di.dog_id, i.id, i.name, i.level_type, i.kind, i.code, i.target_trait_code
 		FROM dog_incompatibilities di
 		JOIN incompatibilities i ON i.id = di.incompatibility_id
 		WHERE di.dog_id IN (` + strings.Join(placeholders, ",") + `)
@@ -199,13 +165,10 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 
 	for rows.Next() {
 		var dogID, incompID int
-		var incompatName, levelType string
-		if err := rows.Scan(&dogID, &incompID, &incompatName, &levelType); err != nil {
+		var incompatName, levelType, kind string
+		var code, target sql.NullString
+		if err := rows.Scan(&dogID, &incompID, &incompatName, &levelType, &kind, &code, &target); err != nil {
 			return err
-		}
-		incompat, err := domain.NewIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType))
-		if err != nil {
-			return fmt.Errorf("reconstruct incompatibility %d: %w", incompID, err)
 		}
 		dog, ok := dogByID[dogID]
 		if !ok {
@@ -213,8 +176,25 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 			// If this fires, the DB has a row referencing a missing dog.
 			return fmt.Errorf("incompatibility %d references unknown dog %d", incompID, dogID)
 		}
-		if _, err := dog.AddIncompatibility(incompat); err != nil {
-			return fmt.Errorf("attach incompatibility %d to dog %d: %w", incompID, dogID, err)
+		switch domain.IncompatibilityKind(kind) {
+		case domain.IncompatibilityKindTrait:
+			trait, err := domain.NewTraitIncompatibility(incompID, code.String, incompatName, domain.IncompatibilityLevel(levelType))
+			if err != nil {
+				return fmt.Errorf("reconstruct trait %d: %w", incompID, err)
+			}
+			if _, err := dog.AddTrait(trait); err != nil {
+				return fmt.Errorf("attach trait %d to dog %d: %w", incompID, dogID, err)
+			}
+		case domain.IncompatibilityKindTrigger:
+			trigger, err := domain.NewTriggerIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType), target.String)
+			if err != nil {
+				return fmt.Errorf("reconstruct trigger %d: %w", incompID, err)
+			}
+			if _, err := dog.AddIncompatibility(trigger); err != nil {
+				return fmt.Errorf("attach trigger %d to dog %d: %w", incompID, dogID, err)
+			}
+		default:
+			return fmt.Errorf("incompatibility %d has unknown kind %q", incompID, kind)
 		}
 	}
 	return rows.Err()
@@ -298,8 +278,55 @@ func (repo *DogRepository) Update(ctx context.Context, dog *domain.Dog) error {
 				return fmt.Errorf("insert dog incompatibility %d: %w", incompat.ID(), err)
 			}
 		}
+		for _, trait := range dog.Traits() {
+			if _, err := runner(txCtx, repo.db).ExecContext(txCtx,
+				`INSERT INTO dog_incompatibilities (dog_id, incompatibility_id) VALUES ($1, $2)`,
+				dog.ID(), trait.ID()); err != nil {
+				return fmt.Errorf("insert dog trait %d: %w", trait.ID(), err)
+			}
+		}
 		return nil
 	})
+}
+
+// GetByIDs fetches the dogs with the given ids, ordered by id ascending,
+// with their full traits and triggers loaded. Returns a non-nil empty slice
+// when ids is empty or none match. Used by the reservation register flow to
+// load the compatibility profiles of the dogs already holding a slot.
+func (repo *DogRepository) GetByIDs(ctx context.Context, ids []int) ([]*domain.Dog, error) {
+	if len(ids) == 0 {
+		return []*domain.Dog{}, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	query := dogSelectClause + `
+		WHERE id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY id ASC`
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query dogs by ids: %w", err)
+	}
+	defer rows.Close()
+
+	dogs := make([]*domain.Dog, 0, len(ids))
+	for rows.Next() {
+		dog, err := scanDog(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog: %w", err)
+		}
+		dogs = append(dogs, dog)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	if err := repo.loadIncompatibilitiesForDogs(ctx, dogs); err != nil {
+		return nil, fmt.Errorf("load incompatibilities for dogs by ids: %w", err)
+	}
+	return dogs, nil
 }
 
 func (repo *DogRepository) ListAll(ctx context.Context, activeOnly bool, limit, offset int) ([]*domain.Dog, error) {

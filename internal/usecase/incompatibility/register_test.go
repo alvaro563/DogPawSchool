@@ -10,52 +10,113 @@ import (
 	"dogpaw/internal/domain"
 )
 
-func validRegisterInput() RegisterIncompatibilityInput {
-	return MustNewRegisterIncompatibilityInput("Reacciona mal al transportin", domain.IncompatibilityLevelMedia)
+func validTriggerInput() RegisterIncompatibilityInput {
+	return MustNewRegisterIncompatibilityInput("Reacciona mal al transportin", domain.IncompatibilityLevelMedia,
+		domain.IncompatibilityKindTrigger, "", "MIEDOSO")
+}
+
+func validTraitInput() RegisterIncompatibilityInput {
+	return MustNewRegisterIncompatibilityInput("Miedoso", domain.IncompatibilityLevelBaja,
+		domain.IncompatibilityKindTrait, "MIEDOSO", "")
 }
 
 func TestNewRegisterIncompatibilityInput(t *testing.T) {
 	t.Parallel()
 	t.Run("empty_name", func(t *testing.T) {
-		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia)
-		assert.Error(t, err)
-		var verr *ValidationError
-		assert.True(t, errors.As(err, &verr))
-		assert.Equal(t, "name", verr.Field)
+		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia,
+			domain.IncompatibilityKindTrigger, "", "MIEDOSO")
+		assertValidationError(t, err, "name")
 	})
 
 	t.Run("invalid_level", func(t *testing.T) {
-		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevel("OTHER"))
-		assert.Error(t, err)
-		var verr *ValidationError
-		assert.True(t, errors.As(err, &verr))
-		assert.Equal(t, "level", verr.Field)
+		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevel("OTHER"),
+			domain.IncompatibilityKindTrigger, "", "MIEDOSO")
+		assertValidationError(t, err, "level")
+	})
+
+	t.Run("invalid_kind", func(t *testing.T) {
+		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevelMedia,
+			domain.IncompatibilityKind("OTHER"), "", "MIEDOSO")
+		assertValidationError(t, err, "kind")
+	})
+
+	t.Run("trait_without_code", func(t *testing.T) {
+		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevelMedia,
+			domain.IncompatibilityKindTrait, "", "")
+		assertValidationError(t, err, "code")
+	})
+
+	t.Run("trigger_without_target", func(t *testing.T) {
+		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevelMedia,
+			domain.IncompatibilityKindTrigger, "", "")
+		assertValidationError(t, err, "target_trait_code")
 	})
 }
 
 func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
 	t.Parallel()
-	t.Run("factory_blocks_invalid_before_use_case_runs", func(t *testing.T) {
-		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia)
-		assert.Error(t, err)
-	})
 
-	t.Run("happy_path", func(t *testing.T) {
+	t.Run("happy_path_trigger", func(t *testing.T) {
 		var captured *domain.Incompatibility
 		mock := &mockIncompatibilityRepository{
+			getByCode: func(ctx context.Context, code string) (*domain.Incompatibility, error) {
+				assert.Equal(t, "MIEDOSO", code)
+				return mustNewTrait(9, "MIEDOSO", "Miedoso", domain.IncompatibilityLevelBaja), nil
+			},
 			create: func(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
 				captured = incomp
 				return 5, nil
 			},
 		}
 		uc := NewRegisterIncompatibilityUseCase(mock)
-		out, err := uc.Execute(context.Background(), validRegisterInput())
+		out, err := uc.Execute(context.Background(), validTriggerInput())
 		assert.NoError(t, err)
 		assert.Equal(t, 5, out.ID)
 		assert.NotNil(t, captured)
 		assert.Equal(t, 0, captured.ID(), "id must be 0 (will be set by repo)")
 		assert.Equal(t, "Reacciona mal al transportin", captured.Name())
 		assert.Equal(t, domain.IncompatibilityLevelMedia, captured.Type())
+		assert.True(t, captured.IsTrigger())
+		assert.Equal(t, "MIEDOSO", captured.TargetTraitCode())
+	})
+
+	t.Run("happy_path_trait", func(t *testing.T) {
+		var captured *domain.Incompatibility
+		mock := &mockIncompatibilityRepository{
+			create: func(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
+				captured = incomp
+				return 6, nil
+			},
+		}
+		uc := NewRegisterIncompatibilityUseCase(mock)
+		out, err := uc.Execute(context.Background(), validTraitInput())
+		assert.NoError(t, err)
+		assert.Equal(t, 6, out.ID)
+		assert.NotNil(t, captured)
+		assert.True(t, captured.IsTrait())
+		assert.Equal(t, "MIEDOSO", captured.Code())
+	})
+
+	t.Run("trigger_target_does_not_exist", func(t *testing.T) {
+		mock := &mockIncompatibilityRepository{
+			getByCode: func(ctx context.Context, code string) (*domain.Incompatibility, error) {
+				return nil, domain.ErrNotFound
+			},
+		}
+		uc := NewRegisterIncompatibilityUseCase(mock)
+		_, err := uc.Execute(context.Background(), validTriggerInput())
+		assertValidationError(t, err, "target_trait_code")
+	})
+
+	t.Run("trigger_target_is_not_a_trait", func(t *testing.T) {
+		mock := &mockIncompatibilityRepository{
+			getByCode: func(ctx context.Context, code string) (*domain.Incompatibility, error) {
+				return mustNewTrigger(2, "Otro trigger", domain.IncompatibilityLevelMedia, "OTRO"), nil
+			},
+		}
+		uc := NewRegisterIncompatibilityUseCase(mock)
+		_, err := uc.Execute(context.Background(), validTriggerInput())
+		assertValidationError(t, err, "target_trait_code")
 	})
 
 	t.Run("duplicate_name", func(t *testing.T) {
@@ -65,9 +126,21 @@ func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewRegisterIncompatibilityUseCase(mock)
-		_, err := uc.Execute(context.Background(), validRegisterInput())
+		_, err := uc.Execute(context.Background(), validTraitInput())
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrDuplicateName))
+	})
+
+	t.Run("duplicate_code", func(t *testing.T) {
+		mock := &mockIncompatibilityRepository{
+			create: func(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
+				return 0, domain.ErrDuplicateIncompatibilityCode
+			},
+		}
+		uc := NewRegisterIncompatibilityUseCase(mock)
+		_, err := uc.Execute(context.Background(), validTraitInput())
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrDuplicateCode))
 	})
 
 	t.Run("repo_error_propagated", func(t *testing.T) {
@@ -78,7 +151,7 @@ func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
 			},
 		}
 		uc := NewRegisterIncompatibilityUseCase(mock)
-		_, err := uc.Execute(context.Background(), validRegisterInput())
+		_, err := uc.Execute(context.Background(), validTraitInput())
 		assert.True(t, errors.Is(err, repoErr))
 	})
 }

@@ -15,22 +15,30 @@ import (
 //	  │     └─ Forgive()              → StatusForgiven
 //	  ├─ Complete()                   → StatusCompleted
 //	  └─ MarkNoShow()                  → StatusNoShow
+//
+// A reservation created with only MEDIA/BAJA conflicts is held in
+// StatusPendingToConfirm (the slot is kept) until an admin decides:
+//
+//	StatusPendingToConfirm
+//	  ├─ ConfirmPending() → StatusConfirmed
+//	  └─ RejectPending()  → StatusCancelledInTime
 type ReservationStatus string
 
 const (
-	StatusConfirmed       ReservationStatus = "CONFIRMED"
-	StatusCompleted       ReservationStatus = "COMPLETED"
-	StatusCancelledInTime ReservationStatus = "CANCELLED_IN_TIME"
-	StatusCancelledLate   ReservationStatus = "CANCELLED_LATE"
-	StatusForgiven        ReservationStatus = "FORGIVEN"
-	StatusNoShow          ReservationStatus = "NO_SHOW"
+	StatusConfirmed        ReservationStatus = "CONFIRMED"
+	StatusCompleted        ReservationStatus = "COMPLETED"
+	StatusCancelledInTime  ReservationStatus = "CANCELLED_IN_TIME"
+	StatusCancelledLate    ReservationStatus = "CANCELLED_LATE"
+	StatusForgiven         ReservationStatus = "FORGIVEN"
+	StatusNoShow           ReservationStatus = "NO_SHOW"
+	StatusPendingToConfirm ReservationStatus = "PENDING_TO_CONFIRM"
 )
 
 // IsValid reports whether the value is a recognized ReservationStatus.
 func (status ReservationStatus) IsValid() bool {
 	switch status {
 	case StatusConfirmed, StatusCompleted, StatusCancelledInTime,
-		StatusCancelledLate, StatusForgiven, StatusNoShow:
+		StatusCancelledLate, StatusForgiven, StatusNoShow, StatusPendingToConfirm:
 		return true
 	}
 	return false
@@ -143,6 +151,39 @@ func (reservation *Reservation) Forgive() error {
 
 // IsConfirmed reports whether the reservation is still active.
 func (reservation *Reservation) IsConfirmed() bool { return reservation.status == StatusConfirmed }
+
+// IsPending reports whether the reservation is awaiting an admin decision.
+func (reservation *Reservation) IsPending() bool {
+	return reservation.status == StatusPendingToConfirm
+}
+
+// HoldsSlot reports whether the reservation currently occupies a slot in
+// the activity: confirmed bookings and pending bookings both hold the slot
+// until the admin decides. Capacity is measured over HoldsSlot.
+func (reservation *Reservation) HoldsSlot() bool {
+	return reservation.IsConfirmed() || reservation.IsPending()
+}
+
+// ConfirmPending promotes a PENDING_TO_CONFIRM reservation to
+// StatusConfirmed. Returns an error if the reservation is not pending.
+func (reservation *Reservation) ConfirmPending() error {
+	if reservation.status != StatusPendingToConfirm {
+		return fmt.Errorf("reservation: cannot confirm, current status is %s", reservation.status)
+	}
+	reservation.status = StatusConfirmed
+	return nil
+}
+
+// RejectPending demotes a PENDING_TO_CONFIRM reservation to
+// StatusCancelledInTime, freeing the slot and making the consumed pass
+// session refundable. Returns an error if the reservation is not pending.
+func (reservation *Reservation) RejectPending() error {
+	if reservation.status != StatusPendingToConfirm {
+		return fmt.Errorf("reservation: cannot reject, current status is %s", reservation.status)
+	}
+	reservation.status = StatusCancelledInTime
+	return nil
+}
 
 // IsCancelled reports whether the reservation has been cancelled (in
 // time, late, or forgiven).

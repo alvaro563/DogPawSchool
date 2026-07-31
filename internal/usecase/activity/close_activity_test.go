@@ -106,6 +106,7 @@ func (s *stubDogRepoForClose) GetByIDForUpdate(ctx context.Context, id int) (*do
 	}
 	return nil, nil
 }
+func (s *stubDogRepoForClose) GetByIDs(_ context.Context, _ []int) ([]*domain.Dog, error) { return nil, nil }
 func (s *stubDogRepoForClose) Update(_ context.Context, _ *domain.Dog) error { return nil }
 func (s *stubDogRepoForClose) Delete(_ context.Context, _ int) error         { return nil }
 func (s *stubDogRepoForClose) ListByOwner(_ context.Context, _, _, _ int) ([]*domain.Dog, error) {

@@ -36,11 +36,13 @@ func MustNewAddDogIncompatibilityInput(dogID, incompatibilityID int) AddDogIncom
 }
 
 // AddDogIncompatibilityOutput reports the post-mutation state of the
-// dog (id, full incompatibility list) and whether the new link was
-// freshly added (false means the dog already had it: idempotent).
+// dog (id, full traits and incompatibility lists) and whether the new
+// link was freshly added (false means the dog already had it:
+// idempotent).
 type AddDogIncompatibilityOutput struct {
 	ID                int
 	Incompatibilities []domain.Incompatibility
+	Traits            []domain.Incompatibility
 	Added             bool
 }
 
@@ -82,7 +84,12 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, input AddDo
 			return ErrNotFound
 		}
 
-		added, err := dog.AddIncompatibility(incompat)
+		var added bool
+		if incompat.IsTrait() {
+			added, err = dog.AddTrait(incompat)
+		} else {
+			added, err = dog.AddIncompatibility(incompat)
+		}
 		if err != nil {
 			return err
 		}
@@ -94,6 +101,7 @@ func (uc *AddDogIncompatibilityUseCase) Execute(ctx context.Context, input AddDo
 		out = AddDogIncompatibilityOutput{
 			ID:                dog.ID(),
 			Incompatibilities: dog.Incompatibilities(),
+			Traits:            dog.Traits(),
 			Added:             added,
 		}
 		return nil

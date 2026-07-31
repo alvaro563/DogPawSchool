@@ -62,6 +62,11 @@ func (uc *ModifyIncompatibilityUseCase) Execute(ctx context.Context, input Modif
 	}
 
 	patch := input.Patch()
+	if patch.TargetTraitCode != nil && incompat.IsTrigger() {
+		if err := validateTriggerTarget(ctx, uc.repo, *patch.TargetTraitCode); err != nil {
+			return ModifyIncompatibilityOutput{}, err
+		}
+	}
 	if err := incompat.ApplyPatch(patch); err != nil {
 		var validationErr *domain.IncompatibilityValidationError
 		if errors.As(err, &validationErr) {
@@ -78,11 +83,15 @@ func (uc *ModifyIncompatibilityUseCase) Execute(ctx context.Context, input Modif
 		if errors.Is(err, domain.ErrDuplicateIncompatibilityName) {
 			return ModifyIncompatibilityOutput{}, ErrDuplicateName
 		}
+		if errors.Is(err, domain.ErrDuplicateIncompatibilityCode) {
+			return ModifyIncompatibilityOutput{}, ErrDuplicateCode
+		}
 		return ModifyIncompatibilityOutput{}, fmt.Errorf("update incompatibility %d: %w", input.ID(), err)
 	}
 	return ModifyIncompatibilityOutput{Incompatibility: incompat}, nil
 }
 
 func isEmptyIncompatibilityPatch(patch domain.IncompatibilityPatch) bool {
-	return patch.Name == nil && patch.Level == nil
+	return patch.Name == nil && patch.Level == nil && patch.Kind == nil &&
+		patch.Code == nil && patch.TargetTraitCode == nil
 }

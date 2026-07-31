@@ -6,6 +6,8 @@ package reservation
 import (
 	"errors"
 	"fmt"
+
+	"dogpaw/internal/domain"
 )
 
 // ValidationError is returned by use cases when a required field is
@@ -125,3 +127,22 @@ var ErrActivityNotFinished = errors.New("activity has not finished yet")
 // cancelled, completed, no-show, or forgiven). Maps to 409
 // not_completable.
 var ErrNotCompletable = errors.New("reservation is not in a state that allows completion")
+
+// ErrNotPending is returned by ConfirmPendingReservation and
+// RejectPendingReservation when the reservation is not in
+// StatusPendingToConfirm. Maps to 409 not_pending.
+var ErrNotPending = errors.New("reservation is not pending to confirm")
+
+// IncompatibleDogsError is returned by RegisterReservationUseCase when
+// the candidate dog and one or more dogs already holding a slot in the
+// activity present a trigger->trait compatibility collision. It carries
+// every detected conflict so the handler can surface them. Maps to 409
+// dog_incompatible. The severity resolution (block vs hold-pending) is
+// decided inside the register flow, not here.
+type IncompatibleDogsError struct {
+	Conflicts []domain.CompatibilityConflict
+}
+
+func (e *IncompatibleDogsError) Error() string {
+	return fmt.Sprintf("incompatible dogs: %d conflict(s)", len(e.Conflicts))
+}

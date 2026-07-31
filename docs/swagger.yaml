@@ -71,6 +71,10 @@ definitions:
         items:
           $ref: '#/definitions/handler.incompatibilityDTO'
         type: array
+      traits:
+        items:
+          $ref: '#/definitions/handler.incompatibilityDTO'
+        type: array
     type: object
   handler.cancelReservationResponse:
     properties:
@@ -114,6 +118,15 @@ definitions:
         type: integer
       status:
         example: COMPLETED
+        type: string
+    type: object
+  handler.confirmPendingReservationResponse:
+    properties:
+      id:
+        example: 99
+        type: integer
+      status:
+        example: CONFIRMED
         type: string
     type: object
   handler.createInvitationRequest:
@@ -187,6 +200,10 @@ definitions:
       sex:
         example: FEMALE
         type: string
+      traits:
+        items:
+          $ref: '#/definitions/handler.incompatibilityDTO'
+        type: array
       user_id:
         example: 1
         type: integer
@@ -208,26 +225,44 @@ definitions:
     type: object
   handler.incompatibilityDTO:
     properties:
+      code:
+        example: MIEDOSO
+        type: string
       id:
         example: 3
         type: integer
+      kind:
+        example: TRIGGER
+        type: string
       level:
         example: ABSOLUTA
         type: string
       name:
         example: Reactivo a machos enteros
         type: string
+      target_trait_code:
+        example: MACHO_ENTERO
+        type: string
     type: object
   handler.incompatibilityResponse:
     properties:
+      code:
+        example: MIEDOSO
+        type: string
       id:
         example: 3
         type: integer
+      kind:
+        example: TRIGGER
+        type: string
       level:
         example: BAJA
         type: string
       name:
         example: Miedo a petardos
+        type: string
+      target_trait_code:
+        example: MACHO_ENTERO
         type: string
     type: object
   handler.listActivitiesResponse:
@@ -420,11 +455,20 @@ definitions:
     type: object
   handler.modifyIncompatibilityRequest:
     properties:
+      code:
+        example: MIEDOSO
+        type: string
+      kind:
+        example: TRAIT
+        type: string
       level:
         example: ABSOLUTA
         type: string
       name:
         example: Miedo a petardos y cohetes
+        type: string
+      target_trait_code:
+        example: MACHO_ENTERO
         type: string
     type: object
   handler.modifyPassRequest:
@@ -559,11 +603,20 @@ definitions:
     type: object
   handler.registerIncompatibilityRequest:
     properties:
+      code:
+        example: MIEDOSO
+        type: string
+      kind:
+        example: TRIGGER
+        type: string
       level:
         example: MEDIA
         type: string
       name:
         example: Reacciona mal al transportin
+        type: string
+      target_trait_code:
+        example: MACHO_ENTERO
         type: string
     type: object
   handler.registerIncompatibilityResponse:
@@ -610,6 +663,9 @@ definitions:
       id:
         example: 99
         type: integer
+      status:
+        example: CONFIRMED
+        type: string
     type: object
   handler.registerWithInvitationRequest:
     properties:
@@ -641,6 +697,10 @@ definitions:
       removed:
         example: true
         type: boolean
+      traits:
+        items:
+          $ref: '#/definitions/handler.incompatibilityDTO'
+        type: array
     type: object
   handler.reservationViewDTO:
     properties:
@@ -1910,11 +1970,17 @@ paths:
       - dogs
   /api/v1/incompatibilities:
     get:
-      description: Returns all incompatibilities, optionally filtered by level.
+      description: |-
+        Returns all incompatibilities, optionally filtered by
+        level and/or kind.
       parameters:
       - description: Filter by level (ABSOLUTA, MEDIA, BAJA)
         in: query
         name: level
+        type: string
+      - description: Filter by kind (TRAIT, TRIGGER)
+        in: query
+        name: kind
         type: string
       produces:
       - application/json
@@ -1924,7 +1990,7 @@ paths:
           schema:
             $ref: '#/definitions/handler.listIncompatibilitiesResponse'
         "400":
-          description: Invalid level filter
+          description: Invalid level or kind filter
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "500":
@@ -1939,8 +2005,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a new incompatibility category. The name must be unique
-        (case-insensitive).
+      description: |-
+        Creates a new incompatibility category (a TRAIT with a
+        stable code, or a TRIGGER pointing at the code of the
+        trait it reacts to). The name must be unique
+        (case-insensitive); trait codes must be unique too.
       parameters:
       - description: Incompatibility to create
         in: body
@@ -1960,7 +2029,7 @@ paths:
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "409":
-          description: Name already exists
+          description: Name or trait code already exists
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "500":
@@ -2043,8 +2112,9 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Partially updates an incompatibility (name and/or level). An empty
-        body is a no-op.
+      description: |-
+        Partially updates an incompatibility (name, level, kind,
+        code and/or target_trait_code). An empty body is a no-op.
       parameters:
       - description: Incompatibility ID
         in: path
@@ -2073,7 +2143,7 @@ paths:
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "409":
-          description: Name already exists
+          description: Name or trait code already exists
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "500":
@@ -2747,6 +2817,52 @@ paths:
       summary: Mark a reservation as completed
       tags:
       - reservations
+  /api/v1/users/{user_id}/reservations/{id}/confirm:
+    post:
+      description: |-
+        Admin-only. Promotes a PENDING_TO_CONFIRM reservation
+        (created with only MEDIA/BAJA compatibility conflicts)
+        to CONFIRMED. The slot is already held, so no capacity
+        re-check is performed.
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reservation confirmed
+          schema:
+            $ref: '#/definitions/handler.confirmPendingReservationResponse'
+        "400":
+          description: Invalid id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Reservation not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Reservation is not pending (not_pending)
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Confirm a pending reservation
+      tags:
+      - reservations
   /api/v1/users/{user_id}/reservations/{id}/no-show:
     post:
       description: |-
@@ -2795,6 +2911,51 @@ paths:
       security:
       - BearerAuth: []
       summary: Mark a reservation as no-show
+      tags:
+      - reservations
+  /api/v1/users/{user_id}/reservations/{id}/reject:
+    post:
+      description: |-
+        Admin-only. Demotes a PENDING_TO_CONFIRM reservation to
+        CANCELLED_IN_TIME (freeing the slot) and refunds the
+        pass session consumed at booking.
+      parameters:
+      - description: Owner user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reservation rejected
+          schema:
+            $ref: '#/definitions/handler.confirmPendingReservationResponse'
+        "400":
+          description: Invalid id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Reservation not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Reservation is not pending (not_pending)
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reject a pending reservation
       tags:
       - reservations
   /api/v1/users/{user_id}/reservations/upcoming:

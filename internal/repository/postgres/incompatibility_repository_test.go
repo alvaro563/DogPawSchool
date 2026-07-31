@@ -16,7 +16,7 @@ func TestIncompatibilityRepository_RoundTrip(t *testing.T) {
 
 	repo := NewIncompatibilityRepository(db)
 
-	incomp, err := domain.NewIncompatibility(0, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta)
+	incomp, err := domain.NewTriggerIncompatibility(0, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")
 	require.NoError(t, err)
 
 	id, err := repo.Create(context.Background(), incomp)
@@ -29,12 +29,12 @@ func TestIncompatibilityRepository_RoundTrip(t *testing.T) {
 	assert.Equal(t, "Reactivo a machos enteros", got.Name())
 	assert.Equal(t, domain.IncompatibilityLevelAbsoluta, got.Type())
 
-	incomp2, err := domain.NewIncompatibility(0, "Miedo a perros grandes", domain.IncompatibilityLevelMedia)
+	incomp2, err := domain.NewTriggerIncompatibility(0, "Miedo a perros grandes", domain.IncompatibilityLevelMedia, "OTRO_PERRO")
 	require.NoError(t, err)
 	_, err = repo.Create(context.Background(), incomp2)
 	require.NoError(t, err)
 
-	list, err := repo.List(context.Background(), nil)
+	list, err := repo.List(context.Background(), nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, list, 2)
 }
@@ -46,7 +46,7 @@ func TestIncompatibilityRepository_Update(t *testing.T) {
 	repo := NewIncompatibilityRepository(db)
 	incomp := insertBaseIncompatibility(t, db)
 
-	updated, err := domain.NewIncompatibility(incomp.ID(), "Descripción actualizada", domain.IncompatibilityLevelMedia)
+	updated, err := domain.NewTriggerIncompatibility(incomp.ID(), "Descripción actualizada", domain.IncompatibilityLevelMedia, "MACHO_ENTERO")
 	require.NoError(t, err)
 
 	err = repo.Update(context.Background(), updated)
@@ -80,7 +80,7 @@ func TestIncompatibilityRepository_NotFound(t *testing.T) {
 	_, err := repo.GetIncompatibilityByID(context.Background(), 9999)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 
-	nonexistent, err := domain.NewIncompatibility(9999, "Nonexistent", domain.IncompatibilityLevelBaja)
+	nonexistent, err := domain.NewTriggerIncompatibility(9999, "Nonexistent", domain.IncompatibilityLevelBaja, "MACHO_ENTERO")
 	require.NoError(t, err)
 	err = repo.Update(context.Background(), nonexistent)
 	assert.ErrorIs(t, err, domain.ErrNotFound)

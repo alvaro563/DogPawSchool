@@ -430,6 +430,7 @@ func (h *DogHandler) AddIncompatibility(c *gin.Context) {
 	c.JSON(status, addIncompatibilityResponse{
 		DogID:             output.ID,
 		Added:             output.Added,
+		Traits:            toIncompatibilityDTOs(output.Traits),
 		Incompatibilities: toIncompatibilityDTOs(output.Incompatibilities),
 	})
 }
@@ -481,6 +482,7 @@ func (h *DogHandler) RemoveIncompatibility(c *gin.Context) {
 	c.JSON(http.StatusOK, removeIncompatibilityResponse{
 		DogID:             output.ID,
 		Removed:           output.Removed,
+		Traits:            toIncompatibilityDTOs(output.Traits),
 		Incompatibilities: toIncompatibilityDTOs(output.Incompatibilities),
 	})
 }
@@ -1009,6 +1011,18 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "not_completable"})
 		return
 	}
+	if errors.Is(err, reservationuc.ErrNotPending) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "not_pending"})
+		return
+	}
+	var incompatibleDogsErr *reservationuc.IncompatibleDogsError
+	if errors.As(err, &incompatibleDogsErr) {
+		c.JSON(http.StatusConflict, errorResponse{
+			Error:   "dog_incompatible",
+			Details: incompatibleDogsErr.Error(),
+		})
+		return
+	}
 	if errors.Is(err, reservationuc.ErrInvalidPass) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_pass_id"})
 		return
@@ -1063,6 +1077,18 @@ func writeError(c *gin.Context, err error) {
 	}
 	if errors.Is(err, incompatuc.ErrDuplicateName) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "duplicate_name"})
+		return
+	}
+	if errors.Is(err, incompatuc.ErrDuplicateCode) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "duplicate_code"})
+		return
+	}
+	if errors.Is(err, incompatuc.ErrInUse) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "incompatibility_in_use"})
+		return
+	}
+	if errors.Is(err, incompatuc.ErrInvalidTarget) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_target"})
 		return
 	}
 	if errors.Is(err, doguc.ErrInvalidHeatForSex) {
@@ -1131,6 +1157,7 @@ type dogDTO struct {
 	Passport          string               `json:"passport" example:"ES-12345"`
 	UserID            int                  `json:"user_id" example:"1"`
 	IsActive          bool                 `json:"is_active" example:"true"`
+	Traits            []incompatibilityDTO `json:"traits"`
 	Incompatibilities []incompatibilityDTO `json:"incompatibilities"`
 }
 
@@ -1160,12 +1187,14 @@ type addIncompatibilityRequest struct {
 type addIncompatibilityResponse struct {
 	DogID             int                  `json:"dog_id" example:"42"`
 	Added             bool                 `json:"added" example:"true"`
+	Traits            []incompatibilityDTO `json:"traits"`
 	Incompatibilities []incompatibilityDTO `json:"incompatibilities"`
 }
 
 type removeIncompatibilityResponse struct {
 	DogID             int                  `json:"dog_id" example:"42"`
 	Removed           bool                 `json:"removed" example:"true"`
+	Traits            []incompatibilityDTO `json:"traits"`
 	Incompatibilities []incompatibilityDTO `json:"incompatibilities"`
 }
 
@@ -1190,9 +1219,12 @@ type setHeatResponse struct {
 }
 
 type incompatibilityDTO struct {
-	ID    int    `json:"id" example:"3"`
-	Name  string `json:"name" example:"Reactivo a machos enteros"`
-	Level string `json:"level" example:"ABSOLUTA"`
+	ID              int    `json:"id" example:"3"`
+	Name            string `json:"name" example:"Reactivo a machos enteros"`
+	Level           string `json:"level" example:"ABSOLUTA"`
+	Kind            string `json:"kind" example:"TRIGGER"`
+	Code            string `json:"code,omitempty" example:"MIEDOSO"`
+	TargetTraitCode string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }
 
 type errorResponse struct {
@@ -1202,8 +1234,8 @@ type errorResponse struct {
 }
 
 // toDogDTO converts a domain.Dog into the HTTP wire-format dogDTO. The
-// incompatibilities slice is always emitted (never null) so clients can
-// iterate unconditionally.
+// traits and incompatibilities slices are always emitted (never null) so
+// clients can iterate unconditionally.
 func toDogDTO(dog *domain.Dog) dogDTO {
 	dto := dogDTO{
 		ID:            dog.ID(),
@@ -1221,6 +1253,11 @@ func toDogDTO(dog *domain.Dog) dogDTO {
 		UserID:        dog.UserID(),
 		IsActive:      dog.IsActive(),
 	}
+	traits := dog.Traits()
+	dto.Traits = make([]incompatibilityDTO, 0, len(traits))
+	for index := range traits {
+		dto.Traits = append(dto.Traits, toIncompatibilityDTO(&traits[index]))
+	}
 	incompatibilities := dog.Incompatibilities()
 	dto.Incompatibilities = make([]incompatibilityDTO, 0, len(incompatibilities))
 	for index := range incompatibilities {
@@ -1231,9 +1268,12 @@ func toDogDTO(dog *domain.Dog) dogDTO {
 
 func toIncompatibilityDTO(incompat *domain.Incompatibility) incompatibilityDTO {
 	return incompatibilityDTO{
-		ID:    incompat.ID(),
-		Name:  incompat.Name(),
-		Level: string(incompat.Type()),
+		ID:              incompat.ID(),
+		Name:            incompat.Name(),
+		Level:           string(incompat.Type()),
+		Kind:            string(incompat.Kind()),
+		Code:            incompat.Code(),
+		TargetTraitCode: incompat.TargetTraitCode(),
 	}
 }
 

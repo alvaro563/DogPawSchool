@@ -33,6 +33,10 @@ var (
 	// violates the UNIQUE incompatibility name constraint.
 	ErrDuplicateIncompatibilityName = errors.New("incompatibility name already exists")
 
+	// ErrDuplicateIncompatibilityCode is returned when an insert/update
+	// violates the UNIQUE trait code constraint.
+	ErrDuplicateIncompatibilityCode = errors.New("incompatibility trait code already exists")
+
 	// ErrDuplicateReservation is returned when a reservation insert
 	// violates the UNIQUE (activity_id, dog_id) constraint: the same dog
 	// is already booked into that activity.
