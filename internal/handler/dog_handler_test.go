@@ -210,6 +210,36 @@ func setupCtx(method, path, body string) (*gin.Context, *httptest.ResponseRecord
 	return c, w
 }
 
+// setupAuthCtx is like setupCtx but also sets the authenticated
+// user_id and user_role in the Gin context (as AuthRequired would).
+// The default user is user 7 with role REGULAR. Pass opts to
+// override: use withUserID(n) and withAdmin().
+func setupAuthCtx(method, path, body string, opts ...authCtxOption) (*gin.Context, *httptest.ResponseRecorder) {
+	c, w := setupCtx(method, path, body)
+	userID := 7
+	role := "REGULAR"
+	for _, o := range opts {
+		o(&userID, &role)
+	}
+	c.Set("user_id", userID)
+	c.Set("user_role", role)
+	return c, w
+}
+
+type authCtxOption func(userID *int, role *string)
+
+func withUserID(id int) authCtxOption {
+	return func(userID *int, role *string) {
+		*userID = id
+	}
+}
+
+func withAdmin() authCtxOption {
+	return func(userID *int, role *string) {
+		*role = "ADMIN"
+	}
+}
+
 func validRegisterBody() string {
 	return `{"name":"Luna","breed":"Labrador","age_in_months":24,"sex":"FEMALE","weight_kg":22.5,"passport":"ES-1","user_id":1}`
 }
@@ -321,7 +351,7 @@ func TestDogGetByID_Success(t *testing.T) {
 		return doguc.GetDogOutput{Dog: dog}, nil
 	}}
 	h := newTestHandlerGet(stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/7", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/dogs/7", "", withUserID(1))
 	c.Params = gin.Params{{Key: "id", Value: "7"}}
 
 	h.GetByID(c)
@@ -354,6 +384,20 @@ func TestDogGetByID_NotFound(t *testing.T) {
 	c.Params = gin.Params{{Key: "id", Value: "99"}}
 	h.GetByID(c)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestDogGetByID_Forbidden(t *testing.T) {
+	t.Parallel()
+	// The dog exists but belongs to user_id=1; current user is 7.
+	dog := newTestDog(7) // UserID=1 (from newTestDog)
+	h := newTestHandlerGet(&stubDogGetter{fn: func(context.Context, doguc.GetDogInput) (doguc.GetDogOutput, error) {
+		return doguc.GetDogOutput{Dog: dog}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/dogs/7", "", withUserID(7))
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	h.GetByID(c)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }
 
 func TestDogGetByID_InternalError(t *testing.T) {
@@ -424,7 +468,7 @@ func TestListByOwner_Success(t *testing.T) {
 		return doguc.ListByOwnerOutput{Dogs: dogs}, nil
 	}}
 	h := newTestHandler(nil, nil, stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/owner/1?limit=10&offset=0", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/dogs/owner/1?limit=10&offset=0", "", withUserID(1))
 	c.Params = gin.Params{{Key: "owner_id", Value: "1"}}
 
 	h.ListByOwner(c)
@@ -444,7 +488,7 @@ func TestListByOwner_Empty(t *testing.T) {
 		return doguc.ListByOwnerOutput{Dogs: []*domain.Dog{}}, nil
 	}}
 	h := newTestHandler(nil, nil, stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/owner/1", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/dogs/owner/1", "", withUserID(1))
 	c.Params = gin.Params{{Key: "owner_id", Value: "1"}}
 
 	h.ListByOwner(c)
@@ -495,12 +539,26 @@ func TestListByOwner_InternalError(t *testing.T) {
 		return doguc.ListByOwnerOutput{}, errors.New("db down")
 	}}
 	h := newTestHandler(nil, nil, stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/dogs/owner/1", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/dogs/owner/1", "", withUserID(1))
 	c.Params = gin.Params{{Key: "owner_id", Value: "1"}}
 
 	h.ListByOwner(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestListByOwner_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newTestHandler(nil, nil, &stubListerByOwner{fn: func(context.Context, doguc.ListByOwnerInput) (doguc.ListByOwnerOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return doguc.ListByOwnerOutput{}, nil
+	}})
+	// Current user is 7, requesting owner_id=99
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/dogs/owner/99", "", withUserID(7))
+	c.Params = gin.Params{{Key: "owner_id", Value: "99"}}
+	h.ListByOwner(c)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }
 
 func TestModify_Success(t *testing.T) {

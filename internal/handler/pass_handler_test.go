@@ -503,7 +503,7 @@ func TestPassListByUser_Success(t *testing.T) {
 		return passuc.ListByUserPassesOutput{Passes: passes}, nil
 	}}
 	h := newPassHandlerByUser(stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/passes", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/passes", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.ListByUser(c)
@@ -519,7 +519,7 @@ func TestPassListByUser_Empty(t *testing.T) {
 	h := newPassHandlerByUser(&stubPassByUserLister{fn: func(context.Context, passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
 		return passuc.ListByUserPassesOutput{}, nil
 	}})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/9999/passes", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/9999/passes", "", withUserID(9999))
 	c.Params = gin.Params{{Key: "user_id", Value: "9999"}}
 	h.ListByUser(c)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -556,7 +556,7 @@ func TestPassListByUser_UseCaseValidation(t *testing.T) {
 	h := newPassHandlerByUser(&stubPassByUserLister{fn: func(context.Context, passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
 		return passuc.ListByUserPassesOutput{}, &passuc.ValidationError{Field: "user_id"}
 	}})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/passes", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/passes", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.ListByUser(c)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -567,8 +567,23 @@ func TestPassListByUser_InternalError(t *testing.T) {
 	h := newPassHandlerByUser(&stubPassByUserLister{fn: func(context.Context, passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
 		return passuc.ListByUserPassesOutput{}, errors.New("db down")
 	}})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/passes", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/passes", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.ListByUser(c)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestPassListByUser_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newPassHandlerByUser(&stubPassByUserLister{fn: func(context.Context, passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return passuc.ListByUserPassesOutput{}, nil
+	}})
+	// Current user is 7, requesting user_id=99
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/99/passes", "", withUserID(7))
+	c.Params = gin.Params{{Key: "user_id", Value: "99"}}
+	h.ListByUser(c)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }

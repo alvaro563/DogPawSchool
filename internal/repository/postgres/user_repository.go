@@ -122,6 +122,32 @@ func (repo *UserRepository) ListAllPaged(ctx context.Context, limit, offset int)
 	return repo.queryUsers(ctx, query, limit, offset)
 }
 
+// ListAllEmails returns the email of every user, ordered by id
+// ascending. No pagination: intended for admin exports (e.g. bulk
+// communications), not for unbounded user growth. Returns a non-nil
+// empty slice on no rows.
+func (repo *UserRepository) ListAllEmails(ctx context.Context) ([]string, error) {
+	const query = `SELECT email FROM users ORDER BY id ASC`
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query user emails: %w", err)
+	}
+	defer rows.Close()
+
+	emails := make([]string, 0)
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, fmt.Errorf("scan user email: %w", err)
+		}
+		emails = append(emails, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	return emails, nil
+}
+
 // queryUsers is the shared row-iteration loop for ListAll and
 // ListAllPaged. Returns a non-nil empty slice on no rows.
 func (repo *UserRepository) queryUsers(ctx context.Context, query string, args ...any) ([]*domain.User, error) {

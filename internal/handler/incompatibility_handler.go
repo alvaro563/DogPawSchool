@@ -62,6 +62,7 @@ func NewIncompatibilityHandler(
 // @Failure      400   {object}  errorResponse                    "Validation error"
 // @Failure      409   {object}  errorResponse                    "Name already exists"
 // @Failure      500   {object}  errorResponse                    "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/incompatibilities [post]
 func (h *IncompatibilityHandler) Register(c *gin.Context) {
 	var request registerIncompatibilityRequest
@@ -91,6 +92,7 @@ func (h *IncompatibilityHandler) Register(c *gin.Context) {
 // @Success      200    {object}  listIncompatibilitiesResponse  "List of incompatibilities"
 // @Failure      400    {object}  errorResponse                  "Invalid level filter"
 // @Failure      500    {object}  errorResponse                  "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/incompatibilities [get]
 func (h *IncompatibilityHandler) List(c *gin.Context) {
 	var levelPtr *domain.IncompatibilityLevel
@@ -125,6 +127,7 @@ func (h *IncompatibilityHandler) List(c *gin.Context) {
 // @Failure      400  {object}  errorResponse             "Invalid id"
 // @Failure      404  {object}  errorResponse             "Incompatibility not found"
 // @Failure      500  {object}  errorResponse             "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/incompatibilities/{id} [get]
 func (h *IncompatibilityHandler) GetByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -158,6 +161,7 @@ func (h *IncompatibilityHandler) GetByID(c *gin.Context) {
 // @Failure      404   {object}  errorResponse                   "Incompatibility not found"
 // @Failure      409   {object}  errorResponse                   "Name already exists"
 // @Failure      500   {object}  errorResponse                   "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/incompatibilities/{id} [patch]
 func (h *IncompatibilityHandler) Modify(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -199,6 +203,7 @@ func (h *IncompatibilityHandler) Modify(c *gin.Context) {
 // @Failure      404  {object}  errorResponse     "Incompatibility not found"
 // @Failure      409  {object}  errorResponse     "Incompatibility is in use by at least one dog"
 // @Failure      500  {object}  errorResponse     "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/incompatibilities/{id} [delete]
 func (h *IncompatibilityHandler) Delete(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

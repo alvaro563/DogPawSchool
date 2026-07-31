@@ -67,6 +67,7 @@ func NewPassHandler(
 // @Success      201      {object}  registerPassResponse  "Pass created"
 // @Failure      400      {object}  errorResponse          "Invalid user_id, request body, or missing fields"
 // @Failure      500      {object}  errorResponse          "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/passes [post]
 func (h *PassHandler) Register(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -116,6 +117,7 @@ func (h *PassHandler) Register(c *gin.Context) {
 // @Failure      400   {object}  errorResponse       "Invalid id, body, or field value"
 // @Failure      404   {object}  errorResponse       "Pass not found"
 // @Failure      500   {object}  errorResponse       "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/passes/{id} [patch]
 func (h *PassHandler) Modify(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -159,6 +161,7 @@ func (h *PassHandler) Modify(c *gin.Context) {
 // @Failure      400  {object}  errorResponse "Invalid id"
 // @Failure      404  {object}  errorResponse "Pass not found"
 // @Failure      500  {object}  errorResponse "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/passes/{id} [get]
 func (h *PassHandler) GetByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -191,6 +194,7 @@ func (h *PassHandler) GetByID(c *gin.Context) {
 // @Param        offset  query  int  false  "Number of passes to skip for pagination (default 0)"
 // @Success      200  {object}  listPassesResponse  "List of passes"
 // @Failure      500  {object}  errorResponse        "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/passes [get]
 func (h *PassHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
@@ -215,6 +219,7 @@ func (h *PassHandler) List(c *gin.Context) {
 // @Success      200  {object}  listPassesResponse  "List of passes"
 // @Failure      400  {object}  errorResponse       "Invalid user_id"
 // @Failure      500  {object}  errorResponse       "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/passes [get]
 func (h *PassHandler) ListByUser(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -222,6 +227,11 @@ func (h *PassHandler) ListByUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, userID) {
+		return
+	}
+
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 	in, err := passuc.NewListByUserPassesInput(userID, limit, offset)

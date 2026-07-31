@@ -31,7 +31,12 @@ type UserDeactivator interface {
 	Execute(ctx context.Context, input useruc.DeactivateUserInput) (useruc.DeactivateUserOutput, error)
 }
 
-// UserHandler owns the 4 user endpoints. All use cases are injected
+// UserEmailLister lists every registered email (admin view).
+type UserEmailLister interface {
+	Execute(ctx context.Context) (useruc.ListUserEmailsOutput, error)
+}
+
+// UserHandler owns the 5 user endpoints. All use cases are injected
 // as interfaces so the handler can be unit-tested with stubs and so
 // the dependency direction stays correct (handler -> usecase interface,
 // never -> usecase concrete, never -> repository).
@@ -40,6 +45,7 @@ type UserHandler struct {
 	list       UserLister
 	update     UserUpdater
 	deactivate UserDeactivator
+	emailList  UserEmailLister
 }
 
 func NewUserHandler(
@@ -47,12 +53,14 @@ func NewUserHandler(
 	list UserLister,
 	update UserUpdater,
 	deactivate UserDeactivator,
+	emailList UserEmailLister,
 ) *UserHandler {
 	return &UserHandler{
 		get:        get,
 		list:       list,
 		update:     update,
 		deactivate: deactivate,
+		emailList:  emailList,
 	}
 }
 
@@ -66,6 +74,7 @@ func NewUserHandler(
 // @Failure      400  {object}  errorResponse  "Invalid id"
 // @Failure      404  {object}  errorResponse  "User not found"
 // @Failure      500  {object}  errorResponse  "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id} [get]
 func (h *UserHandler) GetByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("user_id"))
@@ -73,6 +82,11 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, id) {
+		return
+	}
+
 	in, err := useruc.NewGetUserInput(id)
 	if err != nil {
 		writeError(c, err)
@@ -95,6 +109,7 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 // @Param        offset  query  int  false  "Number of users to skip for pagination (default 0)"
 // @Success      200  {object}  listUsersResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/users [get]
 func (h *UserHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
@@ -107,6 +122,35 @@ func (h *UserHandler) List(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toListUsersResponse(output.Users, in))
+}
+
+// ListEmails godoc
+// @Summary      List all user emails (admin view)
+// @Description  Returns the email of every registered user, ordered by user id. Intended for the admin panel (e.g. bulk communications). Admin only.
+// @Tags         users
+// @Produce      json
+// @Success      200  {object}  listUserEmailsResponse
+// @Failure      500  {object}  errorResponse  "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/users/emails [get]
+func (h *UserHandler) ListEmails(c *gin.Context) {
+	output, err := h.emailList.Execute(c.Request.Context())
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, listUserEmailsResponse{
+		Emails: output.Emails,
+		Count:  len(output.Emails),
+	})
+}
+
+// listUserEmailsResponse is the wire format for the email list
+// endpoint. The count field mirrors the pagination-aware lists so the
+// client can render totals without parsing the array.
+type listUserEmailsResponse struct {
+	Emails []string `json:"emails"`
+	Count  int      `json:"count"`
 }
 
 // Update godoc
@@ -122,6 +166,7 @@ func (h *UserHandler) List(c *gin.Context) {
 // @Failure      404      {object}  errorResponse      "User not found"
 // @Failure      409      {object}  errorResponse      "Email already in use"
 // @Failure      500      {object}  errorResponse      "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id} [patch]
 func (h *UserHandler) Update(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("user_id"))
@@ -169,6 +214,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 // @Failure      400      {object}  errorResponse           "Invalid id"
 // @Failure      404      {object}  errorResponse           "User not found"
 // @Failure      500      {object}  errorResponse           "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/deactivate [post]
 func (h *UserHandler) Deactivate(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("user_id"))

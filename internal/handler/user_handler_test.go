@@ -51,24 +51,36 @@ func (s *stubUserDeactivator) Execute(ctx context.Context, in useruc.DeactivateU
 	return s.fn(ctx, in)
 }
 
+type stubUserEmailLister struct {
+	fn func(ctx context.Context) (useruc.ListUserEmailsOutput, error)
+}
+
+func (s *stubUserEmailLister) Execute(ctx context.Context) (useruc.ListUserEmailsOutput, error) {
+	return s.fn(ctx)
+}
+
 // ---------------------------------------------------------------------------
 // Handler constructors that inject only the stub for the endpoint under test.
 // ---------------------------------------------------------------------------
 
 func newTestUserHandlerGet(get UserGetter) *UserHandler {
-	return NewUserHandler(get, nil, nil, nil)
+	return NewUserHandler(get, nil, nil, nil, nil)
 }
 
 func newTestUserHandlerList(list UserLister) *UserHandler {
-	return NewUserHandler(nil, list, nil, nil)
+	return NewUserHandler(nil, list, nil, nil, nil)
 }
 
 func newTestUserHandlerUpdate(update UserUpdater) *UserHandler {
-	return NewUserHandler(nil, nil, update, nil)
+	return NewUserHandler(nil, nil, update, nil, nil)
 }
 
 func newTestUserHandlerDeactivate(deactivate UserDeactivator) *UserHandler {
-	return NewUserHandler(nil, nil, nil, deactivate)
+	return NewUserHandler(nil, nil, nil, deactivate, nil)
+}
+
+func newTestUserHandlerListEmails(emailList UserEmailLister) *UserHandler {
+	return NewUserHandler(nil, nil, nil, nil, emailList)
 }
 
 // newTestUser builds a valid active user for stub responses.
@@ -91,7 +103,7 @@ func TestUserGetByID_Success(t *testing.T) {
 		assert.Equal(t, 7, in.ID())
 		return useruc.GetUserOutput{User: u}, nil
 	}})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/7", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/7", "", withUserID(7))
 	c.Params = gin.Params{{Key: "user_id", Value: "7"}}
 	h.GetByID(c)
 
@@ -126,7 +138,7 @@ func TestUserGetByID_UseCaseValidation(t *testing.T) {
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		return useruc.GetUserOutput{}, &useruc.ValidationError{Field: "id"}
 	}})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.GetByID(c)
 
@@ -139,7 +151,7 @@ func TestUserGetByID_NotFound(t *testing.T) {
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		return useruc.GetUserOutput{}, useruc.ErrNotFound
 	}})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/999", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/999", "", withUserID(999))
 	c.Params = gin.Params{{Key: "user_id", Value: "999"}}
 	h.GetByID(c)
 
@@ -152,12 +164,27 @@ func TestUserGetByID_InternalError(t *testing.T) {
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
 		return useruc.GetUserOutput{}, errors.New("db down")
 	}})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.GetByID(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"internal"`)
+}
+
+func TestUserGetByID_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerGet(&stubUserGetter{fn: func(context.Context, useruc.GetUserInput) (useruc.GetUserOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return useruc.GetUserOutput{}, nil
+	}})
+	// Current user is 7, requesting user_id=99
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/99", "", withUserID(7))
+	c.Params = gin.Params{{Key: "user_id", Value: "99"}}
+	h.GetByID(c)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +248,53 @@ func TestUserList_InternalError(t *testing.T) {
 	c, w := setupCtx(http.MethodGet, "/api/v1/users", "")
 
 	h.List(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// ListEmails
+// ---------------------------------------------------------------------------
+
+func TestUserListEmails_Success(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerListEmails(&stubUserEmailLister{fn: func(_ context.Context) (useruc.ListUserEmailsOutput, error) {
+		return useruc.ListUserEmailsOutput{Emails: []string{"a@example.com", "b@example.com"}}, nil
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/users/emails", "")
+
+	h.ListEmails(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body listUserEmailsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, []string{"a@example.com", "b@example.com"}, body.Emails)
+	assert.Equal(t, 2, body.Count)
+	assert.NotContains(t, w.Body.String(), "password", "password must never appear in the response")
+}
+
+func TestUserListEmails_Empty(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerListEmails(&stubUserEmailLister{fn: func(_ context.Context) (useruc.ListUserEmailsOutput, error) {
+		return useruc.ListUserEmailsOutput{Emails: []string{}}, nil
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/users/emails", "")
+
+	h.ListEmails(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"emails":[]`)
+	assert.Contains(t, w.Body.String(), `"count":0`)
+}
+
+func TestUserListEmails_InternalError(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerListEmails(&stubUserEmailLister{fn: func(_ context.Context) (useruc.ListUserEmailsOutput, error) {
+		return useruc.ListUserEmailsOutput{}, errors.New("db down")
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/users/emails", "")
+
+	h.ListEmails(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

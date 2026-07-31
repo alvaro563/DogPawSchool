@@ -91,9 +91,10 @@ type mockUserRepository struct {
 	update       func(ctx context.Context, user *domain.User) error
 	getByID      func(ctx context.Context, id int) (*domain.User, error)
 	getByEmail   func(ctx context.Context, email string) (*domain.User, error)
-	listAll      func(ctx context.Context) ([]*domain.User, error)
-	listAllPaged func(ctx context.Context, limit, offset int) ([]*domain.User, error)
-	delete       func(ctx context.Context, id int) error
+	listAll        func(ctx context.Context) ([]*domain.User, error)
+	listAllPaged   func(ctx context.Context, limit, offset int) ([]*domain.User, error)
+	listAllEmails  func(ctx context.Context) ([]string, error)
+	delete         func(ctx context.Context, id int) error
 }
 
 func (m *mockUserRepository) Create(ctx context.Context, user *domain.User) (int, error) {
@@ -134,6 +135,13 @@ func (m *mockUserRepository) ListAll(ctx context.Context) ([]*domain.User, error
 func (m *mockUserRepository) ListAllPaged(ctx context.Context, limit, offset int) ([]*domain.User, error) {
 	if m.listAllPaged != nil {
 		return m.listAllPaged(ctx, limit, offset)
+	}
+	return nil, nil
+}
+
+func (m *mockUserRepository) ListAllEmails(ctx context.Context) ([]string, error) {
+	if m.listAllEmails != nil {
+		return m.listAllEmails(ctx)
 	}
 	return nil, nil
 }

@@ -13,8 +13,79 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"dogpaw/internal/crypto"
 	"dogpaw/migrations"
 )
+
+type devUser struct {
+	name     string
+	email    string
+	password string
+	role     string
+}
+
+// devUsers holds well-known local credentials. ensureDevUsers upserts these
+// so a development instance always has a usable admin and demo account.
+var devUsers = []devUser{
+	{name: "Carlos Admin", email: "admin@dogpaw.com", password: "admin123", role: "ADMIN"},
+	{name: "Demo Owner", email: "demo@dogpaw.com", password: "demo1234", role: "REGULAR"},
+}
+
+// ensureDevUsers guarantees the development users from devUsers exist with
+// the documented passwords. It is a no-op in production to avoid planting
+// default credentials in a deployed environment. The returned bool reports
+// whether the function actually ran (i.e. we are in a non-production env).
+func ensureDevUsers(db *sql.DB, env string) (bool, error) {
+	if env == "production" {
+		return false, nil
+	}
+
+	hasher := crypto.NewDefaultBcryptHasher()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, user := range devUsers {
+		hashed, err := hasher.Hash(user.password)
+		if err != nil {
+			return false, fmt.Errorf("hash password for %s: %w", user.email, err)
+		}
+
+		var currentPassword, currentRole string
+		err = tx.QueryRow(
+			`SELECT password, role FROM users WHERE email = $1`, user.email,
+		).Scan(&currentPassword, &currentRole)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			if _, err := tx.Exec(
+				`INSERT INTO users (name, email, password, role, is_active)
+				 VALUES ($1, $2, $3, $4, TRUE)`,
+				user.name, user.email, hashed, user.role,
+			); err != nil {
+				return false, fmt.Errorf("insert dev user %s: %w", user.email, err)
+			}
+		case err != nil:
+			return false, fmt.Errorf("lookup dev user %s: %w", user.email, err)
+		default:
+			if compareErr := hasher.Compare(currentPassword, user.password); compareErr != nil || currentRole != user.role {
+				if _, err := tx.Exec(
+					`UPDATE users SET password = $1, role = $2, updated_at = NOW() WHERE email = $3`,
+					hashed, user.role, user.email,
+				); err != nil {
+					return false, fmt.Errorf("update dev user %s: %w", user.email, err)
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit tx: %w", err)
+	}
+	return true, nil
+}
 
 func openDB(ctx context.Context, cfg DBConfig) (*sql.DB, error) {
 	db, err := sql.Open("pgx", cfg.DSN())

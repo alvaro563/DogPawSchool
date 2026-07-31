@@ -102,7 +102,7 @@ func TestReservationRegister_Success(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerReg(stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -155,7 +155,7 @@ func TestReservationRegister_InvalidBody(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, nil
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", `not json`)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", `not json`, withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -174,7 +174,7 @@ func TestReservationRegister_MissingFields(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, nil
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", `{"activity_id":0,"dog_id":0,"pass_id":0}`)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", `{"activity_id":0,"dog_id":0,"pass_id":0}`, withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -198,7 +198,7 @@ func TestReservationRegister_UseCaseValidation(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, &reservationuc.ValidationError{Field: "activity_id"}
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -216,7 +216,7 @@ func TestReservationRegister_ActivityInPast(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrActivityInPast
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -234,7 +234,7 @@ func TestReservationRegister_ActivityFull(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrActivityFull
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -252,7 +252,7 @@ func TestReservationRegister_PassExhausted(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrPassExhausted
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -270,7 +270,7 @@ func TestReservationRegister_PassExpired(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrPassExpired
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -288,7 +288,7 @@ func TestReservationRegister_DuplicateReservation(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrDuplicateReservationForDog
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
@@ -306,13 +306,26 @@ func TestReservationRegister_InternalError(t *testing.T) {
 			return reservationuc.RegisterReservationOutput{}, errors.New("db connection lost")
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody())
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 
 	h.Register(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"internal"`)
+}
+
+func TestReservationRegister_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerReg(&stubReservationRegisterer{fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return reservationuc.RegisterReservationOutput{}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/99/reservations", validRegisterReservationBody(), withUserID(7))
+	c.Params = gin.Params{{Key: "user_id", Value: "99"}}
+	h.Register(c)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }
 
 // ============================================================================
@@ -332,7 +345,7 @@ func TestReservationCancel_SuccessInTime(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerCancel(stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.Cancel(c)
@@ -356,7 +369,7 @@ func TestReservationCancel_SuccessLate(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerCancel(stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.Cancel(c)
@@ -419,7 +432,7 @@ func TestReservationCancel_InvalidReservationID(t *testing.T) {
 					return reservationuc.CancelReservationOutput{}, nil
 				},
 			})
-			c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/cancel", "")
+			c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/cancel", "", withUserID(1))
 			c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: tt.pathID}}
 
 			h.Cancel(c)
@@ -439,7 +452,7 @@ func TestReservationCancel_AlreadyCancelled(t *testing.T) {
 			return reservationuc.CancelReservationOutput{}, reservationuc.ErrAlreadyCancelled
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.Cancel(c)
@@ -457,7 +470,7 @@ func TestReservationCancel_ActivityInPast(t *testing.T) {
 			return reservationuc.CancelReservationOutput{}, reservationuc.ErrActivityInPast
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.Cancel(c)
@@ -475,7 +488,7 @@ func TestReservationCancel_InvalidReservationID_NotFound(t *testing.T) {
 			return reservationuc.CancelReservationOutput{}, reservationuc.ErrInvalidReservation
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.Cancel(c)
@@ -493,13 +506,26 @@ func TestReservationCancel_InternalError(t *testing.T) {
 			return reservationuc.CancelReservationOutput{}, errors.New("db connection lost")
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.Cancel(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"internal"`)
+}
+
+func TestReservationCancel_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerCancel(&stubReservationCanceler{fn: func(context.Context, reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return reservationuc.CancelReservationOutput{}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/99/reservations/99/cancel", "", withUserID(7))
+	c.Params = gin.Params{{Key: "user_id", Value: "99"}, {Key: "id", Value: "99"}}
+	h.Cancel(c)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }
 
 // ============================================================================
@@ -639,7 +665,7 @@ func TestListByUser_Success(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerListByUser(stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/reservations", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/reservations", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.ListByUser(c)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -674,7 +700,7 @@ func TestListByUser_InvalidStatusFilter(t *testing.T) {
 			return reservationuc.ListByUserReservationsOutput{}, nil
 		},
 	})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/reservations?status=BOGUS", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/reservations?status=BOGUS", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.ListByUser(c)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -689,10 +715,23 @@ func TestListByUser_InvalidTimeFilter(t *testing.T) {
 			return reservationuc.ListByUserReservationsOutput{}, nil
 		},
 	})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/reservations?from=not-a-date", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/reservations?from=not-a-date", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.ListByUser(c)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestListByUser_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerListByUser(&stubReservationListerByUser{fn: func(context.Context, reservationuc.ListByUserReservationsInput) (reservationuc.ListByUserReservationsOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return reservationuc.ListByUserReservationsOutput{}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/99/reservations", "", withUserID(7))
+	c.Params = gin.Params{{Key: "user_id", Value: "99"}}
+	h.ListByUser(c)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }
 
 func TestListUpcomingByUser_Success(t *testing.T) {
@@ -704,7 +743,7 @@ func TestListUpcomingByUser_Success(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerListUpcoming(stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/reservations/upcoming", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/reservations/upcoming", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
 	h.ListUpcomingByUser(c)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -728,6 +767,19 @@ func TestListUpcomingByUser_InvalidUserID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestListUpcomingByUser_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerListUpcoming(&stubReservationListerUpcomingByUser{fn: func(context.Context, reservationuc.ListUpcomingByUserInput) (reservationuc.ListUpcomingByUserOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return reservationuc.ListUpcomingByUserOutput{}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/99/reservations/upcoming", "", withUserID(7))
+	c.Params = gin.Params{{Key: "user_id", Value: "99"}}
+	h.ListUpcomingByUser(c)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
+}
+
 func TestGetByID_Success(t *testing.T) {
 	t.Parallel()
 	stub := &stubReservationGetter{
@@ -738,7 +790,7 @@ func TestGetByID_Success(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerGet(stub)
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/reservations/99", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/reservations/99", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 	h.GetByID(c)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -756,7 +808,7 @@ func TestGetByID_NotFound(t *testing.T) {
 			return reservationuc.GetReservationOutput{}, reservationuc.ErrInvalidReservation
 		},
 	})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/reservations/99", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/reservations/99", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 	h.GetByID(c)
 	assert.Equal(t, http.StatusNotFound, w.Code)
@@ -769,10 +821,23 @@ func TestGetByID_NotOwned(t *testing.T) {
 			return reservationuc.GetReservationOutput{}, reservationuc.ErrReservationNotOwned
 		},
 	})
-	c, w := setupCtx(http.MethodGet, "/api/v1/users/1/reservations/99", "")
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/1/reservations/99", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 	h.GetByID(c)
 	assert.Equal(t, http.StatusNotFound, w.Code, "not owned must map to 404 (no leak)")
+}
+
+func TestGetByID_Forbidden(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerGet(&stubReservationGetter{fn: func(context.Context, reservationuc.GetReservationInput) (reservationuc.GetReservationOutput, error) {
+		t.Fatal("use case should not be called for forbidden request")
+		return reservationuc.GetReservationOutput{}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/99/reservations/99", "", withUserID(7))
+	c.Params = gin.Params{{Key: "user_id", Value: "99"}, {Key: "id", Value: "99"}}
+	h.GetByID(c)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
 }
 
 func TestListByDog_Success(t *testing.T) {
@@ -863,7 +928,7 @@ func TestReservationMarkNoShow_Success(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerNoShow(stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.MarkNoShow(c)
@@ -927,7 +992,7 @@ func TestReservationMarkNoShow_InvalidReservationID(t *testing.T) {
 					return reservationuc.MarkReservationNoShowOutput{}, nil
 				},
 			})
-			c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/no-show", "")
+			c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/no-show", "", withUserID(1))
 			c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: tt.pathID}}
 
 			h.MarkNoShow(c)
@@ -947,7 +1012,7 @@ func TestReservationMarkNoShow_ActivityNotStarted(t *testing.T) {
 			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrActivityNotStarted
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.MarkNoShow(c)
@@ -965,7 +1030,7 @@ func TestReservationMarkNoShow_NotFound(t *testing.T) {
 			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrInvalidReservation
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.MarkNoShow(c)
@@ -983,7 +1048,7 @@ func TestReservationMarkNoShow_NotCancellable(t *testing.T) {
 			return reservationuc.MarkReservationNoShowOutput{}, reservationuc.ErrNotCancellable
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.MarkNoShow(c)
@@ -1001,7 +1066,7 @@ func TestReservationMarkNoShow_InternalError(t *testing.T) {
 			return reservationuc.MarkReservationNoShowOutput{}, errors.New("db connection lost")
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/no-show", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.MarkNoShow(c)
@@ -1040,7 +1105,7 @@ func TestReservationComplete_Success(t *testing.T) {
 		},
 	}
 	h := newReservationHandlerComplete(stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.CompleteReservation(c)
@@ -1104,7 +1169,7 @@ func TestReservationComplete_InvalidReservationID(t *testing.T) {
 					return reservationuc.CompleteReservationOutput{}, nil
 				},
 			})
-			c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/complete", "")
+			c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/"+tt.pathID+"/complete", "", withUserID(1))
 			c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: tt.pathID}}
 
 			h.CompleteReservation(c)
@@ -1124,7 +1189,7 @@ func TestReservationComplete_ActivityNotFinished(t *testing.T) {
 			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrActivityNotFinished
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.CompleteReservation(c)
@@ -1142,7 +1207,7 @@ func TestReservationComplete_NotFound(t *testing.T) {
 			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrInvalidReservation
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.CompleteReservation(c)
@@ -1160,7 +1225,7 @@ func TestReservationComplete_NotCompletable(t *testing.T) {
 			return reservationuc.CompleteReservationOutput{}, reservationuc.ErrNotCompletable
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.CompleteReservation(c)
@@ -1178,7 +1243,7 @@ func TestReservationComplete_InternalError(t *testing.T) {
 			return reservationuc.CompleteReservationOutput{}, errors.New("db connection lost")
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "")
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/complete", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
 	h.CompleteReservation(c)

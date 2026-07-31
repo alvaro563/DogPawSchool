@@ -1,3 +1,10 @@
+// @title           DogPaw API
+// @version         0.1.0
+// @description     API for managing dog care activities, reservations, passes and users. Protected endpoints require a Bearer JWT obtained from the login endpoint.
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description     Paste the token returned by /api/v1/auth/login as "Bearer <token>".
 package main
 
 import (
@@ -45,6 +52,17 @@ func run() error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 	slog.Info("migrations applied")
+
+	if created, err := ensureDevUsers(db, cfg.Env); err != nil {
+		return fmt.Errorf("ensure dev users: %w", err)
+	} else if created {
+		slog.Info("dev credentials ready",
+			"admin_email", "admin@dogpaw.com",
+			"admin_password", "admin123",
+			"demo_email", "demo@dogpaw.com",
+			"demo_password", "demo1234",
+		)
+	}
 
 	router := newRouter(db, cfg.Env)
 	return startServer(ctx, cfg, router)

@@ -51,6 +51,40 @@ func TestUserRepository_RoundTrip(t *testing.T) {
 	assert.Len(t, paged, 1)
 }
 
+func TestUserRepository_ListAllEmails(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewUserRepository(db)
+	for _, tc := range []struct {
+		name, email string
+	}{
+		{"Alice", "alice@test.com"},
+		{"Bob", "bob@test.com"},
+		{"Carla", "carla@test.com"},
+	} {
+		user, err := domain.NewUser(0, tc.name, tc.email, repeatedString("z", 60), domain.RoleRegular)
+		require.NoError(t, err)
+		_, err = repo.Create(context.Background(), user)
+		require.NoError(t, err)
+	}
+
+	emails, err := repo.ListAllEmails(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alice@test.com", "bob@test.com", "carla@test.com"}, emails)
+}
+
+func TestUserRepository_ListAllEmails_Empty(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewUserRepository(db)
+	emails, err := repo.ListAllEmails(context.Background())
+	require.NoError(t, err)
+	assert.NotNil(t, emails, "empty result must be a non-nil slice")
+	assert.Empty(t, emails)
+}
+
 func TestUserRepository_Update(t *testing.T) {
 	db := newTestDB(t)
 	t.Cleanup(func() { cleanTables(t, db) })

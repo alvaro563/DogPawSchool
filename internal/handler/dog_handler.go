@@ -174,6 +174,7 @@ func NewDogHandler(
 // @Failure      400  {object}  errorResponse         "Invalid request body, missing fields, validation error, or invalid user_id"
 // @Failure      409  {object}  errorResponse         "Passport already exists"
 // @Failure      500  {object}  errorResponse         "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/dogs [post]
 func (h *DogHandler) Register(c *gin.Context) {
 	var request registerDogRequest
@@ -215,6 +216,7 @@ func (h *DogHandler) Register(c *gin.Context) {
 // @Failure      400  {object}  errorResponse  "Invalid id"
 // @Failure      404  {object}  errorResponse  "Dog not found"
 // @Failure      500  {object}  errorResponse  "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id} [get]
 func (h *DogHandler) GetByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -232,6 +234,11 @@ func (h *DogHandler) GetByID(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, output.Dog.UserID()) {
+		return
+	}
+
 	c.JSON(http.StatusOK, toDogDTO(output.Dog))
 }
 
@@ -244,6 +251,7 @@ func (h *DogHandler) GetByID(c *gin.Context) {
 // @Param        offset  query  int  false  "Number of dogs to skip for pagination (default 0)"
 // @Success      200  {object}  listDogsResponse  "List of dogs with pagination metadata"
 // @Failure      500  {object}  errorResponse     "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/dogs [get]
 func (h *DogHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
@@ -269,6 +277,7 @@ func (h *DogHandler) List(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse  "List of dogs with pagination metadata"
 // @Failure      400  {object}  errorResponse     "Invalid owner_id"
 // @Failure      500  {object}  errorResponse     "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/owner/{owner_id} [get]
 func (h *DogHandler) ListByOwner(c *gin.Context) {
 	ownerID, err := strconv.Atoi(c.Param("owner_id"))
@@ -277,6 +286,10 @@ func (h *DogHandler) ListByOwner(c *gin.Context) {
 			Error: "validation",
 			Field: "owner_id",
 		})
+		return
+	}
+
+	if !RequireOwnershipOrAdmin(c, ownerID) {
 		return
 	}
 
@@ -310,6 +323,7 @@ func (h *DogHandler) ListByOwner(c *gin.Context) {
 // @Failure      404  {object}  errorResponse      "Dog not found"
 // @Failure      409  {object}  errorResponse      "Passport already exists"
 // @Failure      500  {object}  errorResponse      "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id} [patch]
 func (h *DogHandler) Modify(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -376,6 +390,7 @@ func (h *DogHandler) Modify(c *gin.Context) {
 // @Failure      400  {object}  errorResponse                  "Invalid id, invalid body, or validation error"
 // @Failure      404  {object}  errorResponse                  "Dog or incompatibility not found"
 // @Failure      500  {object}  errorResponse                  "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id}/incompatibilities [post]
 func (h *DogHandler) AddIncompatibility(c *gin.Context) {
 	dogID, err := strconv.Atoi(c.Param("id"))
@@ -430,6 +445,7 @@ func (h *DogHandler) AddIncompatibility(c *gin.Context) {
 // @Failure      400  {object}  errorResponse                    "Invalid id or incompatibility_id"
 // @Failure      404  {object}  errorResponse                    "Dog not found"
 // @Failure      500  {object}  errorResponse                    "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id}/incompatibilities/{incompatibility_id} [delete]
 func (h *DogHandler) RemoveIncompatibility(c *gin.Context) {
 	dogID, err := strconv.Atoi(c.Param("id"))
@@ -478,6 +494,7 @@ func (h *DogHandler) RemoveIncompatibility(c *gin.Context) {
 // @Param        offset  query  int  false  "Number of dogs to skip for pagination (default 0)"
 // @Success      200  {object}  listDogsResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/active [get]
 func (h *DogHandler) ListActive(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
@@ -503,6 +520,7 @@ func (h *DogHandler) ListActive(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/is_active/{value} [get]
 func (h *DogHandler) ListByIsActive(c *gin.Context) {
 	value, err := strconv.ParseBool(c.Param("value"))
@@ -533,6 +551,7 @@ func (h *DogHandler) ListByIsActive(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/incompatibility/{incompat_id} [get]
 func (h *DogHandler) ListByIncompatibility(c *gin.Context) {
 	incompatID, err := strconv.Atoi(c.Param("incompat_id"))
@@ -568,6 +587,7 @@ func (h *DogHandler) ListByIncompatibility(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/breed/{breed} [get]
 func (h *DogHandler) ListByBreed(c *gin.Context) {
 	breed := c.Param("breed")
@@ -603,6 +623,7 @@ func (h *DogHandler) ListByBreed(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/sex/{sex} [get]
 func (h *DogHandler) ListBySex(c *gin.Context) {
 	sex := domain.Sex(c.Param("sex"))
@@ -638,6 +659,7 @@ func (h *DogHandler) ListBySex(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/neutered/{value} [get]
 func (h *DogHandler) ListByNeutered(c *gin.Context) {
 	value, err := strconv.ParseBool(c.Param("value"))
@@ -668,6 +690,7 @@ func (h *DogHandler) ListByNeutered(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/heat/{value} [get]
 func (h *DogHandler) ListByHeat(c *gin.Context) {
 	value, err := strconv.ParseBool(c.Param("value"))
@@ -698,6 +721,7 @@ func (h *DogHandler) ListByHeat(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/age/{bracket} [get]
 func (h *DogHandler) ListByAgeBracket(c *gin.Context) {
 	bracket := domain.AgeBracket(c.Param("bracket"))
@@ -733,6 +757,7 @@ func (h *DogHandler) ListByAgeBracket(c *gin.Context) {
 // @Success      200  {object}  listDogsResponse
 // @Failure      400  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/size/{bracket} [get]
 func (h *DogHandler) ListBySizeBracket(c *gin.Context) {
 	bracket := domain.SizeBracket(c.Param("bracket"))
@@ -767,6 +792,7 @@ func (h *DogHandler) ListBySizeBracket(c *gin.Context) {
 // @Failure      400  {object}  errorResponse
 // @Failure      404  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id} [delete]
 func (h *DogHandler) Delete(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -798,6 +824,7 @@ func (h *DogHandler) Delete(c *gin.Context) {
 // @Failure      400  {object}  errorResponse
 // @Failure      404  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id}/neutered [patch]
 func (h *DogHandler) SetNeutered(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -839,6 +866,7 @@ func (h *DogHandler) SetNeutered(c *gin.Context) {
 // @Failure      400  {object}  errorResponse
 // @Failure      404  {object}  errorResponse
 // @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id}/heat [patch]
 func (h *DogHandler) SetHeat(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

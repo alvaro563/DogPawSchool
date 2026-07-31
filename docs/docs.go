@@ -17,6 +17,11 @@ const docTemplate = `{
     "paths": {
         "/api/v1/activities": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of all activities in the system, most recent first. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -55,6 +60,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Creates a new school activity (class, route, individual session, or extra). Returns the new resource URL in the Location header.",
                 "consumes": [
                     "application/json"
@@ -101,6 +111,11 @@ const docTemplate = `{
         },
         "/api/v1/activities/upcoming": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of activities scheduled at or after the current time, soonest first.",
                 "produces": [
                     "application/json"
@@ -141,6 +156,11 @@ const docTemplate = `{
         },
         "/api/v1/activities/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single activity by its id.",
                 "produces": [
                     "application/json"
@@ -186,6 +206,11 @@ const docTemplate = `{
                 }
             },
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Partially updates an activity. Only the supplied fields are mutated; an empty body is a no-op.",
                 "consumes": [
                     "application/json"
@@ -245,6 +270,11 @@ const docTemplate = `{
         },
         "/api/v1/activities/{id}/close": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Closes an activity after it has finished. Batch-\nprocesses every CONFIRMED reservation: those whose\nid appears in no_show_reservation_ids are marked as\nNO_SHOW, the rest are marked as COMPLETED. Then\nthe activity is marked as closed and persisted.\nThe entire flow runs in a single transaction.",
                 "consumes": [
                     "application/json"
@@ -309,6 +339,11 @@ const docTemplate = `{
         },
         "/api/v1/activities/{id}/reservations": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the views of every reservation for the\ngiven activity, ordered by created_at ASC. Class\nroster view.",
                 "produces": [
                     "application/json"
@@ -360,9 +395,124 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/auth/login": {
+            "post": {
+                "description": "Authenticates a user with email and password. On success it returns a signed JWT (HS256) and the user profile. The token expires after 24 hours and carries the user ID (sub) and role (role) claims.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Authenticate user and return a JWT token",
+                "parameters": [
+                    {
+                        "description": "Login credentials",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.loginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Login successful",
+                        "schema": {
+                            "$ref": "#/definitions/handler.loginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body (malformed JSON, missing email, missing password)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials or inactive user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/password": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Verifies the current password and replaces it with a new one. Requires a valid Bearer JWT in the Authorization header. The new password must be at least 8 characters and different from the current one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Change the authenticated user's password",
+                "parameters": [
+                    {
+                        "description": "Old and new password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.changePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Password changed successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.changePasswordResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or validation error (e.g. short new password)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid token, wrong old password, or inactive user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "New password matches the old one",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/register": {
             "post": {
-                "description": "Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 60 characters (bcrypt output length). Returns the created user profile without the password hash.",
+                "description": "Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 8 characters. Returns the created user profile without the password hash.",
                 "consumes": [
                     "application/json"
                 ],
@@ -420,6 +570,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of all dogs across all owners. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -458,6 +613,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Creates a new dog record owned by a user. The new resource URL is returned in the Location header.",
                 "consumes": [
                     "application/json"
@@ -510,6 +670,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/active": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose is_active is true. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -550,6 +715,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/age/{bracket}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose age_bracket matches :bracket. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -603,6 +773,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/breed/{breed}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose breed matches :breed. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -656,6 +831,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/heat/{value}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose heat flag matches :value. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -709,6 +889,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/incompatibility/{incompat_id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs attached to the given incompatibility id. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -762,6 +947,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/is_active/{value}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose is_active matches :value (true or false). Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -815,6 +1005,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/neutered/{value}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose neutered flag matches :value. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -868,6 +1063,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/owner/{owner_id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs belonging to the given owner. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -921,6 +1121,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/sex/{sex}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose sex matches :sex. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -974,6 +1179,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/size/{bracket}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of dogs whose size_bracket matches :bracket. Limit defaults to 50, capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -1027,6 +1237,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the full dog record including incompatibilities.",
                 "produces": [
                     "application/json"
@@ -1072,6 +1287,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Removes a dog by id. Associated dog_incompatibilities and reservations rows are deleted automatically by the database (ON DELETE CASCADE). Returns 404 if the dog does not exist.",
                 "produces": [
                     "application/json"
@@ -1114,6 +1334,11 @@ const docTemplate = `{
                 }
             },
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Applies a partial update to an existing dog. Only the fields present in the request body are modified; omitted fields are preserved. An empty body is a no-op and returns 200 without touching the database. Designed for fixing typos (e.g. \"Labarador\" -\u003e \"Labrador\") or correcting registration mistakes.",
                 "consumes": [
                     "application/json"
@@ -1179,6 +1404,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/{id}/heat": {
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Fast-path endpoint to flip the heat flag. Body is {\"heat\": true|false}. Returns 400 with error \"invalid_heat_for_sex\" if heat=true is attempted on a non-female dog.",
                 "consumes": [
                     "application/json"
@@ -1238,6 +1468,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/{id}/incompatibilities": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Idempotently attaches an existing incompatibility (looked up by id) to a dog. If the dog already has that incompatibility, returns 200 with ` + "`" + `added: false` + "`" + ` and the current list (no DB write). Otherwise persists the change and returns 201 with ` + "`" + `added: true` + "`" + ` and the updated list. Both the dog and the incompatibility must exist.",
                 "consumes": [
                     "application/json"
@@ -1303,6 +1538,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/{id}/incompatibilities/{incompatibility_id}": {
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Idempotently detaches an existing incompatibility (looked up by id) from a dog. If the dog does not have that incompatibility, returns 200 with the current list (no DB write). Otherwise persists the change and returns 200 with the updated list. Both dog and incompatibility must exist; 404 otherwise.",
                 "produces": [
                     "application/json"
@@ -1357,6 +1597,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/{id}/neutered": {
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Fast-path endpoint to flip the neutered flag. Body is {\"neutered\": true|false}. Returns the new state plus the dog's sex. Returns 404 if the dog does not exist.",
                 "consumes": [
                     "application/json"
@@ -1416,6 +1661,11 @@ const docTemplate = `{
         },
         "/api/v1/dogs/{id}/reservations": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the views of every reservation for the\ngiven dog, ordered by created_at DESC.",
                 "produces": [
                     "application/json"
@@ -1469,6 +1719,11 @@ const docTemplate = `{
         },
         "/api/v1/incompatibilities": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns all incompatibilities, optionally filtered by level.",
                 "produces": [
                     "application/json"
@@ -1507,6 +1762,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Creates a new incompatibility category. The name must be unique (case-insensitive).",
                 "consumes": [
                     "application/json"
@@ -1559,6 +1819,11 @@ const docTemplate = `{
         },
         "/api/v1/incompatibilities/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single incompatibility by its ID.",
                 "produces": [
                     "application/json"
@@ -1604,6 +1869,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Deletes an incompatibility. Fails with 409 if it is still referenced by any dog.",
                 "produces": [
                     "application/json"
@@ -1652,6 +1922,11 @@ const docTemplate = `{
                 }
             },
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Partially updates an incompatibility (name and/or level). An empty body is a no-op.",
                 "consumes": [
                     "application/json"
@@ -1717,6 +1992,11 @@ const docTemplate = `{
         },
         "/api/v1/invitations": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Creates a new PENDING invitation for a client to register. The returned 64-hex token must be delivered to the client's email. The invitation expires in 48 hours. The created_by field must reference an existing admin user id.",
                 "consumes": [
                     "application/json"
@@ -1769,6 +2049,11 @@ const docTemplate = `{
         },
         "/api/v1/passes": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of all passes in the system.\nTODO: gate this route behind an admin-role middleware\nbefore production. Currently any client can read all\npasses, which exposes other users' data.",
                 "produces": [
                     "application/json"
@@ -1809,6 +2094,11 @@ const docTemplate = `{
         },
         "/api/v1/passes/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a single pass by its id.",
                 "produces": [
                     "application/json"
@@ -1854,6 +2144,11 @@ const docTemplate = `{
                 }
             },
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Partially updates a pass. Only price, pass_type, and\nexpires_at are editable. num_of_sessions,\nremaining_sessions, user_id, and created_at are\nimmutable to preserve the audit-log invariant. An\nempty body is a no-op.",
                 "consumes": [
                     "application/json"
@@ -1913,6 +2208,11 @@ const docTemplate = `{
         },
         "/api/v1/passes/{id}/reservations": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the views of every reservation paid from\nthe given pass, ordered by created_at DESC.\nPass audit view.",
                 "produces": [
                     "application/json"
@@ -1966,6 +2266,11 @@ const docTemplate = `{
         },
         "/api/v1/users": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of every user in the system. Intended for the admin panel. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
@@ -2004,8 +2309,44 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/users/emails": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the email of every registered user, ordered by user id. Intended for the admin panel (e.g. bulk communications). Admin only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "List all user emails (admin view)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listUserEmailsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/users/{user_id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the public profile of a user. The password hash is never included in the response.",
                 "produces": [
                     "application/json"
@@ -2051,6 +2392,11 @@ const docTemplate = `{
                 }
             },
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Applies a partial update to an existing user. Only the fields present in the request body are modified; omitted fields are preserved. An empty body is a no-op and returns 200 without touching the database. The password is never writable through this endpoint.",
                 "consumes": [
                     "application/json"
@@ -2116,6 +2462,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/deactivate": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Flips the user's is_active flag to false. Idempotent: deactivating an already-inactive user is a no-op and returns 200. The user's data is preserved. Use this for off-boarding instead of hard delete.",
                 "produces": [
                     "application/json"
@@ -2163,6 +2514,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/passes": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns a paginated list of passes owned by the user identified by the user_id path param.",
                 "produces": [
                     "application/json"
@@ -2214,6 +2570,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Creates a new prepaid session pack for the user identified by the user_id path param. Price is stored in cents.",
                 "consumes": [
                     "application/json"
@@ -2267,6 +2628,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/reservations": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the denormalized ReservationView for every\nreservation whose dog is owned by the user in the\npath, ordered by created_at DESC. Supports\noptional filters: status, from, to.",
                 "produces": [
                     "application/json"
@@ -2336,6 +2702,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Books a dog into an activity, paid from one of the\nowner's passes. Atomically: validates the activity\nis in the future and not full, the dog is owned by\nthe user in the path, and the pass is owned by the\nuser and has at least one session. Consumes one pass\nsession and creates the reservation in StatusConfirmed.",
                 "consumes": [
                     "application/json"
@@ -2401,6 +2772,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/reservations/upcoming": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the views of every CONFIRMED reservation\nwhose activity date is at or after the current\ntime, ordered by activity date ASC.",
                 "produces": [
                     "application/json"
@@ -2454,6 +2830,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/reservations/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the denormalized ReservationView for the\ngiven reservation id, owned by the user in the\npath. Returns 404 if the id does not exist OR if\nthe reservation belongs to a different user (no\nleak).",
                 "produces": [
                     "application/json"
@@ -2508,6 +2889,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/reservations/{id}/cancel": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Cancels a CONFIRMED reservation owned by the user in\nthe path. The activity must still be in the future\nand the reservation must be in StatusConfirmed. If\nthe cancel happens more than 2h before the activity\ndate, the reservation transitions to\nStatusCancelledInTime AND the pass session is\nrefunded (remaining_sessions + 1, audit movement +1\nappended). If the cancel happens within the late\nwindow, the reservation transitions to\nStatusCancelledLate and no refund is applied (an\nadmin can later call Forgive to refund it).",
                 "produces": [
                     "application/json"
@@ -2568,6 +2954,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/reservations/{id}/complete": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Transitions a CONFIRMED reservation to COMPLETED.\nThe activity must have already finished\n(date + duration \u003c now). Does not refund the pass\nsession because the session was consumed at\nregistration and the activity has been delivered.\nOwner-only: the user_id in the path must own the\ndog. Returns 404 if the reservation does not exist\nOR belongs to a different user (no leak).",
                 "produces": [
                     "application/json"
@@ -2628,6 +3019,11 @@ const docTemplate = `{
         },
         "/api/v1/users/{user_id}/reservations/{id}/no-show": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Transitions a CONFIRMED reservation to NO_SHOW.\nThe activity must have already started\n(date \u003c now). Does not refund the pass session\nbecause the slot is past. Owner-only: the\nuser_id in the path must own the dog. Returns 404\nif the reservation does not exist OR belongs to\na different user (no leak).",
                 "produces": [
                     "application/json"
@@ -2800,6 +3196,29 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "example": "CANCELLED_IN_TIME"
+                }
+            }
+        },
+        "handler.changePasswordRequest": {
+            "type": "object",
+            "required": [
+                "new_password",
+                "old_password"
+            ],
+            "properties": {
+                "new_password": {
+                    "type": "string"
+                },
+                "old_password": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.changePasswordResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
                 }
             }
         },
@@ -3097,6 +3516,20 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.listUserEmailsResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "emails": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "handler.listUsersResponse": {
             "type": "object",
             "properties": {
@@ -3117,6 +3550,32 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handler.userDTO"
                     }
+                }
+            }
+        },
+        "handler.loginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.loginResponse": {
+            "type": "object",
+            "properties": {
+                "token": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/handler.userDTO"
                 }
             }
         },
@@ -3705,17 +4164,25 @@ const docTemplate = `{
                 }
             }
         }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Paste the token returned by /api/v1/auth/login as \"Bearer \u003ctoken\u003e\".",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
     }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
+	Version:          "0.1.0",
 	Host:             "",
 	BasePath:         "",
 	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+	Title:            "DogPaw API",
+	Description:      "API for managing dog care activities, reservations, passes and users. Protected endpoints require a Bearer JWT obtained from the login endpoint.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

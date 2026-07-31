@@ -113,6 +113,7 @@ func NewReservationHandler(
 // @Failure      404          {object}  errorResponse                "Not found"
 // @Failure      409          {object}  errorResponse                "Activity full or duplicate reservation"
 // @Failure      500          {object}  errorResponse                "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/reservations [post]
 func (h *ReservationHandler) Register(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -123,6 +124,11 @@ func (h *ReservationHandler) Register(c *gin.Context) {
 		})
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, userID) {
+		return
+	}
+
 	var request registerReservationRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{
@@ -182,6 +188,7 @@ type registerReservationResponse struct {
 // @Failure      404            {object}  errorResponse                "Reservation not found"
 // @Failure      409            {object}  errorResponse                "Already cancelled / not in a cancellable state"
 // @Failure      500            {object}  errorResponse                "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/reservations/{id}/cancel [post]
 func (h *ReservationHandler) Cancel(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -189,6 +196,11 @@ func (h *ReservationHandler) Cancel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, userID) {
+		return
+	}
+
 	reservationID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || reservationID <= 0 {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
@@ -245,6 +257,7 @@ type markNoShowResponse struct {
 // @Failure      404       {object}  errorResponse              "Reservation or activity not found"
 // @Failure      409       {object}  errorResponse              "Reservation not in CONFIRMED state (not_cancellable)"
 // @Failure      500       {object}  errorResponse              "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/reservations/{id}/no-show [post]
 func (h *ReservationHandler) MarkNoShow(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -300,6 +313,7 @@ type completeReservationResponse struct {
 // @Failure      404       {object}  errorResponse              "Reservation or activity not found"
 // @Failure      409       {object}  errorResponse              "Reservation not in CONFIRMED state (not_completable)"
 // @Failure      500       {object}  errorResponse              "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/reservations/{id}/complete [post]
 func (h *ReservationHandler) CompleteReservation(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -349,6 +363,7 @@ func (h *ReservationHandler) CompleteReservation(c *gin.Context) {
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/reservations [get]
 func (h *ReservationHandler) ListByUser(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -356,6 +371,11 @@ func (h *ReservationHandler) ListByUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, userID) {
+		return
+	}
+
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 	status, err := parseStatusFilter(c.Query("status"))
@@ -399,6 +419,7 @@ func (h *ReservationHandler) ListByUser(c *gin.Context) {
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/reservations/upcoming [get]
 func (h *ReservationHandler) ListUpcomingByUser(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -406,6 +427,11 @@ func (h *ReservationHandler) ListUpcomingByUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, userID) {
+		return
+	}
+
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 	in, err := reservationuc.NewListUpcomingByUserInput(userID, limit, offset)
@@ -436,6 +462,7 @@ func (h *ReservationHandler) ListUpcomingByUser(c *gin.Context) {
 // @Failure      400      {object}  errorResponse
 // @Failure      404      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/users/{user_id}/reservations/{id} [get]
 func (h *ReservationHandler) GetByID(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("user_id"))
@@ -443,6 +470,11 @@ func (h *ReservationHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "user_id"})
 		return
 	}
+
+	if !RequireOwnershipOrAdmin(c, userID) {
+		return
+	}
+
 	reservationID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || reservationID <= 0 {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
@@ -473,6 +505,7 @@ func (h *ReservationHandler) GetByID(c *gin.Context) {
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/dogs/{id}/reservations [get]
 func (h *ReservationHandler) ListByDog(c *gin.Context) {
 	dogID, err := strconv.Atoi(c.Param("id"))
@@ -508,6 +541,7 @@ func (h *ReservationHandler) ListByDog(c *gin.Context) {
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/passes/{id}/reservations [get]
 func (h *ReservationHandler) ListByPass(c *gin.Context) {
 	passID, err := strconv.Atoi(c.Param("id"))
@@ -543,6 +577,7 @@ func (h *ReservationHandler) ListByPass(c *gin.Context) {
 // @Success      200      {object}  listReservationsResponse
 // @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
 // @Router       /api/v1/activities/{id}/reservations [get]
 func (h *ReservationHandler) ListByActivity(c *gin.Context) {
 	activityID, err := strconv.Atoi(c.Param("id"))

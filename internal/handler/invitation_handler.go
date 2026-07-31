@@ -44,6 +44,7 @@ type createInvitationResponse struct {
 // @Failure      400   {object}  errorResponse             "Invalid request body, missing fields, or validation error"
 // @Failure      409   {object}  errorResponse             "Duplicate token (unlikely — 256-bit random)"
 // @Failure      500   {object}  errorResponse             "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/invitations [post]
 func (h *InvitationHandler) Create(c *gin.Context) {
 	var req createInvitationRequest

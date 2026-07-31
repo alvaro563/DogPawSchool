@@ -159,5 +159,6 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	ListAll(ctx context.Context) ([]*User, error)
 	ListAllPaged(ctx context.Context, limit, offset int) ([]*User, error)
+	ListAllEmails(ctx context.Context) ([]string, error)
 	Delete(ctx context.Context, id int) error
 }

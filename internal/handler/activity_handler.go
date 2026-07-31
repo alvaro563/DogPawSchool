@@ -73,6 +73,7 @@ func NewActivityHandler(
 // @Success      201       {object}  registerActivityResponse  "Activity created"
 // @Failure      400       {object}  errorResponse             "Invalid request body or missing fields"
 // @Failure      500       {object}  errorResponse             "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/activities [post]
 func (h *ActivityHandler) Register(c *gin.Context) {
 	var request registerActivityRequest
@@ -110,6 +111,7 @@ func (h *ActivityHandler) Register(c *gin.Context) {
 // @Param        offset  query  int  false  "Number of activities to skip for pagination (default 0)"
 // @Success      200  {object}  listActivitiesResponse  "List of activities"
 // @Failure      500  {object}  errorResponse           "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/activities [get]
 func (h *ActivityHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
@@ -132,6 +134,7 @@ func (h *ActivityHandler) List(c *gin.Context) {
 // @Param        offset  query  int  false  "Number of activities to skip for pagination (default 0)"
 // @Success      200  {object}  listActivitiesResponse  "List of upcoming activities"
 // @Failure      500  {object}  errorResponse           "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/activities/upcoming [get]
 func (h *ActivityHandler) ListUpcoming(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
@@ -155,6 +158,7 @@ func (h *ActivityHandler) ListUpcoming(c *gin.Context) {
 // @Failure      400  {object}  errorResponse       "Invalid id"
 // @Failure      404  {object}  errorResponse       "Activity not found"
 // @Failure      500  {object}  errorResponse       "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/activities/{id} [get]
 func (h *ActivityHandler) GetByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -187,6 +191,7 @@ func (h *ActivityHandler) GetByID(c *gin.Context) {
 // @Failure      400       {object}  errorResponse            "Invalid id, body, or validation error"
 // @Failure      404       {object}  errorResponse            "Activity not found"
 // @Failure      500       {object}  errorResponse            "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/activities/{id} [patch]
 func (h *ActivityHandler) Modify(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -279,6 +284,7 @@ type closeActivityResponse struct {
 // @Failure      404       {object}  errorResponse         "Activity not found"
 // @Failure      409       {object}  errorResponse         "Activity already closed or reservation not confirmed"
 // @Failure      500       {object}  errorResponse         "Internal server error"
+// @Security     BearerAuth
 // @Router       /api/v1/activities/{id}/close [post]
 func (h *ActivityHandler) Close(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

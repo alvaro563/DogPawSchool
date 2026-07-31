@@ -81,6 +81,21 @@ definitions:
         example: CANCELLED_IN_TIME
         type: string
     type: object
+  handler.changePasswordRequest:
+    properties:
+      new_password:
+        type: string
+      old_password:
+        type: string
+    required:
+    - new_password
+    - old_password
+    type: object
+  handler.changePasswordResponse:
+    properties:
+      message:
+        type: string
+    type: object
   handler.closeActivityRequest:
     type: object
   handler.closeActivityResponse:
@@ -286,6 +301,15 @@ definitions:
           $ref: '#/definitions/handler.reservationViewDTO'
         type: array
     type: object
+  handler.listUserEmailsResponse:
+    properties:
+      count:
+        type: integer
+      emails:
+        items:
+          type: string
+        type: array
+    type: object
   handler.listUsersResponse:
     properties:
       count:
@@ -301,6 +325,23 @@ definitions:
         items:
           $ref: '#/definitions/handler.userDTO'
         type: array
+    type: object
+  handler.loginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handler.loginResponse:
+    properties:
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/handler.userDTO'
     type: object
   handler.markNoShowResponse:
     properties:
@@ -719,6 +760,10 @@ definitions:
     type: object
 info:
   contact: {}
+  description: API for managing dog care activities, reservations, passes and users.
+    Protected endpoints require a Bearer JWT obtained from the login endpoint.
+  title: DogPaw API
+  version: 0.1.0
 paths:
   /api/v1/activities:
     get:
@@ -745,6 +790,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List all activities
       tags:
       - activities
@@ -775,6 +822,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Register a new activity
       tags:
       - activities
@@ -806,6 +855,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Get activity by ID
       tags:
       - activities
@@ -845,6 +896,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Patch an activity
       tags:
       - activities
@@ -893,6 +946,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Close an activity
       tags:
       - activities
@@ -931,6 +986,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List an activity's reservations
       tags:
       - reservations
@@ -958,17 +1015,98 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List upcoming activities
       tags:
       - activities
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates a user with email and password. On success it returns
+        a signed JWT (HS256) and the user profile. The token expires after 24 hours
+        and carries the user ID (sub) and role (role) claims.
+      parameters:
+      - description: Login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login successful
+          schema:
+            $ref: '#/definitions/handler.loginResponse'
+        "400":
+          description: Invalid request body (malformed JSON, missing email, missing
+            password)
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "401":
+          description: Invalid credentials or inactive user
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      summary: Authenticate user and return a JWT token
+      tags:
+      - auth
+  /api/v1/auth/password:
+    patch:
+      consumes:
+      - application/json
+      description: Verifies the current password and replaces it with a new one. Requires
+        a valid Bearer JWT in the Authorization header. The new password must be at
+        least 8 characters and different from the current one.
+      parameters:
+      - description: Old and new password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.changePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password changed successfully
+          schema:
+            $ref: '#/definitions/handler.changePasswordResponse'
+        "400":
+          description: Invalid request body or validation error (e.g. short new password)
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "401":
+          description: Missing or invalid token, wrong old password, or inactive user
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: New password matches the old one
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change the authenticated user's password
+      tags:
+      - auth
   /api/v1/auth/register:
     post:
       consumes:
       - application/json
       description: Completes user registration using a valid invitation token. The
         token must be in PENDING status and not expired (48h lifetime). The password
-        must be at least 60 characters (bcrypt output length). Returns the created
-        user profile without the password hash.
+        must be at least 8 characters. Returns the created user profile without the
+        password hash.
       parameters:
       - description: Registration data
         in: body
@@ -1027,6 +1165,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List all dogs in the system
       tags:
       - dogs
@@ -1062,6 +1202,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Register a new dog
       tags:
       - dogs
@@ -1093,6 +1235,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete a dog
       tags:
       - dogs
@@ -1123,6 +1267,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Get a dog by ID
       tags:
       - dogs
@@ -1169,6 +1315,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Patch a dog (partial update)
       tags:
       - dogs
@@ -1210,6 +1358,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Set the heat flag of a dog
       tags:
       - dogs
@@ -1258,6 +1408,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Add an incompatibility to a dog
       tags:
       - dogs
@@ -1298,6 +1450,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Remove an incompatibility from a dog
       tags:
       - dogs
@@ -1339,6 +1493,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Set the neutered flag of a dog
       tags:
       - dogs
@@ -1376,6 +1532,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List a dog's reservations
       tags:
       - reservations
@@ -1403,6 +1561,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List active dogs
       tags:
       - dogs
@@ -1439,6 +1599,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs filtered by age bracket
       tags:
       - dogs
@@ -1475,6 +1637,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs filtered by breed
       tags:
       - dogs
@@ -1511,6 +1675,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs filtered by heat status
       tags:
       - dogs
@@ -1547,6 +1713,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs that have a specific incompatibility
       tags:
       - dogs
@@ -1583,6 +1751,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs filtered by is_active
       tags:
       - dogs
@@ -1619,6 +1789,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs filtered by neutered status
       tags:
       - dogs
@@ -1655,6 +1827,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs owned by a specific user
       tags:
       - dogs
@@ -1691,6 +1865,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs filtered by sex
       tags:
       - dogs
@@ -1727,6 +1903,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List dogs filtered by size bracket
       tags:
       - dogs
@@ -1753,6 +1931,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List incompatibilities
       tags:
       - incompatibilities
@@ -1787,6 +1967,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Register a new incompatibility
       tags:
       - incompatibilities
@@ -1821,6 +2003,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete an incompatibility
       tags:
       - incompatibilities
@@ -1851,6 +2035,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Get incompatibility by ID
       tags:
       - incompatibilities
@@ -1894,6 +2080,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Patch an incompatibility
       tags:
       - incompatibilities
@@ -1931,6 +2119,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Create an invitation
       tags:
       - invitations
@@ -1961,6 +2151,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List all passes (admin only in production)
       tags:
       - passes
@@ -1992,6 +2184,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Get a pass by ID
       tags:
       - passes
@@ -2035,6 +2229,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Patch a pass
       tags:
       - passes
@@ -2073,6 +2269,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List a pass's reservations
       tags:
       - reservations
@@ -2101,6 +2299,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List all users (admin view)
       tags:
       - users
@@ -2133,6 +2333,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Get a user by ID
       tags:
       - users
@@ -2179,6 +2381,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Patch a user (name and/or email)
       tags:
       - users
@@ -2212,6 +2416,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Deactivate a user (soft delete)
       tags:
       - users
@@ -2248,6 +2454,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List passes owned by a user
       tags:
       - passes
@@ -2283,6 +2491,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Register a new pass (bono) for a user
       tags:
       - passes
@@ -2335,6 +2545,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List a user's reservations
       tags:
       - reservations
@@ -2383,6 +2595,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Book a reservation for a dog
       tags:
       - reservations
@@ -2424,6 +2638,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Get a reservation by id
       tags:
       - reservations
@@ -2475,6 +2691,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Cancel a reservation
       tags:
       - reservations
@@ -2524,6 +2742,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Mark a reservation as completed
       tags:
       - reservations
@@ -2572,6 +2792,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: Mark a reservation as no-show
       tags:
       - reservations
@@ -2610,7 +2832,35 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
       summary: List a user's upcoming reservations
       tags:
       - reservations
+  /api/v1/users/emails:
+    get:
+      description: Returns the email of every registered user, ordered by user id.
+        Intended for the admin panel (e.g. bulk communications). Admin only.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.listUserEmailsResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all user emails (admin view)
+      tags:
+      - users
+securityDefinitions:
+  BearerAuth:
+    description: Paste the token returned by /api/v1/auth/login as "Bearer <token>".
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"
