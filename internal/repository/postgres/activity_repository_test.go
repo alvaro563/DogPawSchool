@@ -33,7 +33,7 @@ func TestActivityRepository_RoundTrip(t *testing.T) {
 	assert.Equal(t, 8, got.MaxCapacity())
 	assert.Equal(t, "Parque Natural", got.Location())
 	assert.Equal(t, 3, got.DurationInHours())
-	assert.True(t, got.Date().Equal(date))
+	assert.WithinDuration(t, date, got.Date(), time.Microsecond)
 	assert.False(t, got.IsClosed())
 
 	activity2, err := domain.NewActivity(0, "Socialización grupal", "Centro",

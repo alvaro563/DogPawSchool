@@ -1,0 +1,9 @@
+function App() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+      <p className="text-muted-foreground">DogPaw frontend — ready.</p>
+    </div>
+  )
+}
+
+export default App
