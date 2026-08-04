@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +29,14 @@ func newTestInvitationHandler(creator InvitationCreator) *InvitationHandler {
 }
 
 func validCreateInvitationBody() string {
-	return `{"created_by":1,"email":"newuser@example.com","role":"REGULAR"}`
+	return `{"email":"newuser@example.com","role":"REGULAR"}`
+}
+
+func setupAdminCtx(method, target, body string) (*gin.Context, *httptest.ResponseRecorder) {
+	c, w := setupCtx(method, target, body)
+	c.Set("user_id", 1)
+	c.Set("user_role", string(domain.RoleAdmin))
+	return c, w
 }
 
 func TestCreateInvitation_Success(t *testing.T) {
@@ -40,7 +49,7 @@ func TestCreateInvitation_Success(t *testing.T) {
 			return invitationuc.CreateInvitationOutput{ID: 42, Token: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"}, nil
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/invitations", validCreateInvitationBody())
+	c, w := setupAdminCtx(http.MethodPost, "/api/v1/invitations", validCreateInvitationBody())
 
 	h.Create(c)
 
@@ -74,7 +83,7 @@ func TestCreateInvitation_InvalidEmail(t *testing.T) {
 			return invitationuc.CreateInvitationOutput{}, nil
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/invitations", `{"created_by":1,"email":"bad-email","role":"REGULAR"}`)
+	c, w := setupAdminCtx(http.MethodPost, "/api/v1/invitations", `{"email":"bad-email","role":"REGULAR"}`)
 
 	h.Create(c)
 
@@ -89,7 +98,7 @@ func TestCreateInvitation_InvalidRole(t *testing.T) {
 			return invitationuc.CreateInvitationOutput{}, nil
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/invitations", `{"created_by":1,"email":"u@example.com","role":"INVALID"}`)
+	c, w := setupAdminCtx(http.MethodPost, "/api/v1/invitations", `{"email":"u@example.com","role":"INVALID"}`)
 
 	h.Create(c)
 
@@ -103,7 +112,7 @@ func TestCreateInvitation_UseCaseError(t *testing.T) {
 			return invitationuc.CreateInvitationOutput{}, errors.New("internal error")
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/invitations", validCreateInvitationBody())
+	c, w := setupAdminCtx(http.MethodPost, "/api/v1/invitations", validCreateInvitationBody())
 
 	h.Create(c)
 
@@ -117,7 +126,7 @@ func TestCreateInvitation_DuplicateToken(t *testing.T) {
 			return invitationuc.CreateInvitationOutput{}, domain.ErrDuplicateToken
 		},
 	})
-	c, w := setupCtx(http.MethodPost, "/api/v1/invitations", validCreateInvitationBody())
+	c, w := setupAdminCtx(http.MethodPost, "/api/v1/invitations", validCreateInvitationBody())
 
 	h.Create(c)
 

@@ -223,11 +223,10 @@ func (s *stubDogRepository) ListBySizeBracket(ctx context.Context, _ domain.Size
 func (s *stubDogRepository) Delete(ctx context.Context, _ int) error { return nil }
 
 // stubPassRepository is the local mock for the pass repo. The use
-// case calls GetByID, Update, and AddMovement.
+// case calls GetByID, GetByIDForUpdate, and Update.
 type stubPassRepository struct {
-	getByID     func(ctx context.Context, id int) (*domain.Pass, error)
-	update      func(ctx context.Context, pass *domain.Pass) error
-	addMovement func(ctx context.Context, movement *domain.PassMovement) error
+	getByID func(ctx context.Context, id int) (*domain.Pass, error)
+	update  func(ctx context.Context, pass *domain.Pass) error
 }
 
 func (s *stubPassRepository) GetByID(ctx context.Context, id int) (*domain.Pass, error) {
@@ -245,12 +244,6 @@ func (s *stubPassRepository) GetByIDForUpdate(ctx context.Context, id int) (*dom
 func (s *stubPassRepository) Update(ctx context.Context, pass *domain.Pass) error {
 	if s.update != nil {
 		return s.update(ctx, pass)
-	}
-	return nil
-}
-func (s *stubPassRepository) AddMovement(ctx context.Context, movement *domain.PassMovement) error {
-	if s.addMovement != nil {
-		return s.addMovement(ctx, movement)
 	}
 	return nil
 }
@@ -322,7 +315,6 @@ func mustNewReservationView(
 // sentinelErr is a small, import-free error used in tests across this
 // package to verify that repository errors are wrapped correctly. It
 // lives in a _test.go file so it is not part of the compiled binary.
-var sentinelErr = errors.New("repo failure")
 
 // assertValidationError is shared by every use case test in this
 // package. It asserts err is a *ValidationError with the expected

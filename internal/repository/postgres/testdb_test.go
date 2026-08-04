@@ -109,18 +109,6 @@ func insertBaseIncompatibility(t *testing.T, db *sql.DB) *domain.Incompatibility
 	return got
 }
 
-func insertBaseReservation(t *testing.T, db *sql.DB, activityID, dogID, passID int) *domain.Reservation {
-	t.Helper()
-	repo := NewReservationRepository(db)
-	res, err := domain.NewReservation(0, activityID, dogID, passID, time.Now().UTC())
-	require.NoError(t, err)
-	id, err := repo.Create(context.Background(), res)
-	require.NoError(t, err)
-	got, err := repo.GetByID(context.Background(), id)
-	require.NoError(t, err)
-	require.NotNil(t, got)
-	return got
-}
 
 func assertRowCount(t *testing.T, db *sql.DB, table string, expected int) {
 	t.Helper()

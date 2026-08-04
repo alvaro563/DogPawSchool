@@ -87,7 +87,6 @@ func mustNewTrait(id int, code, name string, level domain.IncompatibilityLevel) 
 
 // sentinelErr is a small, import-free error used in tests across this
 // package to verify that repository errors are wrapped correctly.
-var sentinelErr = errors.New("repo failure")
 
 // assertValidationError is shared by every use case test in this
 // package. It asserts err is a *ValidationError with the expected

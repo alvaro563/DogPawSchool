@@ -92,7 +92,7 @@ func (uc *RejectPendingReservationUseCase) Execute(ctx context.Context, input Re
 		// Refund the pass session consumed at booking, mirroring the
 		// cancel in-time policy. The audit movement rides along on the
 		// aggregate and is flushed by Update.
-		if pass, err := uc.passRepo.GetByID(txCtx, reservation.PassID()); err != nil {
+		if pass, err := uc.passRepo.GetByIDForUpdate(txCtx, reservation.PassID()); err != nil {
 			if !errors.Is(err, domain.ErrNotFound) {
 				return fmt.Errorf("get pass %d: %w", reservation.PassID(), err)
 			}

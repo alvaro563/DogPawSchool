@@ -225,7 +225,7 @@ func TestPassModify_Success_AllFields(t *testing.T) {
 	updatedPrice := 15000
 	updatedType := domain.PassSpecial
 	updatedExpiry := time.Date(2027, 12, 31, 23, 59, 59, 0, time.UTC)
-	updated.ApplyPatch(domain.PassPatch{Price: &updatedPrice, PassType: &updatedType, ExpiresAt: &updatedExpiry})
+	require.NoError(t, updated.ApplyPatch(domain.PassPatch{Price: &updatedPrice, PassType: &updatedType, ExpiresAt: &updatedExpiry}))
 	stub := &stubPassModifier{fn: func(ctx context.Context, in passuc.ModifyPassInput) (passuc.ModifyPassOutput, error) {
 		assert.Equal(t, 1, in.ID())
 		requireNotNilHandler(t, in.Patch().Price)

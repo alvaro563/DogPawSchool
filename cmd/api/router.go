@@ -4,18 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
+	"sync"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"golang.org/x/time/rate"
 
+	"dogpaw/internal/crypto"
 	"dogpaw/internal/handler"
 	"dogpaw/internal/repository/postgres"
 	activityuc "dogpaw/internal/usecase/activity"
 	authuc "dogpaw/internal/usecase/auth"
-	"dogpaw/internal/crypto"
 	doguc "dogpaw/internal/usecase/dog"
 	incompatuc "dogpaw/internal/usecase/incompatibility"
 	invitationuc "dogpaw/internal/usecase/invitation"
@@ -28,13 +32,33 @@ import (
 
 const version = "0.1.0"
 
-func newRouter(db *sql.DB, env string) *gin.Engine {
-	if env == "production" {
+func newRouter(db *sql.DB, cfg Config) *gin.Engine {
+	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	r := gin.New()
 	r.Use(gin.Recovery(), requestLogger())
+
+	if len(cfg.TrustedProxies) > 0 {
+		if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+			slog.Error("set trusted proxies", "err", err)
+		}
+	} else if cfg.Env == "production" {
+		slog.Warn("no trusted proxies configured in production")
+	}
+
+	corsConfig := cors.DefaultConfig()
+	if len(cfg.CORSOrigins) > 0 {
+		corsConfig.AllowOrigins = cfg.CORSOrigins
+	} else {
+		corsConfig.AllowAllOrigins = true
+	}
+	corsConfig.AllowHeaders = append(corsConfig.AllowHeaders, "Authorization")
+	corsConfig.AllowMethods = []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"}
+	r.Use(cors.New(corsConfig))
+
+	authLimiter := newIPRateLimiter(rate.Limit(5.0/60.0), 5)
 
 	r.GET("/health", healthHandler(db))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -161,7 +185,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	registerAuthUC := authuc.NewRegisterWithInvitationUseCase(
 		transactor, invRepo, userRepo, crypto.NewDefaultBcryptHasher(),
 	)
-	jwtSecret := "change-me-in-production"
+	jwtSecret := cfg.JWTSecret
 	loginAuthUC := authuc.NewLoginUseCase(
 		userRepo,
 		crypto.NewDefaultBcryptHasher(),
@@ -178,12 +202,12 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		// ── Public ──
-		v1.POST("/auth/register", authH.RegisterWithInvitation)
-		v1.POST("/auth/login", authH.Login)
+		v1.POST("/auth/register", rateLimitMiddleware(authLimiter), authH.RegisterWithInvitation)
+		v1.POST("/auth/login", rateLimitMiddleware(authLimiter), authH.Login)
 
 		// ── Any authenticated user (ownership check inside handlers) ──
 		anyUser := v1.Group("")
-		anyUser.Use(handler.AuthRequired(jwtSecret))
+		anyUser.Use(handler.AuthRequired(jwtSecret, userRepo))
 		{
 			anyUser.PATCH("/auth/password", authH.ChangePassword)
 
@@ -207,7 +231,7 @@ func newRouter(db *sql.DB, env string) *gin.Engine {
 
 		// ── Admin only ──
 		admin := v1.Group("")
-		admin.Use(handler.AuthRequired(jwtSecret))
+		admin.Use(handler.AuthRequired(jwtSecret, userRepo))
 		admin.Use(handler.AdminRequired())
 		{
 			admin.GET("/users", userH.List)
@@ -270,7 +294,8 @@ func healthHandler(db *sql.DB) gin.HandlerFunc {
 		dbStatus := "ok"
 		httpStatus := http.StatusOK
 		if err := db.PingContext(ctx); err != nil {
-			dbStatus = "down: " + err.Error()
+			slog.Error("health db ping failed", "err", err.Error())
+			dbStatus = "down"
 			httpStatus = http.StatusServiceUnavailable
 		}
 		c.JSON(httpStatus, gin.H{
@@ -294,5 +319,67 @@ func requestLogger() gin.HandlerFunc {
 			"duration_ms", time.Since(start).Milliseconds(),
 			"client_ip", c.ClientIP(),
 		)
+	}
+}
+
+type ipRateLimiter struct {
+	mu       sync.Mutex
+	limiters map[string]*rateLimiterEntry
+	rate     rate.Limit
+	burst    int
+}
+
+type rateLimiterEntry struct {
+	limiter  *rate.Limiter
+	lastUsed time.Time
+}
+
+func newIPRateLimiter(r rate.Limit, burst int) *ipRateLimiter {
+	return &ipRateLimiter{
+		limiters: make(map[string]*rateLimiterEntry),
+		rate:     r,
+		burst:    burst,
+	}
+}
+
+func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	entry, ok := l.limiters[ip]
+	if !ok {
+		entry = &rateLimiterEntry{limiter: rate.NewLimiter(l.rate, l.burst)}
+		l.limiters[ip] = entry
+	}
+	entry.lastUsed = time.Now()
+	return entry.limiter
+}
+
+func rateLimitMiddleware(limiter *ipRateLimiter) gin.HandlerFunc {
+	go func() {
+		for range time.Tick(10 * time.Minute) {
+			limiter.mu.Lock()
+			cutoff := time.Now().Add(-10 * time.Minute)
+			for ip, entry := range limiter.limiters {
+				if entry.lastUsed.Before(cutoff) {
+					delete(limiter.limiters, ip)
+				}
+			}
+			limiter.mu.Unlock()
+		}
+	}()
+
+	return func(c *gin.Context) {
+		ip, _, _ := net.SplitHostPort(c.Request.RemoteAddr)
+		if ip == "" {
+			ip = c.ClientIP()
+		}
+		if !limiter.getLimiter(ip).Allow() {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error": "rate_limit_exceeded",
+			})
+			return
+		}
+		c.Next()
 	}
 }

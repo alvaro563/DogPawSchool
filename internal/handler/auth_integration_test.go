@@ -247,7 +247,7 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 
 		// Any authenticated user
 		anyUser := v1.Group("")
-		anyUser.Use(AuthRequired(jwtTestSecret))
+		anyUser.Use(AuthRequired(jwtTestSecret, userRepo))
 		{
 			anyUser.PATCH("/auth/password", authH.ChangePassword)
 			anyUser.GET("/users/:user_id", userH.GetByID)
@@ -266,7 +266,7 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 
 		// Admin only
 		admin := v1.Group("")
-		admin.Use(AuthRequired(jwtTestSecret))
+		admin.Use(AuthRequired(jwtTestSecret, userRepo))
 		admin.Use(AdminRequired())
 		{
 			admin.GET("/users", userH.List)

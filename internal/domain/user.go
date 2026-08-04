@@ -24,13 +24,14 @@ func (role UserRole) IsValid() bool {
 }
 
 type User struct {
-	id        int
-	name      string
-	email     string
-	password  string
-	role      UserRole
-	isActive  bool
-	updatedAt time.Time
+	id           int
+	name         string
+	email        string
+	password     string
+	role         UserRole
+	isActive     bool
+	tokenVersion int
+	updatedAt    time.Time
 }
 
 // NewUser creates a User. New users start as is_active=true.
@@ -43,6 +44,9 @@ func NewUser(id int, name, email, password string, role UserRole) (*User, error)
 	}
 	if email == "" {
 		return nil, fmt.Errorf("user: email must not be empty")
+	}
+	if !basicEmailRegex.MatchString(email) {
+		return nil, fmt.Errorf("user: invalid email format")
 	}
 	if password == "" {
 		return nil, fmt.Errorf("user: password must not be empty")
@@ -80,12 +84,26 @@ func (user *User) Activate() { user.isActive = true }
 // Deactivate marks the user as inactive (soft delete).
 func (user *User) Deactivate() { user.isActive = false }
 
+// TokenVersion returns the user's token version counter. When the
+// password is changed, IncrementTokenVersion bumps this value, which
+// invalidates every JWT issued before the change.
+func (user *User) TokenVersion() int { return user.tokenVersion }
+
+// SetTokenVersion sets the token version from a persisted value. This is
+// the repository's reconstruction entry point for token_version.
+func (user *User) SetTokenVersion(v int) { user.tokenVersion = v }
+
+// IncrementTokenVersion bumps the token version by one, invalidating
+// every JWT previously issued for this user. Call after SetPassword.
+func (user *User) IncrementTokenVersion() { user.tokenVersion++ }
+
 // UpdatedAt returns the last time the user was modified. The database
 // sets this automatically via a BEFORE UPDATE trigger; the domain model
 // may also bump it through MarkUpdated.
 func (user *User) UpdatedAt() time.Time { return user.updatedAt }
 
-// SetPassword replaces the stored password hash. Use cases should call
+// SetPassword replaces the stored password hash. The password must be
+// non-empty (it is expected to be a bcrypt hash). Use cases should call
 // MarkUpdated afterward so the domain timestamp stays in sync with the
 // DB trigger.
 func (user *User) SetPassword(password string) {

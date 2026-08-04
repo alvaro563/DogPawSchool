@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -34,6 +36,9 @@ func NewRegisterWithInvitationInput(token, name, password string, now func() tim
 		return RegisterWithInvitationInput{}, &ValidationError{Field: "name"}
 	}
 	if len(password) < 8 {
+		return RegisterWithInvitationInput{}, &ValidationError{Field: "password"}
+	}
+	if len(password) > 72 {
 		return RegisterWithInvitationInput{}, &ValidationError{Field: "password"}
 	}
 	if now == nil {
@@ -107,8 +112,9 @@ func (uc *RegisterWithInvitationUseCase) Execute(ctx context.Context, input Regi
 	// request with the same token blocks here instead of racing past
 	// CanBeUsed.
 	err = uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		// a. Load invitation by token with row-level lock.
-		inv, err := uc.invitationRepo.GetByTokenForUpdate(txCtx, input.Token())
+		// a. Load invitation by hashed token with row-level lock.
+		hashedToken := hashRegistrationToken(input.Token())
+		inv, err := uc.invitationRepo.GetByTokenForUpdate(txCtx, hashedToken)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
 				return ErrNotFound
@@ -152,4 +158,10 @@ func (uc *RegisterWithInvitationUseCase) Execute(ctx context.Context, input Regi
 	}
 
 	return RegisterWithInvitationOutput{User: user}, nil
+}
+
+// hashRegistrationToken returns the hex-encoded SHA-256 of the raw token.
+func hashRegistrationToken(rawToken string) string {
+	sum := sha256.Sum256([]byte(rawToken))
+	return hex.EncodeToString(sum[:])
 }

@@ -183,11 +183,8 @@ func (h *PassHandler) GetByID(c *gin.Context) {
 }
 
 // List godoc
-// @Summary      List all passes (admin only in production)
+// @Summary      List all passes (admin only)
 // @Description  Returns a paginated list of all passes in the system.
-// @Description  TODO: gate this route behind an admin-role middleware
-// @Description  before production. Currently any client can read all
-// @Description  passes, which exposes other users' data.
 // @Tags         passes
 // @Produce      json
 // @Param        limit   query  int  false  "Maximum number of passes to return (default 50, max 100)"

@@ -169,7 +169,7 @@ func (inv *Invitation) CanBeUsed(now time.Time) bool {
 // if the invitation is not in PENDING status.
 func (inv *Invitation) Accept() error {
 	if inv.status != InvitationPending {
-		return fmt.Errorf("invitation: cannot accept, current status is %s", inv.status)
+		return fmt.Errorf("invitation: cannot accept")
 	}
 	inv.status = InvitationAccepted
 	return nil
@@ -179,7 +179,7 @@ func (inv *Invitation) Accept() error {
 // if the invitation is not in PENDING status.
 func (inv *Invitation) Revoke() error {
 	if inv.status != InvitationPending {
-		return fmt.Errorf("invitation: cannot revoke, current status is %s", inv.status)
+		return fmt.Errorf("invitation: cannot revoke")
 	}
 	inv.status = InvitationRevoked
 	return nil

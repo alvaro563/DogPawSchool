@@ -11,12 +11,12 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// userSelectClause is the 6-column projection reused by every read
+// userSelectClause is the 7-column projection reused by every read
 // method. Keep the column order in lockstep with scanUser. The
 // password column is included so we can reconstruct the full
 // *domain.User aggregate; the handler is responsible for stripping it
 // from the wire response.
-const userSelectClause = `SELECT id, name, email, password, role, is_active
+const userSelectClause = `SELECT id, name, email, password, role, is_active, token_version
 	FROM users`
 
 // UserRepository is the postgres implementation of domain.UserRepository.
@@ -34,13 +34,13 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 // wrapped with context.
 func (repo *UserRepository) Create(ctx context.Context, user *domain.User) (int, error) {
 	const query = `
-		INSERT INTO users (name, email, password, role, is_active)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (name, email, password, role, is_active, token_version)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`
 	var id int
 	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
-		user.Name(), user.Email(), user.Password(), string(user.Role()), user.IsActive(),
+		user.Name(), user.Email(), user.Password(), string(user.Role()), user.IsActive(), user.TokenVersion(),
 	).Scan(&id)
 	if err != nil {
 		return 0, mapUserUniqueError(err, "create user")
@@ -79,18 +79,18 @@ func (repo *UserRepository) GetByEmail(ctx context.Context, email string) (*doma
 	return user, nil
 }
 
-// Update persists the mutable fields (name, email, password, is_active)
-// of the user. Returns domain.ErrNotFound if no row matches the id;
-// domain.ErrDuplicateEmail if the new email is already in use by
-// another user.
+// Update persists the mutable fields (name, email, password, is_active,
+// token_version) of the user. Returns domain.ErrNotFound if no row
+// matches the id; domain.ErrDuplicateEmail if the new email is already in
+// use by another user.
 func (repo *UserRepository) Update(ctx context.Context, user *domain.User) error {
 	const query = `
 		UPDATE users
-		SET name = $1, email = $2, password = $3, is_active = $4
-		WHERE id = $5
+		SET name = $1, email = $2, password = $3, is_active = $4, token_version = $5
+		WHERE id = $6
 	`
 	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
-		user.Name(), user.Email(), user.Password(), user.IsActive(), user.ID(),
+		user.Name(), user.Email(), user.Password(), user.IsActive(), user.TokenVersion(), user.ID(),
 	)
 	if err != nil {
 		return mapUserUniqueError(err, "update user")
@@ -192,17 +192,19 @@ func (repo *UserRepository) Delete(ctx context.Context, id int) error {
 
 // scanUser reads one user row. The column order MUST match
 // userSelectClause. domain.NewUser always constructs a user with
-// is_active=true, so when the row reports is_active=false we flip the
-// flag via user.Deactivate() right after construction. This mirrors
-// the dog repository's ApplyPatch reconstruction pattern.
+// is_active=true and token_version=0, so the reconstruction
+// setter is called only for the fields that can differ from the
+// defaults: Deactivate when is_active=false, SetTokenVersion to
+// restore the persisted counter.
 func scanUser(row rowScanner) (*domain.User, error) {
 	var (
-		id                    int
-		name, email, password string
-		role                  string
-		isActive              bool
+		id                       int
+		name, email, password    string
+		role                     string
+		isActive                 bool
+		tokenVersion             int
 	)
-	if err := row.Scan(&id, &name, &email, &password, &role, &isActive); err != nil {
+	if err := row.Scan(&id, &name, &email, &password, &role, &isActive, &tokenVersion); err != nil {
 		return nil, err
 	}
 	user, err := domain.NewUser(id, name, email, password, domain.UserRole(role))
@@ -212,6 +214,7 @@ func scanUser(row rowScanner) (*domain.User, error) {
 	if !isActive {
 		user.Deactivate()
 	}
+	user.SetTokenVersion(tokenVersion)
 	return user, nil
 }
 

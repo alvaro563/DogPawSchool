@@ -170,7 +170,13 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	in, err := authuc.NewChangePasswordInput(userID.(int), req.OldPassword, req.NewPassword, nil)
+	parsedID, ok := userID.(int)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+		return
+	}
+
+	in, err := authuc.NewChangePasswordInput(parsedID, req.OldPassword, req.NewPassword, nil)
 	if err != nil {
 		writeError(c, err)
 		return

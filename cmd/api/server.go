@@ -24,8 +24,18 @@ func startServer(ctx context.Context, cfg Config, h *gin.Engine) error {
 	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("http server listening", "addr", srv.Addr, "env", cfg.Env, "version", version)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
+		var serveErr error
+		if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+			slog.Info("TLS enabled")
+			serveErr = srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+		} else {
+			if cfg.Env == "production" {
+				slog.Warn("TLS is not configured in production")
+			}
+			serveErr = srv.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			serverErr <- serveErr
 		}
 		close(serverErr)
 	}()

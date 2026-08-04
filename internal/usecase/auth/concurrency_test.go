@@ -118,14 +118,14 @@ func seedPendingInvitation(t *testing.T, db *sql.DB, token string) *domain.Invit
 
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	expiresAt := now.Add(48 * time.Hour)
-	inv, err := domain.NewPendingInvitation(admin.ID(), "client@test.com", token, domain.RoleRegular, expiresAt, now)
+	inv, err := domain.NewPendingInvitation(admin.ID(), "client@test.com", hashRegistrationToken(token), domain.RoleRegular, expiresAt, now)
 	require.NoError(t, err)
 	invRepo := postgres.NewInvitationRepository(db)
 	id, err := invRepo.Create(context.Background(), inv)
 	require.NoError(t, err)
 	require.Positive(t, id)
 
-	created, err := invRepo.GetByToken(context.Background(), token)
+	created, err := invRepo.GetByToken(context.Background(), hashRegistrationToken(token))
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	return created
@@ -187,7 +187,7 @@ func TestRegisterWithInvitation_ConcurrentTokenUse(t *testing.T) {
 
 	// Verify the invitation is now ACCEPTED in the database.
 	invRepo2 := postgres.NewInvitationRepository(testDB)
-	inv, err := invRepo2.GetByToken(context.Background(), token)
+	inv, err := invRepo2.GetByToken(context.Background(), hashRegistrationToken(token))
 	require.NoError(t, err)
 	require.NotNil(t, inv)
 	require.Equal(t, domain.InvitationAccepted, inv.Status())
@@ -256,7 +256,7 @@ func TestRegisterWithInvitation_Integration(t *testing.T) {
 	assert.True(t, created.IsActive())
 	assert.Regexp(t, `^\$2[abxy]\$`, created.Password(), "password must be a bcrypt hash")
 
-	storedInv, err := invRepo.GetByToken(context.Background(), token)
+	storedInv, err := invRepo.GetByToken(context.Background(), hashRegistrationToken(token))
 	require.NoError(t, err)
 	require.NotNil(t, storedInv)
 	assert.Equal(t, domain.InvitationAccepted, storedInv.Status(), "invitation must be ACCEPTED")

@@ -1425,3 +1425,41 @@ func TestReservationRejectPending_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
 }
+
+// TestReservationConfirmPending_NotFound verifies errNotFound maps to
+// 404.
+func TestReservationConfirmPending_NotFound(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationConfirmer{
+		fn: func(context.Context, reservationuc.ConfirmPendingReservationInput) (reservationuc.ConfirmPendingReservationOutput, error) {
+			return reservationuc.ConfirmPendingReservationOutput{}, reservationuc.ErrNotFound
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.ConfirmPending(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
+}
+
+// TestReservationRejectPending_NotPending verifies ErrNotPending maps to
+// 409 not_pending.
+func TestReservationRejectPending_NotPending(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationRejecter{
+		fn: func(context.Context, reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error) {
+			return reservationuc.RejectPendingReservationOutput{}, reservationuc.ErrNotPending
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.RejectPending(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_pending"`)
+}

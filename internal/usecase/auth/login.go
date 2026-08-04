@@ -6,8 +6,20 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"dogpaw/internal/domain"
 )
+
+var dummyBcryptHash string
+
+func init() {
+	h, err := bcrypt.GenerateFromPassword([]byte("timing-mitigation-dummy-password-constant-value"), bcrypt.DefaultCost)
+	if err != nil {
+		panic("precompute bcrypt dummy hash: " + err.Error())
+	}
+	dummyBcryptHash = string(h)
+}
 
 // LoginInput is the validated command to authenticate a user. All fields
 // are private: the only way to obtain a value is NewLoginInput.
@@ -91,6 +103,7 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (LoginOut
 	user, err := uc.userRepo.GetByEmail(ctx, input.Email())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
+			_ = uc.verifier.Verify(dummyBcryptHash, "timing-mitigation-padding")
 			return LoginOutput{}, ErrInvalidCredentials
 		}
 		return LoginOutput{}, fmt.Errorf("lookup user: %w", err)

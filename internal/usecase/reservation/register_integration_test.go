@@ -468,3 +468,78 @@ func TestAdminRejectRefundsPass(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 10, refundedPass.RemainingSessions(), "reject must refund the consumed session (+1)")
 }
+
+func newIntegrationConfirmUC() *ConfirmPendingReservationUseCase {
+	return NewConfirmPendingReservationUseCase(
+		postgres.NewTransactor(testDB),
+		postgres.NewReservationRepository(testDB),
+	)
+}
+
+// TestAdminConfirmSucceeds runs the full lifecycle against the real DB:
+// a MEDIA conflict creates a PENDING_TO_CONFIRM reservation, and the admin
+// confirm transitions it to CONFIRMED.
+func TestAdminConfirmSucceeds(t *testing.T) {
+	cleanTables(t, testDB)
+
+	registerUC := newIntegrationRegisterUC()
+	confirmUC := newIntegrationConfirmUC()
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "confirm-owner@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	trait := seedIntegrationTrait(t, "MACHO_ENTERO", "Macho entero (no castrado)")
+	trigger := seedIntegrationTrigger(t, "Reactivo a machos enteros", domain.IncompatibilityLevelMedia, "MACHO_ENTERO")
+
+	classDog := seedIntegrationDog(t, user.ID(), "Rex", []*domain.Incompatibility{trait}, nil)
+	candidate := seedIntegrationDog(t, user.ID(), "Luna", nil, []*domain.Incompatibility{trigger})
+	classPass := seedIntegrationPass(t, user.ID(), 10)
+	candidatePass := seedIntegrationPass(t, user.ID(), 10)
+
+	seedIntegrationReservation(t, activity.ID(), classDog.ID(), classPass.ID(), domain.StatusConfirmed, now)
+
+	in := MustNewRegisterReservationInput(user.ID(), activity.ID(), candidate.ID(), candidatePass.ID(), func() time.Time { return now })
+	out, err := registerUC.Execute(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusPendingToConfirm, out.Status)
+
+	confirmOut, err := confirmUC.Execute(context.Background(), MustNewConfirmPendingReservationInput(out.ID))
+	require.NoError(t, err)
+	require.NotNil(t, confirmOut.Reservation)
+	require.Equal(t, domain.StatusConfirmed, confirmOut.Reservation.Status())
+
+	persisted, err := postgres.NewReservationRepository(testDB).GetByID(context.Background(), out.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusConfirmed, persisted.Status())
+}
+
+// TestNoConflictCreatesConfirmed validates that a booking with no
+// incompatibility conflicts is persisted as CONFIRMED immediately
+// and the pass session is consumed.
+func TestNoConflictCreatesConfirmed(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "noconflict-owner@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	candidate := seedIntegrationDog(t, user.ID(), "Luna", nil, nil)
+	pass := seedIntegrationPass(t, user.ID(), 10)
+
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(user.ID(), activity.ID(), candidate.ID(), pass.ID(), func() time.Time { return now })
+	out, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusConfirmed, out.Status)
+
+	reservationRepo := postgres.NewReservationRepository(testDB)
+	reservations, err := reservationRepo.ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	require.Len(t, reservations, 1)
+	require.Equal(t, domain.StatusConfirmed, reservations[0].Status())
+
+	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	require.Equal(t, 9, gotPass.RemainingSessions(), "one session consumed for the booking")
+}

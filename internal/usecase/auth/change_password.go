@@ -37,6 +37,9 @@ func NewChangePasswordInput(userID int, oldPassword, newPassword string, now fun
 	if len(newPassword) < 8 {
 		return ChangePasswordInput{}, &ValidationError{Field: "new_password"}
 	}
+	if len(newPassword) > 72 {
+		return ChangePasswordInput{}, &ValidationError{Field: "new_password"}
+	}
 	if now == nil {
 		now = time.Now
 	}
@@ -117,6 +120,7 @@ func (uc *ChangePasswordUseCase) Execute(ctx context.Context, input ChangePasswo
 	}
 
 	user.SetPassword(hashedPw)
+	user.IncrementTokenVersion()
 	user.MarkUpdated(input.Now())
 
 	if err := uc.userRepo.Update(ctx, user); err != nil {

@@ -234,12 +234,6 @@ func withUserID(id int) authCtxOption {
 	}
 }
 
-func withAdmin() authCtxOption {
-	return func(userID *int, role *string) {
-		*role = "ADMIN"
-	}
-}
-
 func validRegisterBody() string {
 	return `{"name":"Luna","breed":"Labrador","age_in_months":24,"sex":"FEMALE","weight_kg":22.5,"passport":"ES-1","user_id":1}`
 }

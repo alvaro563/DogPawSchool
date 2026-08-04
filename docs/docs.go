@@ -2060,14 +2060,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of all passes in the system.\nTODO: gate this route behind an admin-role middleware\nbefore production. Currently any client can read all\npasses, which exposes other users' data.",
+                "description": "Returns a paginated list of all passes in the system.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "passes"
                 ],
-                "summary": "List all passes (admin only in production)",
+                "summary": "List all passes (admin only)",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3409,14 +3409,10 @@ const docTemplate = `{
         "handler.createInvitationRequest": {
             "type": "object",
             "required": [
-                "created_by",
                 "email",
                 "role"
             ],
             "properties": {
-                "created_by": {
-                    "type": "integer"
-                },
                 "email": {
                     "type": "string"
                 },

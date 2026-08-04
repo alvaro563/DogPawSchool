@@ -131,14 +131,11 @@ definitions:
     type: object
   handler.createInvitationRequest:
     properties:
-      created_by:
-        type: integer
       email:
         type: string
       role:
         type: string
     required:
-    - created_by
     - email
     - role
     type: object
@@ -2196,11 +2193,7 @@ paths:
       - invitations
   /api/v1/passes:
     get:
-      description: |-
-        Returns a paginated list of all passes in the system.
-        TODO: gate this route behind an admin-role middleware
-        before production. Currently any client can read all
-        passes, which exposes other users' data.
+      description: Returns a paginated list of all passes in the system.
       parameters:
       - description: Maximum number of passes to return (default 50, max 100)
         in: query
@@ -2223,7 +2216,7 @@ paths:
             $ref: '#/definitions/handler.errorResponse'
       security:
       - BearerAuth: []
-      summary: List all passes (admin only in production)
+      summary: List all passes (admin only)
       tags:
       - passes
   /api/v1/passes/{id}:

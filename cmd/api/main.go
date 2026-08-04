@@ -53,17 +53,10 @@ func run() error {
 	}
 	slog.Info("migrations applied")
 
-	if created, err := ensureDevUsers(db, cfg.Env); err != nil {
+	if _, err := ensureDevUsers(db, cfg.Env); err != nil {
 		return fmt.Errorf("ensure dev users: %w", err)
-	} else if created {
-		slog.Info("dev credentials ready",
-			"admin_email", "admin@dogpaw.com",
-			"admin_password", "admin123",
-			"demo_email", "demo@dogpaw.com",
-			"demo_password", "demo1234",
-		)
 	}
 
-	router := newRouter(db, cfg.Env)
+	router := newRouter(db, cfg)
 	return startServer(ctx, cfg, router)
 }

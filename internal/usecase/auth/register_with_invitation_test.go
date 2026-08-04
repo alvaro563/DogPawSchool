@@ -168,7 +168,7 @@ func (s *stubTransactor) WithinTx(ctx context.Context, fn func(ctx context.Conte
 
 func pendingInvitation(now time.Time) *domain.Invitation {
 	expires := now.Add(48 * time.Hour)
-	inv, err := domain.NewPendingInvitation(1, "ana@dogpaw.es", "valid-token-123", domain.RoleRegular, expires, now)
+	inv, err := domain.NewPendingInvitation(1, "ana@dogpaw.es", hashRegistrationToken("valid-token-123"), domain.RoleRegular, expires, now)
 	if err != nil {
 		panic(err)
 	}
@@ -190,7 +190,7 @@ func revokedInvitation(now time.Time) *domain.Invitation {
 func expiredInvitation(now time.Time) *domain.Invitation {
 	past := now.Add(-2 * time.Hour)
 	expires := now.Add(-1 * time.Hour)
-	inv, err := domain.NewPendingInvitation(1, "ana@dogpaw.es", "expired-token", domain.RoleRegular, expires, past)
+	inv, err := domain.NewPendingInvitation(1, "ana@dogpaw.es", hashRegistrationToken("expired-token"), domain.RoleRegular, expires, past)
 	if err != nil {
 		panic(err)
 	}
@@ -276,7 +276,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 
 		invRepo := &mockInvitationRepository{
 			getByTokenForUpdate: func(_ context.Context, token string) (*domain.Invitation, error) {
-				assert.Equal(t, "valid-token-123", token)
+				assert.Equal(t, hashRegistrationToken("valid-token-123"), token)
 				return inv, nil
 			},
 			update: func(_ context.Context, i *domain.Invitation) error {

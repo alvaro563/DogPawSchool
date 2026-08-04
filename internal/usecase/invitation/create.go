@@ -3,6 +3,7 @@ package invitation
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"regexp"
@@ -93,11 +94,12 @@ func (uc *CreateInvitationUseCase) Execute(ctx context.Context, input CreateInvi
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return CreateInvitationOutput{}, fmt.Errorf("generate token: %w", err)
 	}
-	token := hex.EncodeToString(tokenBytes)
+	rawToken := hex.EncodeToString(tokenBytes)
+	hashedToken := hashToken(rawToken)
 
 	expiresAt := input.Now().Add(48 * time.Hour)
 
-	inv, err := domain.NewPendingInvitation(input.CreatedBy(), input.Email(), token, input.Role(), expiresAt, input.Now())
+	inv, err := domain.NewPendingInvitation(input.CreatedBy(), input.Email(), hashedToken, input.Role(), expiresAt, input.Now())
 	if err != nil {
 		return CreateInvitationOutput{}, fmt.Errorf("create invitation: %w", err)
 	}
@@ -107,5 +109,12 @@ func (uc *CreateInvitationUseCase) Execute(ctx context.Context, input CreateInvi
 		return CreateInvitationOutput{}, fmt.Errorf("create invitation: %w", err)
 	}
 
-	return CreateInvitationOutput{ID: id, Token: token}, nil
+	return CreateInvitationOutput{ID: id, Token: rawToken}, nil
+}
+
+// hashToken returns the hex-encoded SHA-256 of the raw token, suitable
+// for storage and lookup.
+func hashToken(rawToken string) string {
+	sum := sha256.Sum256([]byte(rawToken))
+	return hex.EncodeToString(sum[:])
 }

@@ -117,11 +117,6 @@ func TestRegisterReservationUseCase_Success(t *testing.T) {
 			assert.Equal(t, 4, p.RemainingSessions(), "pass should be decremented by 1")
 			return nil
 		},
-		addMovement: func(_ context.Context, m *domain.PassMovement) error {
-			assert.Equal(t, -1, m.Amount(), "movement amount should be -1")
-			assert.Contains(t, m.Reason(), "activity 10")
-			return nil
-		},
 	}
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(_ context.Context, id int) ([]*domain.Reservation, error) {
@@ -624,6 +619,101 @@ func TestRegisterReservationUseCase_NoConflictStaysConfirmed(t *testing.T) {
 	output, err := uc.Execute(context.Background(), validRegisterInput())
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusConfirmed, output.Status)
+}
+
+func TestRegisterReservationUseCase_BidirectionalConflict(t *testing.T) {
+	t.Parallel()
+	// The candidate carries a trigger on MACHO_ENTERO and the existing
+	// dog presents that trait AND carries a trigger on ALTA_ENERGIA for
+	// which the candidate presents the trait. Both directions fire.
+	candidate := dogWithTrigger(20, 1, mustTrigger(1, "Reactivo a machos enteros", domain.IncompatibilityLevelMedia, "MACHO_ENTERO"))
+	_, _ = candidate.AddTrait(mustTrait(3, "ALTA_ENERGIA", "Alta energía", domain.IncompatibilityLevelBaja))
+
+	other := dogWithTrait(21, 1, mustTrait(2, "MACHO_ENTERO", "Macho entero (no castrado)", domain.IncompatibilityLevelBaja))
+	_, _ = other.AddIncompatibility(mustTrigger(4, "Reactivo a alta energía", domain.IncompatibilityLevelMedia, "ALTA_ENERGIA"))
+
+	activityRepo, dogRepo, passRepo, reservationRepo := registerFlowStubs(t, candidate, other)
+	var capturedStatus domain.ReservationStatus
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		capturedStatus = r.Status()
+		return 99, nil
+	}
+	passRepo.update = func(context.Context, *domain.Pass) error { return nil }
+
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	output, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusPendingToConfirm, output.Status)
+	assert.Equal(t, domain.StatusPendingToConfirm, capturedStatus)
+}
+
+func TestRegisterReservationUseCase_MixedSeverityAbsoluteWins(t *testing.T) {
+	t.Parallel()
+	// One direction fires ABSOLUTA, the other fires MEDIA. The ABSOLUTA
+	// must block the booking regardless of the MEDIA conflict.
+	candidate := dogWithTrigger(20, 1, mustTrigger(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO"))
+	_, _ = candidate.AddTrait(mustTrait(3, "ALTA_ENERGIA", "Alta energía", domain.IncompatibilityLevelBaja))
+
+	other := dogWithTrait(21, 1, mustTrait(2, "MACHO_ENTERO", "Macho entero (no castrado)", domain.IncompatibilityLevelBaja))
+	_, _ = other.AddIncompatibility(mustTrigger(4, "Reactivo a alta energía", domain.IncompatibilityLevelMedia, "ALTA_ENERGIA"))
+
+	activityRepo, dogRepo, passRepo, reservationRepo := registerFlowStubs(t, candidate, other)
+	var createCalled bool
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		createCalled = true
+		t.Fatal("reservation Create must not be called on ABSOLUTA conflict")
+		return 0, nil
+	}
+	passRepo.update = func(context.Context, *domain.Pass) error { return nil }
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validRegisterInput())
+	require.Error(t, err)
+	var incompatErr *IncompatibleDogsError
+	require.True(t, errors.As(err, &incompatErr), "expected IncompatibleDogsError, got %T", err)
+	assert.GreaterOrEqual(t, len(incompatErr.Conflicts), 2, "both directions must fire")
+	assert.False(t, createCalled, "no reservation may be created")
+}
+
+func TestRegisterReservationUseCase_GetByIDsErrorWrapped(t *testing.T) {
+	t.Parallel()
+	activityRepo, dogRepo, passRepo, reservationRepo := registerFlowStubs(t, validDog(20, 1), validDog(21, 1))
+	dogRepo.getByIDs = func(context.Context, []int) ([]*domain.Dog, error) {
+		return nil, errors.New("db connection lost")
+	}
+	passRepo.update = func(context.Context, *domain.Pass) error { return nil }
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validRegisterInput())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get dogs holding a slot")
+	assert.Contains(t, err.Error(), "db connection lost")
+}
+
+func TestRegisterReservationUseCase_ListByActivityErrorWrapped(t *testing.T) {
+	t.Parallel()
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validFutureActivity(10), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return validDog(20, 1), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, errors.New("query timeout")
+		},
+	}
+	pass := validPass(30, 1, 5)
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validRegisterInput())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list reservations for activity")
+	assert.Contains(t, err.Error(), "query timeout")
 }
 
 func TestRegisterReservationUseCase_PendingReservationAlsoHoldsSlot(t *testing.T) {

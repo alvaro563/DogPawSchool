@@ -23,9 +23,8 @@ func NewInvitationHandler(creator InvitationCreator) *InvitationHandler {
 }
 
 type createInvitationRequest struct {
-	CreatedBy int    `json:"created_by" binding:"required"`
-	Email     string `json:"email"      binding:"required"`
-	Role      string `json:"role"       binding:"required"`
+	Email string `json:"email" binding:"required"`
+	Role  string `json:"role"  binding:"required"`
 }
 
 type createInvitationResponse struct {
@@ -57,8 +56,9 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	}
 
 	role := domain.UserRole(req.Role)
+	createdBy := CurrentUserID(c)
 
-	in, err := invitationuc.NewCreateInvitationInput(req.CreatedBy, req.Email, role, nil)
+	in, err := invitationuc.NewCreateInvitationInput(createdBy, req.Email, role, nil)
 	if err != nil {
 		writeError(c, err)
 		return

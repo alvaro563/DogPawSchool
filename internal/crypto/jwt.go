@@ -29,19 +29,21 @@ func NewJWTTokenGenerator(secret string, ttl time.Duration) *JWTTokenGenerator {
 }
 
 // Generate creates a signed JWT for user u. The token carries:
-//   - sub:  user ID
-//   - role: user role (ADMIN | REGULAR)
-//   - iat:  issued-at timestamp
-//   - exp:  expiration timestamp (now + ttl)
+//   - sub:           user ID
+//   - role:          user role (ADMIN | REGULAR)
+//   - token_version: current token version (for revocation on password change)
+//   - iat:           issued-at timestamp
+//   - exp:           expiration timestamp (now + ttl)
 //
 // It satisfies authuc.TokenGenerator.
 func (g *JWTTokenGenerator) Generate(user *domain.User) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"sub":  user.ID(),
-		"role": string(user.Role()),
-		"iat":  now.Unix(),
-		"exp":  now.Add(g.ttl).Unix(),
+		"sub":           user.ID(),
+		"role":          string(user.Role()),
+		"token_version": user.TokenVersion(),
+		"iat":           now.Unix(),
+		"exp":           now.Add(g.ttl).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString(g.secret)
@@ -53,22 +55,14 @@ func (g *JWTTokenGenerator) Generate(user *domain.User) (string, error) {
 
 // TokenClaims holds the data extracted from a validated JWT.
 type TokenClaims struct {
-	UserID int
-	Role   string
+	UserID       int
+	Role         string
+	TokenVersion int
 }
 
-// secretProvider allows ParseToken to handle both *JWTTokenGenerator
-// and raw string secrets with the same logic.
-type secretProvider interface {
-	GetSecret() []byte
-}
-
-// GetSecret returns the raw secret bytes for use in token parsing.
-func (g *JWTTokenGenerator) GetSecret() []byte { return g.secret }
-
-// ParseToken verifies a signed JWT and extracts the user ID and role.
-// It returns the claims on success or an error if the token is expired,
-// malformed, or signed with a different secret.
+// ParseToken verifies a signed JWT and extracts the user ID, role, and
+// token version. It returns the claims on success or an error if the
+// token is expired, malformed, or signed with a different secret.
 func ParseToken(tokenString string, secret []byte) (*TokenClaims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -91,11 +85,11 @@ func ParseToken(tokenString string, secret []byte) (*TokenClaims, error) {
 	if !ok {
 		return nil, fmt.Errorf("jwt: missing or invalid role claim")
 	}
-	return &TokenClaims{UserID: int(subFloat), Role: role}, nil
-}
-
-// Parse generates a parse-function that uses the generator's own secret.
-// Convenience wrapper when you already have a *JWTTokenGenerator.
-func (g *JWTTokenGenerator) Parse(tokenString string) (*TokenClaims, error) {
-	return ParseToken(tokenString, g.secret)
+	tokenVersion := 0
+	if tv, ok := claims["token_version"]; ok {
+		if tvFloat, ok := tv.(float64); ok {
+			tokenVersion = int(tvFloat)
+		}
+	}
+	return &TokenClaims{UserID: int(subFloat), Role: role, TokenVersion: tokenVersion}, nil
 }

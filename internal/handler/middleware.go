@@ -7,14 +7,17 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"dogpaw/internal/crypto"
+	"dogpaw/internal/domain"
 )
 
 // AuthRequired returns a Gin middleware that validates a Bearer JWT from
-// the Authorization header. On success it sets "user_id" (int) and
-// "user_role" (string) in the Gin context. On failure it aborts with 401.
-//
-// Usage: r.Group("/protected").Use(handler.AuthRequired(jwtSecret))
-func AuthRequired(secret string) gin.HandlerFunc {
+// the Authorization header. On success it sets "user_id" (int),
+// "user_role" (string), and "token_version" (int) in the Gin context.
+// Additionally, it confirms the user still exists in the database, is
+// active, and that the token's version matches the user's current
+// version (revoked tokens have a stale version after a password change).
+// On any failure it aborts with 401.
+func AuthRequired(secret string, userRepo domain.UserRepository) gin.HandlerFunc {
 	secretBytes := []byte(secret)
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
@@ -35,6 +38,20 @@ func AuthRequired(secret string) gin.HandlerFunc {
 			return
 		}
 
+		user, err := userRepo.GetByID(c.Request.Context(), claims.UserID)
+		if err != nil || user == nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+			return
+		}
+		if !user.IsActive() {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+			return
+		}
+		if user.TokenVersion() != claims.TokenVersion {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+			return
+		}
+
 		c.Set("user_id", claims.UserID)
 		c.Set("user_role", claims.Role)
 		c.Next()
@@ -47,7 +64,7 @@ func AuthRequired(secret string) gin.HandlerFunc {
 func AdminRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get("user_role")
-		if role != "ADMIN" {
+		if role != string(domain.RoleAdmin) {
 			c.AbortWithStatusJSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 			return
 		}
@@ -73,7 +90,7 @@ func CurrentUserRole(c *gin.Context) string {
 
 // IsAdmin returns true when the authenticated user has the "ADMIN" role.
 func IsAdmin(c *gin.Context) bool {
-	return CurrentUserRole(c) == "ADMIN"
+	return CurrentUserRole(c) == string(domain.RoleAdmin)
 }
 
 // forbidden writes a 403 Forbidden response and aborts the request.

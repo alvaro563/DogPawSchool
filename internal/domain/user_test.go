@@ -35,8 +35,8 @@ func TestNewUser(t *testing.T) {
 			{"negative_id", -1, "n", "e", "p", domain.RoleAdmin, "id must not be negative"},
 			{"empty_name", 1, "", "e", "p", domain.RoleAdmin, "name must not be empty"},
 			{"empty_email", 1, "n", "", "p", domain.RoleAdmin, "email must not be empty"},
-			{"empty_password", 1, "n", "e", "", domain.RoleAdmin, "password must not be empty"},
-			{"invalid_role", 1, "n", "e", "p", domain.UserRole("SUPER"), "invalid role"},
+			{"empty_password", 1, "n", "e@t.com", "", domain.RoleAdmin, "password must not be empty"},
+			{"invalid_role", 1, "n", "e@t.com", "p", domain.UserRole("SUPER"), "invalid role"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -50,15 +50,15 @@ func TestNewUser(t *testing.T) {
 
 func TestUser_IsAdmin(t *testing.T) {
 	t.Parallel()
-	admin, _ := domain.NewUser(1, "A", "a@a", "p", domain.RoleAdmin)
-	regular, _ := domain.NewUser(2, "B", "b@b", "p", domain.RoleRegular)
+	admin, _ := domain.NewUser(1, "A", "a@b.com", "p", domain.RoleAdmin)
+	regular, _ := domain.NewUser(2, "B", "b@b.com", "p", domain.RoleRegular)
 	assert.True(t, admin.IsAdmin())
 	assert.False(t, regular.IsAdmin())
 }
 
 func TestUser_CanLogin(t *testing.T) {
 	t.Parallel()
-	u, _ := domain.NewUser(1, "A", "a@a", "p", domain.RoleAdmin)
+	u, _ := domain.NewUser(1, "A", "a@b.com", "p", domain.RoleAdmin)
 	assert.True(t, u.CanLogin())
 	u.Deactivate()
 	assert.False(t, u.CanLogin())
@@ -68,7 +68,7 @@ func TestUser_CanLogin(t *testing.T) {
 
 func TestUser_Activate_Deactivate(t *testing.T) {
 	t.Parallel()
-	u, _ := domain.NewUser(1, "A", "a@a", "p", domain.RoleAdmin)
+	u, _ := domain.NewUser(1, "A", "a@b.com", "p", domain.RoleAdmin)
 	u.Deactivate()
 	assert.False(t, u.IsActive())
 	u.Activate()

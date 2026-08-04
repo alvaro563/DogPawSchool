@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -71,16 +70,6 @@ func (m *mockPassRepository) AddMovement(ctx context.Context, movement *domain.P
 		return m.addMovement(ctx, movement)
 	}
 	return nil
-}
-
-// mustNewPass is a test helper that panics on construction error.
-// Use it inside tests where the input is known to be valid.
-// The updatedAt argument is set equal to createdAt because unit tests
-// never exercise the DB trigger. The remainingSessions argument is
-// set equal to numOfSessions because every test starts from a
-// fully-available pass and then consumes explicitly.
-func mustNewPass(id, numOfSessions, price int, passType domain.PassType, userID int, createdAt time.Time, expiresAt *time.Time) *domain.Pass {
-	return domain.MustNewPass(id, numOfSessions, numOfSessions, price, passType, userID, createdAt, createdAt, expiresAt)
 }
 
 // sentinelErr is a small, import-free error used in tests across this

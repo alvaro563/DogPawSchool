@@ -191,8 +191,10 @@ func TestDogRepository_GetByIDForUpdate(t *testing.T) {
 
 	dog2, err := repo.GetByID(context.Background(), id)
 	require.NoError(t, err)
-	dog2.AddIncompatibility(incomp)
-	repo.Update(context.Background(), dog2)
+	_, err = dog2.AddIncompatibility(incomp)
+	require.NoError(t, err)
+	err = repo.Update(context.Background(), dog2)
+	require.NoError(t, err)
 
 	got, err := repo.GetByIDForUpdate(context.Background(), id)
 	require.NoError(t, err)

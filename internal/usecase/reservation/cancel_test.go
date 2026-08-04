@@ -112,11 +112,6 @@ func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
 				"pass should be refunded (remaining + 1)")
 			return nil
 		},
-		addMovement: func(_ context.Context, m *domain.PassMovement) error {
-			assert.Equal(t, 1, m.Amount(), "movement amount should be +1")
-			assert.Contains(t, m.Reason(), "cancelled in time")
-			return nil
-		},
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(_ context.Context, id int) (*domain.Reservation, error) { return reservation, nil },
@@ -166,10 +161,6 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 			t.Fatal("pass Update should not be called for a late cancel")
 			return nil
 		},
-		addMovement: func(_ context.Context, _ *domain.PassMovement) error {
-			t.Fatal("pass AddMovement should not be called for a late cancel")
-			return nil
-		},
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Reservation, error) { return reservation, nil },
@@ -183,6 +174,7 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 	output, err := uc.Execute(context.Background(), validCancelInput())
 
 	require.NoError(t, err)
+	require.NotNil(t, output.Reservation)
 	assert.Equal(t, domain.StatusCancelledLate, output.Reservation.Status())
 	assert.Equal(t, originalPassRemaining, pass.RemainingSessions(),
 		"late cancel must NOT change pass remaining")
@@ -431,10 +423,6 @@ func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
 		update: func(context.Context, *domain.Pass) error {
 			t.Fatal("pass Update should not be called when CanRefund() is false")
-			return nil
-		},
-		addMovement: func(context.Context, *domain.PassMovement) error {
-			t.Fatal("pass AddMovement should not be called when CanRefund() is false")
 			return nil
 		},
 	}
