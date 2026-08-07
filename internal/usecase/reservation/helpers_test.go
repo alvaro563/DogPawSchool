@@ -155,6 +155,9 @@ func (s *stubActivityRepository) Delete(ctx context.Context, id int) error { ret
 func (s *stubActivityRepository) List(ctx context.Context, _, _ int) ([]*domain.Activity, error) {
 	return nil, nil
 }
+func (s *stubActivityRepository) ListByDateRange(ctx context.Context, _, _ time.Time, _, _ int) ([]*domain.Activity, error) {
+	return nil, nil
+}
 func (s *stubActivityRepository) ListUpcoming(ctx context.Context, _, _ int) ([]*domain.Activity, error) {
 	return nil, nil
 }
@@ -296,7 +299,7 @@ func mustNewReservationView(
 	passRemaining int,
 ) *domain.ReservationView {
 	reservation := mustNewReservation(id, activityID, dogID, passID, status, createdAt)
-	activity := domain.MustNewActivity(activityID, activityName, activityLocation,
+	activity := domain.MustNewActivity(activityID, activityName, "", activityLocation,
 		domain.TypeRoute, 5, 1, activityDate)
 	dog, err := domain.NewDog(dogID, dogName, "TestBreed", "ES-TEST-"+strconv.Itoa(dogID),
 		24, domain.SexMale, 10, dogUserID)

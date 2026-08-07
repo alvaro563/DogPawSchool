@@ -456,6 +456,9 @@ func (dog *Dog) SetHeat(heat bool) error {
 	return nil
 }
 
+// SetPhotoURL sets the profile photo URL. An empty string clears the photo.
+func (dog *Dog) SetPhotoURL(url string) { dog.photoURL = url }
+
 // Activate marks the dog as active.
 func (dog *Dog) Activate() { dog.isActive = true }
 

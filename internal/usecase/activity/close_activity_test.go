@@ -16,13 +16,13 @@ import (
 // closeFinishedActivity returns an activity that started at
 // fixedNow - 25h with duration 1h, so it ended at fixedNow - 24h.
 func closeFinishedActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour))
 }
 
 // closeFinishedClosedActivity is closeFinishedActivity in the state a
 // repository would hand back for an already-closed row.
 func closeFinishedClosedActivity(id int) *domain.Activity {
-	activity, err := domain.ReconstituteActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour), true)
+	activity, err := domain.ReconstituteActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour), true)
 	if err != nil {
 		panic(err)
 	}
@@ -32,7 +32,7 @@ func closeFinishedClosedActivity(id int) *domain.Activity {
 // closeOngoingActivity returns an activity that started at
 // fixedNow - 30min with duration 2h, so it ends at fixedNow + 1.5h.
 func closeOngoingActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 2, fixedNow.Add(-30*time.Minute))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 2, fixedNow.Add(-30*time.Minute))
 }
 
 // stubTransactorActivity is a no-op transactor for activity tests.

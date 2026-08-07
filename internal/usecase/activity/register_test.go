@@ -13,7 +13,7 @@ import (
 
 func validRegisterInput() RegisterActivityInput {
 	return MustNewRegisterActivityInput(
-		"Paseo Río", "Parking Central",
+		"Paseo Río", "", "Parking Central",
 		domain.TypeRoute, 8, 2,
 		time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC),
 	)
@@ -41,7 +41,7 @@ func TestNewRegisterActivityInput(t *testing.T) {
 	t.Parallel()
 	fixedDate := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
 	base := func() RegisterActivityInput {
-		return MustNewRegisterActivityInput("n", "l", domain.TypeRoute, 8, 2, fixedDate)
+		return MustNewRegisterActivityInput("n", "", "l", domain.TypeRoute, 8, 2, fixedDate)
 	}
 
 	scenarios := []struct {
@@ -50,25 +50,25 @@ func TestNewRegisterActivityInput(t *testing.T) {
 		wantField string
 	}{
 		{"empty_name", func() (RegisterActivityInput, error) {
-			return NewRegisterActivityInput("", "l", domain.TypeRoute, 8, 2, fixedDate)
+			return NewRegisterActivityInput("", "", "l", domain.TypeRoute, 8, 2, fixedDate)
 		}, "name"},
 		{"empty_location", func() (RegisterActivityInput, error) {
-			return NewRegisterActivityInput("n", "", domain.TypeRoute, 8, 2, fixedDate)
+			return NewRegisterActivityInput("n", "", "", domain.TypeRoute, 8, 2, fixedDate)
 		}, "location"},
 		{"invalid_type", func() (RegisterActivityInput, error) {
-			return NewRegisterActivityInput("n", "l", domain.ActivityType("INVALID"), 8, 2, fixedDate)
+			return NewRegisterActivityInput("n", "", "l", domain.ActivityType("INVALID"), 8, 2, fixedDate)
 		}, "activity_type"},
 		{"zero_capacity", func() (RegisterActivityInput, error) {
-			return NewRegisterActivityInput("n", "l", domain.TypeRoute, 0, 2, fixedDate)
+			return NewRegisterActivityInput("n", "", "l", domain.TypeRoute, 0, 2, fixedDate)
 		}, "max_capacity"},
 		{"negative_capacity", func() (RegisterActivityInput, error) {
-			return NewRegisterActivityInput("n", "l", domain.TypeRoute, -1, 2, fixedDate)
+			return NewRegisterActivityInput("n", "", "l", domain.TypeRoute, -1, 2, fixedDate)
 		}, "max_capacity"},
 		{"zero_duration", func() (RegisterActivityInput, error) {
-			return NewRegisterActivityInput("n", "l", domain.TypeRoute, 8, 0, fixedDate)
+			return NewRegisterActivityInput("n", "", "l", domain.TypeRoute, 8, 0, fixedDate)
 		}, "duration_in_hours"},
 		{"zero_date", func() (RegisterActivityInput, error) {
-			return NewRegisterActivityInput("n", "l", domain.TypeRoute, 8, 2, time.Time{})
+			return NewRegisterActivityInput("n", "", "l", domain.TypeRoute, 8, 2, time.Time{})
 		}, "date"},
 	}
 	for _, tt := range scenarios {

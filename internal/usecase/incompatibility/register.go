@@ -8,30 +8,26 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// RegisterIncompatibilityInput is the validated command to create
-// a new incompatibility (either a TRAIT or a TRIGGER). All fields are
-// private: only NewRegisterIncompatibilityInput can construct one.
+// RegisterIncompatibilityInput is the validated command to create a new
+// incompatibility. A trait is identified by code != ""; a trigger by
+// targetTraitCode != "". All fields are private: only
+// NewRegisterIncompatibilityInput can construct one.
 type RegisterIncompatibilityInput struct {
 	name            string
 	level           domain.IncompatibilityLevel
-	kind            domain.IncompatibilityKind
 	code            string
 	targetTraitCode string
 }
 
 func (in RegisterIncompatibilityInput) Name() string                       { return in.name }
 func (in RegisterIncompatibilityInput) Level() domain.IncompatibilityLevel { return in.level }
-func (in RegisterIncompatibilityInput) Kind() domain.IncompatibilityKind   { return in.kind }
 func (in RegisterIncompatibilityInput) Code() string                       { return in.code }
 func (in RegisterIncompatibilityInput) TargetTraitCode() string            { return in.targetTraitCode }
 
 // NewRegisterIncompatibilityInput is the validating factory.
-// Returns the first *ValidationError encountered. The returned
-// input is, by construction, always valid.
 func NewRegisterIncompatibilityInput(
 	name string,
 	level domain.IncompatibilityLevel,
-	kind domain.IncompatibilityKind,
 	code, targetTraitCode string,
 ) (RegisterIncompatibilityInput, error) {
 	if name == "" {
@@ -40,19 +36,15 @@ func NewRegisterIncompatibilityInput(
 	if !level.IsValid() {
 		return RegisterIncompatibilityInput{}, &ValidationError{Field: "level"}
 	}
-	if !kind.IsValid() {
-		return RegisterIncompatibilityInput{}, &ValidationError{Field: "kind"}
-	}
-	if kind == domain.IncompatibilityKindTrait && code == "" {
+	if code != "" && targetTraitCode != "" {
 		return RegisterIncompatibilityInput{}, &ValidationError{Field: "code"}
 	}
-	if kind == domain.IncompatibilityKindTrigger && targetTraitCode == "" {
-		return RegisterIncompatibilityInput{}, &ValidationError{Field: "target_trait_code"}
+	if code == "" && targetTraitCode == "" {
+		return RegisterIncompatibilityInput{}, &ValidationError{Field: "code"}
 	}
 	return RegisterIncompatibilityInput{
 		name:            name,
 		level:           level,
-		kind:            kind,
 		code:            code,
 		targetTraitCode: targetTraitCode,
 	}, nil
@@ -62,23 +54,19 @@ func NewRegisterIncompatibilityInput(
 func MustNewRegisterIncompatibilityInput(
 	name string,
 	level domain.IncompatibilityLevel,
-	kind domain.IncompatibilityKind,
 	code, targetTraitCode string,
 ) RegisterIncompatibilityInput {
-	in, err := NewRegisterIncompatibilityInput(name, level, kind, code, targetTraitCode)
+	in, err := NewRegisterIncompatibilityInput(name, level, code, targetTraitCode)
 	if err != nil {
 		panic(err)
 	}
 	return in
 }
 
-// RegisterIncompatibilityOutput is the result of a successful create.
 type RegisterIncompatibilityOutput struct {
 	ID int
 }
 
-// RegisterIncompatibilityUseCase creates a new incompatibility category
-// (a TRAIT or a TRIGGER).
 type RegisterIncompatibilityUseCase struct {
 	repo domain.IncompatibilityRepository
 }
@@ -88,7 +76,7 @@ func NewRegisterIncompatibilityUseCase(repo domain.IncompatibilityRepository) *R
 }
 
 func (uc *RegisterIncompatibilityUseCase) Execute(ctx context.Context, input RegisterIncompatibilityInput) (RegisterIncompatibilityOutput, error) {
-	if input.Kind() == domain.IncompatibilityKindTrigger {
+	if input.TargetTraitCode() != "" {
 		if err := validateTriggerTarget(ctx, uc.repo, input.TargetTraitCode()); err != nil {
 			return RegisterIncompatibilityOutput{}, err
 		}
@@ -96,7 +84,7 @@ func (uc *RegisterIncompatibilityUseCase) Execute(ctx context.Context, input Reg
 
 	var incompat *domain.Incompatibility
 	var err error
-	if input.Kind() == domain.IncompatibilityKindTrait {
+	if input.Code() != "" {
 		incompat, err = domain.NewTraitIncompatibility(0, input.Code(), input.Name(), input.Level())
 	} else {
 		incompat, err = domain.NewTriggerIncompatibility(0, input.Name(), input.Level(), input.TargetTraitCode())
@@ -118,9 +106,6 @@ func (uc *RegisterIncompatibilityUseCase) Execute(ctx context.Context, input Reg
 	return RegisterIncompatibilityOutput{ID: id}, nil
 }
 
-// validateTriggerTarget ensures the target_trait_code of a TRIGGER
-// resolves to an existing TRAIT. Unknown codes surface as a validation
-// error so the client can fix the field.
 func validateTriggerTarget(ctx context.Context, repo domain.IncompatibilityRepository, code string) error {
 	if code == "" {
 		return &ValidationError{Field: "target_trait_code"}
@@ -132,7 +117,7 @@ func validateTriggerTarget(ctx context.Context, repo domain.IncompatibilityRepos
 		}
 		return fmt.Errorf("validate trigger target %q: %w", code, err)
 	}
-	if trait == nil || !trait.IsTrait() {
+	if trait == nil || trait.Code() == "" {
 		return &ValidationError{Field: "target_trait_code"}
 	}
 	return nil

@@ -19,9 +19,9 @@ var (
 	ErrActivityNotFound = domain.ErrNotFound
 )
 
-// activitySelectClause is the 8-column projection reused by every read
+// activitySelectClause is the 9-column projection reused by every read
 // method. Keep the column order in lockstep with scanActivity.
-const activitySelectClause = `SELECT id, name, activity_type, max_capacity,
+const activitySelectClause = `SELECT id, name, description, activity_type, max_capacity,
 	       location, duration_in_hours, date, closed
 	FROM activities`
 
@@ -40,14 +40,14 @@ func NewActivityRepository(db *sql.DB) *ActivityRepository {
 func (repo *ActivityRepository) Create(ctx context.Context, activity *domain.Activity) (int, error) {
 	const query = `
 		INSERT INTO activities (
-			name, activity_type, max_capacity,
+			name, description, activity_type, max_capacity,
 			location, duration_in_hours, date
-		) VALUES ($1, $2, $3, $4, $5, $6)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
 	`
 	var newActivityID int64
 	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
-		activity.Name(), string(activity.Type()), activity.MaxCapacity(),
+		activity.Name(), activity.Description(), string(activity.Type()), activity.MaxCapacity(),
 		activity.Location(), activity.DurationInHours(), activity.Date(),
 	).Scan(&newActivityID)
 	if err != nil {
@@ -92,12 +92,12 @@ func (repo *ActivityRepository) GetByIDForUpdate(ctx context.Context, id int) (*
 func (repo *ActivityRepository) Update(ctx context.Context, activity *domain.Activity) error {
 	const query = `
 		UPDATE activities
-		SET name = $1, activity_type = $2, max_capacity = $3,
-		    location = $4, duration_in_hours = $5, date = $6, closed = $7
-		WHERE id = $8
+		SET name = $1, description = $2, activity_type = $3, max_capacity = $4,
+		    location = $5, duration_in_hours = $6, date = $7, closed = $8
+		WHERE id = $9
 	`
 	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
-		activity.Name(), string(activity.Type()), activity.MaxCapacity(),
+		activity.Name(), activity.Description(), string(activity.Type()), activity.MaxCapacity(),
 		activity.Location(), activity.DurationInHours(), activity.Date(),
 		activity.IsClosed(),
 		activity.ID(),
@@ -141,6 +141,16 @@ func (repo *ActivityRepository) List(ctx context.Context, limit, offset int) ([]
 		ORDER BY date DESC
 		LIMIT $1 OFFSET $2`
 	return repo.queryActivities(ctx, query, limit, offset)
+}
+
+// ListByDateRange returns a paginated list of activities whose date
+// falls within [from, to), ordered ascending by date.
+func (repo *ActivityRepository) ListByDateRange(ctx context.Context, from, to time.Time, limit, offset int) ([]*domain.Activity, error) {
+	query := activitySelectClause + `
+		WHERE date >= $1 AND date < $2
+		ORDER BY date ASC
+		LIMIT $3 OFFSET $4`
+	return repo.queryActivities(ctx, query, from, to, limit, offset)
 }
 
 // ListUpcoming returns a paginated list of activities scheduled at or
@@ -188,6 +198,7 @@ func scanActivity(row scanner) (*domain.Activity, error) {
 	var (
 		activityID      int
 		activityName    string
+		description     string
 		activityType    string
 		maxCapacity     int
 		location        string
@@ -196,13 +207,13 @@ func scanActivity(row scanner) (*domain.Activity, error) {
 		closed          bool
 	)
 	if err := row.Scan(
-		&activityID, &activityName, &activityType, &maxCapacity,
+		&activityID, &activityName, &description, &activityType, &maxCapacity,
 		&location, &durationInHours, &activityDate, &closed,
 	); err != nil {
 		return nil, err
 	}
 	return domain.ReconstituteActivity(
-		activityID, activityName, location,
+		activityID, activityName, description, location,
 		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate, closed,
 	)
 }

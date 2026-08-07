@@ -72,7 +72,7 @@ func newActivityHandler(
 	upcoming ActivityUpcomingLister,
 	close ActivityCloser,
 ) *ActivityHandler {
-	return NewActivityHandler(reg, get, mod, lst, upcoming, close)
+	return NewActivityHandler(reg, get, mod, lst, upcoming, close, nil)
 }
 
 func newActivityHandlerReg(reg ActivityRegisterer) *ActivityHandler {
@@ -104,7 +104,7 @@ func validRegisterActivityBody() string {
 }
 
 func newTestActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1,
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1,
 		mustParseActivityTime("2026-08-01T10:00:00Z"))
 }
 
@@ -257,8 +257,8 @@ func TestActivityGetByID_NotFound(t *testing.T) {
 func TestActivityList_Success(t *testing.T) {
 	t.Parallel()
 	activities := []*domain.Activity{
-		domain.MustNewActivity(1, "a", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-01T10:00:00Z")),
-		domain.MustNewActivity(2, "b", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-02T10:00:00Z")),
+		domain.MustNewActivity(1, "a", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-01T10:00:00Z")),
+		domain.MustNewActivity(2, "b", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-02T10:00:00Z")),
 	}
 	stub := &stubActivityLister{fn: func(ctx context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
 		// The factory normalizes the raw query values (0/0 here) to
@@ -327,7 +327,7 @@ func TestActivityList_InternalError(t *testing.T) {
 // delegates to the dedicated use case.
 func TestActivityListUpcoming_Success(t *testing.T) {
 	t.Parallel()
-	future := domain.MustNewActivity(1, "a", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2030-01-01T10:00:00Z"))
+	future := domain.MustNewActivity(1, "a", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2030-01-01T10:00:00Z"))
 	stub := &stubActivityUpcomingLister{fn: func(ctx context.Context, in activityuc.ListUpcomingActivitiesInput) (activityuc.ListUpcomingActivitiesOutput, error) {
 		return activityuc.ListUpcomingActivitiesOutput{Activities: []*domain.Activity{future}}, nil
 	}}
@@ -358,7 +358,7 @@ func TestActivityListUpcoming_Empty(t *testing.T) {
 // with the updated activity.
 func TestActivityModify_Success(t *testing.T) {
 	t.Parallel()
-	updated := domain.MustNewActivity(1, "Paseo Largo", "Central", domain.TypeRoute, 12, 2,
+	updated := domain.MustNewActivity(1, "Paseo Largo", "", "Central", domain.TypeRoute, 12, 2,
 		mustParseActivityTime("2026-08-01T10:00:00Z"))
 	stub := &stubActivityModifier{fn: func(ctx context.Context, in activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
 		assert.Equal(t, 1, in.ID())
@@ -440,7 +440,7 @@ func TestActivityModify_NotFound(t *testing.T) {
 
 func TestActivityClose_Success(t *testing.T) {
 	t.Parallel()
-	act := domain.MustNewActivity(42, "Paseo", "Río", domain.TypeRoute, 8, 2, time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
+	act := domain.MustNewActivity(42, "Paseo", "", "Río", domain.TypeRoute, 8, 2, time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
 	act.Close()
 	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
 		return activityuc.CloseActivityOutput{Activity: act}, nil

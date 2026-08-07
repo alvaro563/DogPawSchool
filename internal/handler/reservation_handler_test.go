@@ -657,7 +657,7 @@ func mustSampleReservationView(
 	if err != nil {
 		panic(err)
 	}
-	activity := domain.MustNewActivity(activityID, activityName, activityLocation,
+	activity := domain.MustNewActivity(activityID, activityName, "", activityLocation,
 		domain.TypeRoute, 5, 1, activityDate)
 	dog, err := domain.NewDog(dogID, dogName, "TestBreed", "ES-TEST",
 		24, domain.SexMale, 10, dogUserID)

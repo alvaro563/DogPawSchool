@@ -139,8 +139,8 @@ func TestDog_IsIntactMale(t *testing.T) {
 
 func TestDog_AddIncompatibility(t *testing.T) {
 	t.Parallel()
-	incompat, _ := domain.NewIncompatibility(1, "Reactivo a machos", domain.IncompatibilityLevelAbsoluta)
-	incompat2, _ := domain.NewIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia)
+	incompat, _ := domain.NewTriggerIncompatibility(1, "Reactivo a machos", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")
+	incompat2, _ := domain.NewTriggerIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia, "MACHO_ENTERO")
 
 	t.Run("happy_path_adds", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
@@ -178,8 +178,8 @@ func TestDog_AddIncompatibility(t *testing.T) {
 
 func TestDog_RemoveIncompatibility(t *testing.T) {
 	t.Parallel()
-	incompat, _ := domain.NewIncompatibility(1, "Reactivo a machos", domain.IncompatibilityLevelAbsoluta)
-	incompat2, _ := domain.NewIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia)
+	incompat, _ := domain.NewTriggerIncompatibility(1, "Reactivo a machos", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")
+	incompat2, _ := domain.NewTriggerIncompatibility(2, "No tolera cachorros", domain.IncompatibilityLevelMedia, "MACHO_ENTERO")
 
 	t.Run("happy_path_removes", func(t *testing.T) {
 		d := newTestDog(t, 24, domain.SexMale, 10.0, false)

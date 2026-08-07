@@ -15,13 +15,13 @@ import (
 // markPastActivity returns an activity anchored at fixedNow - 24h,
 // so the "activity has started" check always passes.
 func markPastActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour))
 }
 
 // markFutureActivity returns an activity anchored at fixedNow + 7d,
 // so the "activity has started" check always fails.
 func markFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
 }
 
 // confirmedReservation returns a confirmed reservation pointing at

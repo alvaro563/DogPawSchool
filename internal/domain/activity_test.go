@@ -15,7 +15,7 @@ func TestNewActivity(t *testing.T) {
 	date := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 
 	t.Run("happy_path", func(t *testing.T) {
-		a, err := domain.NewActivity(1, "Paseo Río", "Parking Central", domain.TypeRoute, 8, 2, date)
+		a, err := domain.NewActivity(1, "Paseo Río", "", "Parking Central", domain.TypeRoute, 8, 2, date)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, a.ID())
 		assert.Equal(t, "Paseo Río", a.Name())
@@ -44,7 +44,7 @@ func TestNewActivity(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := domain.NewActivity(tt.id, tt.n, tt.loc, tt.at, tt.cap, tt.dur, tt.date)
+				_, err := domain.NewActivity(tt.id, tt.n, "", tt.loc, tt.at, tt.cap, tt.dur, tt.date)
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantInErr)
 			})
@@ -57,7 +57,7 @@ func TestMustNewActivity(t *testing.T) {
 	date := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 
 	t.Run("happy_path", func(t *testing.T) {
-		activity := domain.MustNewActivity(1, "Paseo Río", "Parking Central", domain.TypeRoute, 8, 2, date)
+		activity := domain.MustNewActivity(1, "Paseo Río", "", "Parking Central", domain.TypeRoute, 8, 2, date)
 		assert.NotNil(t, activity)
 		assert.Equal(t, 1, activity.ID())
 		assert.Equal(t, "Paseo Río", activity.Name())
@@ -65,7 +65,7 @@ func TestMustNewActivity(t *testing.T) {
 
 	t.Run("panics_on_invalid_input", func(t *testing.T) {
 		assert.Panics(t, func() {
-			domain.MustNewActivity(1, "", "l", domain.TypeRoute, 8, 2, date)
+			domain.MustNewActivity(1, "", "", "l", domain.TypeRoute, 8, 2, date)
 		})
 	})
 }
@@ -73,7 +73,7 @@ func TestMustNewActivity(t *testing.T) {
 func TestActivity_IsFull(t *testing.T) {
 	t.Parallel()
 	date := fixedNow
-	a, _ := domain.NewActivity(1, "n", "l", domain.TypeRoute, 5, 2, date)
+	a, _ := domain.NewActivity(1, "n", "", "l", domain.TypeRoute, 5, 2, date)
 	assert.False(t, a.IsFull(0))
 	assert.False(t, a.IsFull(4))
 	assert.True(t, a.IsFull(5))
@@ -86,8 +86,8 @@ func TestActivity_IsInThePast_IsUpcoming(t *testing.T) {
 	future := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	ap, _ := domain.NewActivity(1, "n", "l", domain.TypeRoute, 5, 2, past)
-	af, _ := domain.NewActivity(2, "n", "l", domain.TypeRoute, 5, 2, future)
+	ap, _ := domain.NewActivity(1, "n", "", "l", domain.TypeRoute, 5, 2, past)
+	af, _ := domain.NewActivity(2, "n", "", "l", domain.TypeRoute, 5, 2, future)
 
 	assert.True(t, ap.IsInThePast(now))
 	assert.False(t, ap.IsUpcoming(now))
@@ -99,7 +99,7 @@ func TestActivity_IsFinished(t *testing.T) {
 	t.Parallel()
 	// Activity starts at 10:00, duration 2h → ends at 12:00.
 	start := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
-	a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 2, start)
+	a := domain.MustNewActivity(1, "n", "", "l", domain.TypeRoute, 5, 2, start)
 
 	t.Run("not_started", func(t *testing.T) {
 		now := time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC)
@@ -130,9 +130,9 @@ func TestActivity_IsFinished(t *testing.T) {
 func TestActivity_TypePredicates(t *testing.T) {
 	t.Parallel()
 	date := fixedNow
-	individual, _ := domain.NewActivity(1, "n", "l", domain.TypeIndividual, 1, 1, date)
-	social, _ := domain.NewActivity(2, "n", "l", domain.TypeSocialization, 5, 1, date)
-	route, _ := domain.NewActivity(3, "n", "l", domain.TypeRoute, 8, 2, date)
+	individual, _ := domain.NewActivity(1, "n", "", "l", domain.TypeIndividual, 1, 1, date)
+	social, _ := domain.NewActivity(2, "n", "", "l", domain.TypeSocialization, 5, 1, date)
+	route, _ := domain.NewActivity(3, "n", "", "l", domain.TypeRoute, 8, 2, date)
 
 	assert.True(t, individual.IsIndividualClass())
 	assert.False(t, individual.IsSocializationGroup())
@@ -163,7 +163,7 @@ func TestActivity_ApplyPatch(t *testing.T) {
 	newDate := time.Date(2026, 8, 1, 14, 0, 0, 0, time.UTC)
 
 	t.Run("empty_patch_is_noop", func(t *testing.T) {
-		activity := domain.MustNewActivity(1, "Paseo", "Central", domain.TypeRoute, 8, 2, originalDate)
+		activity := domain.MustNewActivity(1, "Paseo", "", "Central", domain.TypeRoute, 8, 2, originalDate)
 		err := activity.ApplyPatch(domain.ActivityPatch{})
 		assert.NoError(t, err)
 		assert.Equal(t, "Paseo", activity.Name())
@@ -172,7 +172,7 @@ func TestActivity_ApplyPatch(t *testing.T) {
 	})
 
 	t.Run("applies_all_fields", func(t *testing.T) {
-		activity := domain.MustNewActivity(1, "Paseo", "Central", domain.TypeRoute, 8, 2, originalDate)
+		activity := domain.MustNewActivity(1, "Paseo", "", "Central", domain.TypeRoute, 8, 2, originalDate)
 		newName := "Paseo Largo"
 		newLocation := "Río"
 		newType := domain.TypeSocialization
@@ -197,7 +197,7 @@ func TestActivity_ApplyPatch(t *testing.T) {
 	})
 
 	t.Run("validation_errors", func(t *testing.T) {
-		activity := domain.MustNewActivity(1, "Paseo", "Central", domain.TypeRoute, 8, 2, originalDate)
+		activity := domain.MustNewActivity(1, "Paseo", "", "Central", domain.TypeRoute, 8, 2, originalDate)
 		emptyName := ""
 		emptyLocation := ""
 		invalidType := domain.ActivityType("INVALID")
@@ -251,14 +251,14 @@ func TestActivityValidationError_Error(t *testing.T) {
 func TestActivity_Close(t *testing.T) {
 	t.Parallel()
 	t.Run("success", func(t *testing.T) {
-		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, fixedNow)
+		a := domain.MustNewActivity(1, "n", "", "l", domain.TypeRoute, 5, 1, fixedNow)
 		assert.False(t, a.IsClosed())
 		assert.NoError(t, a.Close())
 		assert.True(t, a.IsClosed())
 	})
 
 	t.Run("already_closed", func(t *testing.T) {
-		a := domain.MustNewActivity(1, "n", "l", domain.TypeRoute, 5, 1, fixedNow)
+		a := domain.MustNewActivity(1, "n", "", "l", domain.TypeRoute, 5, 1, fixedNow)
 		assert.NoError(t, a.Close())
 		assert.Error(t, a.Close(), "second Close should fail")
 		assert.True(t, a.IsClosed())
@@ -270,27 +270,27 @@ func TestReconstituteActivity(t *testing.T) {
 	date := time.Date(2030, 3, 1, 10, 0, 0, 0, time.UTC)
 
 	t.Run("restores the closed flag", func(t *testing.T) {
-		a, err := domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 5, 1, date, true)
+		a, err := domain.ReconstituteActivity(1, "n", "", "l", domain.TypeRoute, 5, 1, date, true)
 		require.NoError(t, err)
 		assert.True(t, a.IsClosed())
 	})
 
 	t.Run("restores an open activity", func(t *testing.T) {
-		a, err := domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 5, 1, date, false)
+		a, err := domain.ReconstituteActivity(1, "n", "", "l", domain.TypeRoute, 5, 1, date, false)
 		require.NoError(t, err)
 		assert.False(t, a.IsClosed())
 	})
 
 	t.Run("applies the same validation as NewActivity", func(t *testing.T) {
-		_, err := domain.ReconstituteActivity(1, "", "l", domain.TypeRoute, 5, 1, date, true)
+		_, err := domain.ReconstituteActivity(1, "", "", "l", domain.TypeRoute, 5, 1, date, true)
 		assert.Error(t, err, "an empty name must be rejected on reconstitution too")
 
-		_, err = domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 0, 1, date, true)
+		_, err = domain.ReconstituteActivity(1, "n", "", "l", domain.TypeRoute, 0, 1, date, true)
 		assert.Error(t, err, "a non-positive capacity must be rejected")
 	})
 
 	t.Run("a reconstituted closed activity cannot be closed again", func(t *testing.T) {
-		a, err := domain.ReconstituteActivity(1, "n", "l", domain.TypeRoute, 5, 1, date, true)
+		a, err := domain.ReconstituteActivity(1, "n", "", "l", domain.TypeRoute, 5, 1, date, true)
 		require.NoError(t, err)
 		assert.Error(t, a.Close(), "Close must still guard against double-closing")
 	})

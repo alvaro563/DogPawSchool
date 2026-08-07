@@ -16,14 +16,14 @@ import (
 // fixedNow - 25h with duration 1h, so it ended at fixedNow - 24h.
 // The "activity finished" check always passes.
 func completeFinishedActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour))
 }
 
 // completeOngoingActivity returns an activity that started at
 // fixedNow - 30min with duration 2h, so it ends at fixedNow + 1.5h.
 // The "activity finished" check always fails.
 func completeOngoingActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 2, fixedNow.Add(-30*time.Minute))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 2, fixedNow.Add(-30*time.Minute))
 }
 
 // newCompleteUseCase wires the use case with default no-op mocks.

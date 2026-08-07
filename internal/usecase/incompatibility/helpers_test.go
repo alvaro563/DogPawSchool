@@ -14,7 +14,7 @@ type mockIncompatibilityRepository struct {
 	getIncompatibilityByID func(ctx context.Context, id int) (*domain.Incompatibility, error)
 	getByCode              func(ctx context.Context, code string) (*domain.Incompatibility, error)
 	create                 func(ctx context.Context, incomp *domain.Incompatibility) (int, error)
-	list                   func(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error)
+	list                   func(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error)
 	update                 func(ctx context.Context, incomp *domain.Incompatibility) error
 	delete                 func(ctx context.Context, id int) error
 }
@@ -40,9 +40,9 @@ func (m *mockIncompatibilityRepository) Create(ctx context.Context, incomp *doma
 	return 0, nil
 }
 
-func (m *mockIncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error) {
+func (m *mockIncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
 	if m.list != nil {
-		return m.list(ctx, level, kind)
+		return m.list(ctx, level)
 	}
 	return nil, nil
 }
@@ -62,11 +62,7 @@ func (m *mockIncompatibilityRepository) Delete(ctx context.Context, id int) erro
 }
 
 func mustNewIncompatibility(id int, name string, level domain.IncompatibilityLevel) *domain.Incompatibility {
-	in, err := domain.NewIncompatibility(id, name, level)
-	if err != nil {
-		panic(err)
-	}
-	return in
+	return mustNewTrigger(id, name, level, "MACHO_ENTERO")
 }
 
 func mustNewTrigger(id int, name string, level domain.IncompatibilityLevel, target string) *domain.Incompatibility {
@@ -84,9 +80,6 @@ func mustNewTrait(id int, code, name string, level domain.IncompatibilityLevel) 
 	}
 	return in
 }
-
-// sentinelErr is a small, import-free error used in tests across this
-// package to verify that repository errors are wrapped correctly.
 
 // assertValidationError is shared by every use case test in this
 // package. It asserts err is a *ValidationError with the expected

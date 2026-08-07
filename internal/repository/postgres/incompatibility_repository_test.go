@@ -34,7 +34,7 @@ func TestIncompatibilityRepository_RoundTrip(t *testing.T) {
 	_, err = repo.Create(context.Background(), incomp2)
 	require.NoError(t, err)
 
-	list, err := repo.List(context.Background(), nil, nil)
+	list, err := repo.List(context.Background(), nil)
 	require.NoError(t, err)
 	assert.Len(t, list, 2)
 }

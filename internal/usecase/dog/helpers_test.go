@@ -155,7 +155,7 @@ func (s *stubTransactor) WithinTx(ctx context.Context, fn func(ctx context.Conte
 }
 
 func validIncompatibility() *domain.Incompatibility {
-	i, err := domain.NewIncompatibility(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta)
+	i, err := domain.NewTriggerIncompatibility(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")
 	if err != nil {
 		panic(err)
 	}
@@ -163,7 +163,7 @@ func validIncompatibility() *domain.Incompatibility {
 }
 
 func newIncompatibility(id int, nombre string, tipo domain.IncompatibilityLevel) *domain.Incompatibility {
-	i, err := domain.NewIncompatibility(id, nombre, tipo)
+	i, err := domain.NewTriggerIncompatibility(id, nombre, tipo, "MACHO_ENTERO")
 	if err != nil {
 		panic(err)
 	}

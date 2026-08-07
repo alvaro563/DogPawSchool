@@ -4,11 +4,17 @@ definitions:
       activity_type:
         example: ROUTE
         type: string
+      available_spots:
+        example: 5
+        type: integer
       closed:
         example: false
         type: boolean
       date:
         example: "2026-08-01T10:00:00Z"
+        type: string
+      description:
+        example: Paseo grupal por la ribera del río
         type: string
       duration_in_hours:
         example: 2
@@ -31,11 +37,17 @@ definitions:
       activity_type:
         example: ROUTE
         type: string
+      available_spots:
+        example: 5
+        type: integer
       closed:
         example: false
         type: boolean
       date:
         example: "2026-08-01T10:00:00Z"
+        type: string
+      description:
+        example: Paseo grupal por la ribera del río
         type: string
       duration_in_hours:
         example: 2
@@ -52,29 +64,6 @@ definitions:
       name:
         example: Paseo Río
         type: string
-    type: object
-  handler.addIncompatibilityRequest:
-    properties:
-      incompatibility_id:
-        example: 3
-        type: integer
-    type: object
-  handler.addIncompatibilityResponse:
-    properties:
-      added:
-        example: true
-        type: boolean
-      dog_id:
-        example: 42
-        type: integer
-      incompatibilities:
-        items:
-          $ref: '#/definitions/handler.incompatibilityDTO'
-        type: array
-      traits:
-        items:
-          $ref: '#/definitions/handler.incompatibilityDTO'
-        type: array
     type: object
   handler.cancelReservationResponse:
     properties:
@@ -228,9 +217,6 @@ definitions:
       id:
         example: 3
         type: integer
-      kind:
-        example: TRIGGER
-        type: string
       level:
         example: ABSOLUTA
         type: string
@@ -249,9 +235,6 @@ definitions:
       id:
         example: 3
         type: integer
-      kind:
-        example: TRIGGER
-        type: string
       level:
         example: BAJA
         type: string
@@ -392,6 +375,9 @@ definitions:
       date:
         example: "2026-09-01T10:00:00Z"
         type: string
+      description:
+        example: Descripción actualizada
+        type: string
       duration_in_hours:
         example: 3
         type: integer
@@ -454,9 +440,6 @@ definitions:
     properties:
       code:
         example: MIEDOSO
-        type: string
-      kind:
-        example: TRAIT
         type: string
       level:
         example: ABSOLUTA
@@ -549,6 +532,9 @@ definitions:
       date:
         example: "2026-08-01T10:00:00Z"
         type: string
+      description:
+        example: Paseo grupal por la ribera del río
+        type: string
       duration_in_hours:
         example: 2
         type: integer
@@ -602,9 +588,6 @@ definitions:
     properties:
       code:
         example: MIEDOSO
-        type: string
-      kind:
-        example: TRIGGER
         type: string
       level:
         example: MEDIA
@@ -782,6 +765,18 @@ definitions:
         example: FEMALE
         type: string
     type: object
+  handler.setPhotoRequest:
+    properties:
+      photo_url:
+        type: string
+    type: object
+  handler.setPhotoResponse:
+    properties:
+      id:
+        type: integer
+      photo_url:
+        type: string
+    type: object
   handler.updateUserRequest:
     properties:
       email:
@@ -825,8 +820,8 @@ paths:
   /api/v1/activities:
     get:
       description: Returns a paginated list of all activities in the system, most
-        recent first. Limit defaults to 50 and is capped at 100. Offset defaults to
-        0.
+        recent first. Optionally filter by date range with from and to query params
+        (RFC3339). Limit defaults to 50 and is capped at 100. Offset defaults to 0.
       parameters:
       - description: Maximum number of activities to return (default 50, max 100)
         in: query
@@ -836,6 +831,14 @@ paths:
         in: query
         name: offset
         type: integer
+      - description: Filter activities from this date (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: Filter activities before this date (RFC3339)
+        in: query
+        name: to
+        type: string
       produces:
       - application/json
       responses:
@@ -843,6 +846,10 @@ paths:
           description: List of activities
           schema:
             $ref: '#/definitions/handler.listActivitiesResponse'
+        "400":
+          description: Invalid date range
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
         "500":
           description: Internal server error
           schema:
@@ -1420,56 +1427,6 @@ paths:
       summary: Set the heat flag of a dog
       tags:
       - dogs
-  /api/v1/dogs/{id}/incompatibilities:
-    post:
-      consumes:
-      - application/json
-      description: 'Idempotently attaches an existing incompatibility (looked up by
-        id) to a dog. If the dog already has that incompatibility, returns 200 with
-        `added: false` and the current list (no DB write). Otherwise persists the
-        change and returns 201 with `added: true` and the updated list. Both the dog
-        and the incompatibility must exist.'
-      parameters:
-      - description: Dog ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Incompatibility to attach
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handler.addIncompatibilityRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Incompatibility was already attached (added=false, idempotent
-            no-op)
-          schema:
-            $ref: '#/definitions/handler.addIncompatibilityResponse'
-        "201":
-          description: Incompatibility newly attached (added=true)
-          schema:
-            $ref: '#/definitions/handler.addIncompatibilityResponse'
-        "400":
-          description: Invalid id, invalid body, or validation error
-          schema:
-            $ref: '#/definitions/handler.errorResponse'
-        "404":
-          description: Dog or incompatibility not found
-          schema:
-            $ref: '#/definitions/handler.errorResponse'
-        "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/handler.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Add an incompatibility to a dog
-      tags:
-      - dogs
   /api/v1/dogs/{id}/incompatibilities/{incompatibility_id}:
     delete:
       description: Idempotently detaches an existing incompatibility (looked up by
@@ -1553,6 +1510,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Set the neutered flag of a dog
+      tags:
+      - dogs
+  /api/v1/dogs/{id}/photo:
+    patch:
+      consumes:
+      - application/json
+      description: Sets or clears the profile photo URL. An empty "" clears the photo.
+      parameters:
+      - description: Dog ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Photo URL
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.setPhotoRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Photo updated
+          schema:
+            $ref: '#/definitions/handler.setPhotoResponse'
+        "400":
+          description: Invalid id or body
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Dog not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set the profile photo of a dog
       tags:
       - dogs
   /api/v1/dogs/{id}/reservations:

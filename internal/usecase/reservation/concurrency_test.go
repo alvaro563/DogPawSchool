@@ -18,7 +18,7 @@ func TestRegisterReservation_ConcurrentExecuteIsRaceFree(t *testing.T) {
 
 	activityRepo := &stubActivityRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
-			return domain.MustNewActivity(id, "Ruta", "Parque", domain.TypeRoute, 100, 1,
+			return domain.MustNewActivity(id, "Ruta", "", "Parque", domain.TypeRoute, 100, 1,
 				base.Add(72*time.Hour)), nil
 		},
 	}

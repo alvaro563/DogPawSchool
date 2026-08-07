@@ -305,7 +305,7 @@ func mapReservationForeignKeyError(pgErr *pgconn.PgError) error {
 // IsIntactMale) return correct values instead of placeholders.
 const reservationViewSelectClause = `SELECT
 		r.id, r.status, r.created_at,
-		a.id, a.name, a.activity_type, a.max_capacity, a.location, a.duration_in_hours, a.date, a.closed,
+		a.id, a.name, a.description, a.activity_type, a.max_capacity, a.location, a.duration_in_hours, a.date, a.closed,
 		d.id, d.user_id, d.name, d.breed, d.passport, d.age_in_months, d.sex, d.weight_kg,
 		p.id, p.num_of_sessions, p.remaining_sessions, p.price,
 		p.pass_type, p.created_at, p.updated_at, p.expires_at, p.user_id
@@ -470,15 +470,16 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 		status        string
 		createdAt     time.Time
 
-		// activity (8 cols)
-		activityID       int
-		activityName     string
-		activityType     string
-		maxCapacity      int
-		activityLocation string
-		durationInHours  int
-		activityDate     time.Time
-		activityClosed   bool
+		// activity (9 cols)
+		activityID          int
+		activityName        string
+		activityDescription string
+		activityType        string
+		maxCapacity         int
+		activityLocation    string
+		durationInHours     int
+		activityDate        time.Time
+		activityClosed      bool
 
 		// dog (8 cols)
 		dogID        int
@@ -503,7 +504,7 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 	)
 	if err := row.Scan(
 		&reservationID, &status, &createdAt,
-		&activityID, &activityName, &activityType, &maxCapacity, &activityLocation, &durationInHours, &activityDate, &activityClosed,
+		&activityID, &activityName, &activityDescription, &activityType, &maxCapacity, &activityLocation, &durationInHours, &activityDate, &activityClosed,
 		&dogID, &dogUserID, &dogName, &dogBreed, &passport, &dogAgeMonths, &dogSex, &dogWeightKg,
 		&passID, &numOfSessions, &remainingSessions, &price,
 		&passType, &passCreatedAt, &passUpdatedAt, &passExpiresAt, &passUserID,
@@ -519,7 +520,7 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 		return nil, fmt.Errorf("reconstruct reservation: %w", err)
 	}
 	activity, err := domain.ReconstituteActivity(
-		activityID, activityName, activityLocation,
+		activityID, activityName, activityDescription, activityLocation,
 		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate, activityClosed,
 	)
 	if err != nil {
@@ -544,6 +545,39 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 		return nil, fmt.Errorf("reconstruct pass: %w", err)
 	}
 	return domain.NewReservationView(reservation, activity, dog, pass)
+}
+
+// CountHeldSlotsBatch returns a map from activityID to the number of
+// slot-holding reservations (CONFIRMED or PENDING_TO_CONFIRM). Only
+// the given activity IDs are queried; activities with zero held slots
+// are not present in the map. Used by the activity handler to compute
+// available_spots in list responses.
+func (repo *ReservationRepository) CountHeldSlotsBatch(ctx context.Context, activityIDs []int) (map[int]int, error) {
+	if len(activityIDs) == 0 {
+		return map[int]int{}, nil
+	}
+	query := `SELECT activity_id, COUNT(*)
+		FROM reservations
+		WHERE activity_id = ANY($1)
+		  AND status IN ('CONFIRMED', 'PENDING_TO_CONFIRM')
+		GROUP BY activity_id`
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, activityIDs)
+	if err != nil {
+		return nil, fmt.Errorf("count held slots batch: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[int]int, len(activityIDs))
+	for rows.Next() {
+		var activityID, count int
+		if err := rows.Scan(&activityID, &count); err != nil {
+			return nil, fmt.Errorf("scan held slots count: %w", err)
+		}
+		result[activityID] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	return result, nil
 }
 
 var _ domain.ReservationRepository = (*ReservationRepository)(nil)

@@ -58,11 +58,19 @@ func (s *stubModifier) Execute(ctx context.Context, in doguc.ModifyDogInput) (do
 	return s.fn(ctx, in)
 }
 
-type stubIncompatibilityAdder struct {
-	fn func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error)
+type stubTraitAdder struct {
+	fn func(ctx context.Context, in doguc.AddDogTraitInput) (doguc.AddDogTraitOutput, error)
 }
 
-func (s *stubIncompatibilityAdder) Execute(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
+func (s *stubTraitAdder) Execute(ctx context.Context, in doguc.AddDogTraitInput) (doguc.AddDogTraitOutput, error) {
+	return s.fn(ctx, in)
+}
+
+type stubTriggerAdder struct {
+	fn func(ctx context.Context, in doguc.AddDogTriggerInput) (doguc.AddDogTriggerOutput, error)
+}
+
+func (s *stubTriggerAdder) Execute(ctx context.Context, in doguc.AddDogTriggerInput) (doguc.AddDogTriggerOutput, error) {
 	return s.fn(ctx, in)
 }
 
@@ -171,27 +179,27 @@ func (s *stubHeatSetter) Execute(ctx context.Context, in doguc.SetDogHeatInput) 
 }
 
 func newTestHandler(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner) *DogHandler {
-	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newTestHandlerGet(get DogGetter) *DogHandler {
-	return NewDogHandler(nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewDogHandler(nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newTestHandlerFull(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier) *DogHandler {
-	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil)
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil, nil, nil)
 }
 
-func newTestHandlerFull4(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier, addIncompat DogIncompatibilityAdder) *DogHandler {
-	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, nil, nil, nil, nil)
+func newTestHandlerFull4(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier) *DogHandler {
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil, nil, nil)
 }
 
-func newTestHandlerFull5(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier, addIncompat DogIncompatibilityAdder, removeIncompat DogIncompatibilityRemover) *DogHandler {
-	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, addIncompat, removeIncompat, nil, nil, nil)
+func newTestHandlerFull5(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier, removeIncompat DogIncompatibilityRemover) *DogHandler {
+	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, removeIncompat, nil, nil, nil, nil)
 }
 
 func mustNewIncompatibility(id int, name string, level domain.IncompatibilityLevel) domain.Incompatibility {
-	in, err := domain.NewIncompatibility(id, name, level)
+	in, err := domain.NewTriggerIncompatibility(id, name, level, "MACHO_ENTERO")
 	if err != nil {
 		panic(err)
 	}
@@ -683,143 +691,13 @@ func TestModify_InternalError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
-func TestAddIncompatibility_Success_Added(t *testing.T) {
-	t.Parallel()
-	incompats := []domain.Incompatibility{
-		mustNewIncompatibility(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta),
-		mustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja),
-	}
-	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
-		assert.Equal(t, 42, in.DogID())
-		assert.Equal(t, 3, in.IncompatibilityID())
-		return doguc.AddDogIncompatibilityOutput{
-			ID: 42, Added: true, Incompatibilities: incompats,
-		}, nil
-	}}
-	h := newTestHandlerFull4(nil, nil, nil, nil, stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/42/incompatibilities", `{"incompatibility_id":3}`)
-	c.Params = gin.Params{{Key: "id", Value: "42"}}
 
-	h.AddIncompatibility(c)
 
-	assert.Equal(t, http.StatusCreated, w.Code)
-	var body addIncompatibilityResponse
-	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, 42, body.DogID)
-	assert.True(t, body.Added)
-	assert.Len(t, body.Incompatibilities, 2)
-	assert.Equal(t, 3, body.Incompatibilities[1].ID)
-	assert.Equal(t, "Miedo a petardos", body.Incompatibilities[1].Name)
-	assert.Equal(t, "BAJA", body.Incompatibilities[1].Level)
-}
 
-func TestAddIncompatibility_Idempotent_Returns200(t *testing.T) {
-	t.Parallel()
-	incompats := []domain.Incompatibility{
-		mustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja),
-	}
-	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
-		return doguc.AddDogIncompatibilityOutput{
-			ID: 42, Added: false, Incompatibilities: incompats,
-		}, nil
-	}}
-	h := newTestHandlerFull4(nil, nil, nil, nil, stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/42/incompatibilities", `{"incompatibility_id":3}`)
-	c.Params = gin.Params{{Key: "id", Value: "42"}}
 
-	h.AddIncompatibility(c)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	var body addIncompatibilityResponse
-	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, 42, body.DogID)
-	assert.False(t, body.Added)
-	assert.Len(t, body.Incompatibilities, 1)
-}
 
-func TestAddIncompatibility_InvalidDogID(t *testing.T) {
-	t.Parallel()
-	h := newTestHandlerFull4(nil, nil, nil, nil, nil)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/abc/incompatibilities", `{"incompatibility_id":3}`)
-	c.Params = gin.Params{{Key: "id", Value: "abc"}}
 
-	h.AddIncompatibility(c)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), `"field":"id"`)
-}
-
-func TestAddIncompatibility_InvalidJSON(t *testing.T) {
-	t.Parallel()
-	h := newTestHandlerFull4(nil, nil, nil, nil, nil)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/42/incompatibilities", "not json")
-	c.Params = gin.Params{{Key: "id", Value: "42"}}
-
-	h.AddIncompatibility(c)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "invalid_request")
-}
-
-func TestAddIncompatibility_BindingValidation(t *testing.T) {
-	t.Parallel()
-	h := newTestHandlerFull4(nil, nil, nil, nil, nil)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/42/incompatibilities", `{"incompatibility_id":0}`)
-	c.Params = gin.Params{{Key: "id", Value: "42"}}
-
-	h.AddIncompatibility(c)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	// The factory is the sole validator (Q2). A zero id in the body is
-	// now caught by NewAddDogIncompatibilityInput, not by gin binding,
-	// so the response is the standard validation envelope with the
-	// field name.
-	assert.Contains(t, w.Body.String(), `"field":"incompatibility_id"`)
-}
-
-func TestAddIncompatibility_NotFound_UseCase(t *testing.T) {
-	t.Parallel()
-	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
-		return doguc.AddDogIncompatibilityOutput{}, doguc.ErrNotFound
-	}}
-	h := newTestHandlerFull4(nil, nil, nil, nil, stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/999/incompatibilities", `{"incompatibility_id":3}`)
-	c.Params = gin.Params{{Key: "id", Value: "999"}}
-
-	h.AddIncompatibility(c)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.Contains(t, w.Body.String(), "not_found")
-}
-
-func TestAddIncompatibility_NotFound_Repo(t *testing.T) {
-	t.Parallel()
-	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
-		return doguc.AddDogIncompatibilityOutput{}, postgres.ErrNotFound
-	}}
-	h := newTestHandlerFull4(nil, nil, nil, nil, stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/999/incompatibilities", `{"incompatibility_id":3}`)
-	c.Params = gin.Params{{Key: "id", Value: "999"}}
-
-	h.AddIncompatibility(c)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.Contains(t, w.Body.String(), "not_found")
-}
-
-func TestAddIncompatibility_InternalError(t *testing.T) {
-	t.Parallel()
-	stub := &stubIncompatibilityAdder{fn: func(ctx context.Context, in doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error) {
-		return doguc.AddDogIncompatibilityOutput{}, errors.New("db down")
-	}}
-	h := newTestHandlerFull4(nil, nil, nil, nil, stub)
-	c, w := setupCtx(http.MethodPost, "/api/v1/dogs/42/incompatibilities", `{"incompatibility_id":3}`)
-	c.Params = gin.Params{{Key: "id", Value: "42"}}
-
-	h.AddIncompatibility(c)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-}
 
 func TestRemoveIncompatibility_Success_Removed(t *testing.T) {
 	t.Parallel()
@@ -833,7 +711,7 @@ func TestRemoveIncompatibility_Success_Removed(t *testing.T) {
 			ID: 42, Removed: true, Incompatibilities: incompats,
 		}, nil
 	}}
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, stub)
+	h := newTestHandlerFull5(nil, nil, nil, nil, stub)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "3"}}
 
@@ -857,7 +735,7 @@ func TestRemoveIncompatibility_Idempotent_NotPresent(t *testing.T) {
 			ID: 42, Removed: false, Incompatibilities: incompats,
 		}, nil
 	}}
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, stub)
+	h := newTestHandlerFull5(nil, nil, nil, nil, stub)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "3"}}
 
@@ -871,7 +749,7 @@ func TestRemoveIncompatibility_Idempotent_NotPresent(t *testing.T) {
 
 func TestRemoveIncompatibility_InvalidDogID(t *testing.T) {
 	t.Parallel()
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
+	h := newTestHandlerFull5(nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/abc/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "abc"}, {Key: "incompatibility_id", Value: "3"}}
 
@@ -883,7 +761,7 @@ func TestRemoveIncompatibility_InvalidDogID(t *testing.T) {
 
 func TestRemoveIncompatibility_ZeroOrNegativeDogID(t *testing.T) {
 	t.Parallel()
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
+	h := newTestHandlerFull5(nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/0/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "0"}, {Key: "incompatibility_id", Value: "3"}}
 
@@ -895,7 +773,7 @@ func TestRemoveIncompatibility_ZeroOrNegativeDogID(t *testing.T) {
 
 func TestRemoveIncompatibility_InvalidIncompatID(t *testing.T) {
 	t.Parallel()
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
+	h := newTestHandlerFull5(nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/abc", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "abc"}}
 
@@ -907,7 +785,7 @@ func TestRemoveIncompatibility_InvalidIncompatID(t *testing.T) {
 
 func TestRemoveIncompatibility_ZeroIncompatID(t *testing.T) {
 	t.Parallel()
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, nil)
+	h := newTestHandlerFull5(nil, nil, nil, nil, nil)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/0", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "0"}}
 
@@ -922,7 +800,7 @@ func TestRemoveIncompatibility_DogNotFound(t *testing.T) {
 	stub := &stubIncompatibilityRemover{fn: func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error) {
 		return doguc.RemoveDogIncompatibilityOutput{}, doguc.ErrNotFound
 	}}
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, stub)
+	h := newTestHandlerFull5(nil, nil, nil, nil, stub)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/999/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "999"}, {Key: "incompatibility_id", Value: "3"}}
 
@@ -937,7 +815,7 @@ func TestRemoveIncompatibility_UseCaseValidation(t *testing.T) {
 	stub := &stubIncompatibilityRemover{fn: func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error) {
 		return doguc.RemoveDogIncompatibilityOutput{}, &doguc.ValidationError{Field: "incompatibility_id"}
 	}}
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, stub)
+	h := newTestHandlerFull5(nil, nil, nil, nil, stub)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "3"}}
 
@@ -952,7 +830,7 @@ func TestRemoveIncompatibility_InternalError(t *testing.T) {
 	stub := &stubIncompatibilityRemover{fn: func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error) {
 		return doguc.RemoveDogIncompatibilityOutput{}, errors.New("db down")
 	}}
-	h := newTestHandlerFull5(nil, nil, nil, nil, nil, stub)
+	h := newTestHandlerFull5(nil, nil, nil, nil, stub)
 	c, w := setupCtx(http.MethodDelete, "/api/v1/dogs/42/incompatibilities/3", "")
 	c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "incompatibility_id", Value: "3"}}
 

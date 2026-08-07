@@ -16,12 +16,13 @@ import (
 // fall back to a sensible no-op so a test only needs to stub the
 // methods it cares about.
 type mockActivityRepository struct {
-	create       func(ctx context.Context, activity *domain.Activity) (int, error)
-	getByID      func(ctx context.Context, id int) (*domain.Activity, error)
-	update       func(ctx context.Context, activity *domain.Activity) error
-	delete       func(ctx context.Context, id int) error
-	list         func(ctx context.Context, limit, offset int) ([]*domain.Activity, error)
-	listUpcoming func(ctx context.Context, limit, offset int) ([]*domain.Activity, error)
+	create          func(ctx context.Context, activity *domain.Activity) (int, error)
+	getByID         func(ctx context.Context, id int) (*domain.Activity, error)
+	update          func(ctx context.Context, activity *domain.Activity) error
+	delete          func(ctx context.Context, id int) error
+	list            func(ctx context.Context, limit, offset int) ([]*domain.Activity, error)
+	listByDateRange func(ctx context.Context, from, to time.Time, limit, offset int) ([]*domain.Activity, error)
+	listUpcoming    func(ctx context.Context, limit, offset int) ([]*domain.Activity, error)
 }
 
 func (m *mockActivityRepository) Create(ctx context.Context, activity *domain.Activity) (int, error) {
@@ -66,6 +67,13 @@ func (m *mockActivityRepository) List(ctx context.Context, limit, offset int) ([
 	return nil, nil
 }
 
+func (m *mockActivityRepository) ListByDateRange(ctx context.Context, from, to time.Time, limit, offset int) ([]*domain.Activity, error) {
+	if m.listByDateRange != nil {
+		return m.listByDateRange(ctx, from, to, limit, offset)
+	}
+	return nil, nil
+}
+
 func (m *mockActivityRepository) ListUpcoming(ctx context.Context, limit, offset int) ([]*domain.Activity, error) {
 	if m.listUpcoming != nil {
 		return m.listUpcoming(ctx, limit, offset)
@@ -76,7 +84,7 @@ func (m *mockActivityRepository) ListUpcoming(ctx context.Context, limit, offset
 // mustNewActivity is a test helper that panics on construction error.
 // Use it inside tests where the input is known to be valid.
 func mustNewActivity(id int, name, location string, activityType domain.ActivityType, maxCapacity, durationInHours int, date time.Time) *domain.Activity {
-	return domain.MustNewActivity(id, name, location, activityType, maxCapacity, durationInHours, date)
+	return domain.MustNewActivity(id, name, "", location, activityType, maxCapacity, durationInHours, date)
 }
 
 // sentinelErr is a small, import-free error used in tests to verify

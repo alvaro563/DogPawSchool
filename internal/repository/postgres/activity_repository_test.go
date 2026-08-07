@@ -17,7 +17,7 @@ func TestActivityRepository_RoundTrip(t *testing.T) {
 
 	repo := NewActivityRepository(db)
 	date := time.Now().Add(14 * 24 * time.Hour)
-	activity, err := domain.NewActivity(0, "Ruta por la montaña", "Parque Natural",
+	activity, err := domain.NewActivity(0, "Ruta por la montaña", "", "Parque Natural",
 		domain.TypeRoute, 8, 3, date)
 	require.NoError(t, err)
 
@@ -36,7 +36,7 @@ func TestActivityRepository_RoundTrip(t *testing.T) {
 	assert.WithinDuration(t, date, got.Date(), time.Microsecond)
 	assert.False(t, got.IsClosed())
 
-	activity2, err := domain.NewActivity(0, "Socialización grupal", "Centro",
+	activity2, err := domain.NewActivity(0, "Socialización grupal", "", "Centro",
 		domain.TypeSocialization, 10, 2, date.Add(1*24*time.Hour))
 	require.NoError(t, err)
 	_, err = repo.Create(context.Background(), activity2)
@@ -62,7 +62,7 @@ func TestActivityRepository_Update(t *testing.T) {
 	repo := NewActivityRepository(db)
 	activity := insertBaseActivity(t, db)
 
-	patched, err := domain.NewActivity(activity.ID(), "Paseo Actualizado", "Nuevo Lugar",
+	patched, err := domain.NewActivity(activity.ID(), "Paseo Actualizado", "", "Nuevo Lugar",
 		domain.TypeIndividual, 5, 2, activity.Date().Add(1*time.Hour))
 	require.NoError(t, err)
 
@@ -99,7 +99,7 @@ func TestActivityRepository_NotFound(t *testing.T) {
 	_, err := repo.GetByID(context.Background(), 9999)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 
-	nonexistent, err := domain.NewActivity(9999, "Ghost", "Nowhere",
+	nonexistent, err := domain.NewActivity(9999, "Ghost", "", "Nowhere",
 		domain.TypeRoute, 5, 1, time.Now().Add(30*24*time.Hour))
 	require.NoError(t, err)
 	err = repo.Update(context.Background(), nonexistent)

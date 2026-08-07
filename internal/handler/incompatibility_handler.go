@@ -73,12 +73,8 @@ func (h *IncompatibilityHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
-	kind := domain.IncompatibilityKindTrigger
-	if request.Kind != "" {
-		kind = domain.IncompatibilityKind(request.Kind)
-	}
 	in, err := incompatuc.NewRegisterIncompatibilityInput(
-		request.Name, domain.IncompatibilityLevel(request.Level), kind, request.Code, request.TargetTraitCode,
+		request.Name, domain.IncompatibilityLevel(request.Level), request.Code, request.TargetTraitCode,
 	)
 	if err != nil {
 		writeError(c, err)
@@ -111,12 +107,7 @@ func (h *IncompatibilityHandler) List(c *gin.Context) {
 		parsedLevel := domain.IncompatibilityLevel(levelString)
 		levelPtr = &parsedLevel
 	}
-	var kindPtr *domain.IncompatibilityKind
-	if kindString := c.Query("kind"); kindString != "" {
-		parsedKind := domain.IncompatibilityKind(kindString)
-		kindPtr = &parsedKind
-	}
-	in, err := incompatuc.NewListIncompatibilitiesInput(levelPtr, kindPtr)
+	in, err := incompatuc.NewListIncompatibilitiesInput(levelPtr)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -196,10 +187,6 @@ func (h *IncompatibilityHandler) Modify(c *gin.Context) {
 		levelValue := domain.IncompatibilityLevel(*request.Level)
 		patch.Level = &levelValue
 	}
-	if request.Kind != nil {
-		kindValue := domain.IncompatibilityKind(*request.Kind)
-		patch.Kind = &kindValue
-	}
 	in, err := incompatuc.NewModifyIncompatibilityInput(id, patch)
 	if err != nil {
 		writeError(c, err)
@@ -248,7 +235,6 @@ func (h *IncompatibilityHandler) Delete(c *gin.Context) {
 type registerIncompatibilityRequest struct {
 	Name            string `json:"name" example:"Reacciona mal al transportin"`
 	Level           string `json:"level" example:"MEDIA"`
-	Kind            string `json:"kind,omitempty" example:"TRIGGER"`
 	Code            string `json:"code,omitempty" example:"MIEDOSO"`
 	TargetTraitCode string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }
@@ -265,7 +251,6 @@ type listIncompatibilitiesResponse struct {
 type modifyIncompatibilityRequest struct {
 	Name            *string `json:"name,omitempty" example:"Miedo a petardos y cohetes"`
 	Level           *string `json:"level,omitempty" example:"ABSOLUTA"`
-	Kind            *string `json:"kind,omitempty" example:"TRAIT"`
 	Code            *string `json:"code,omitempty" example:"MIEDOSO"`
 	TargetTraitCode *string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }
@@ -276,7 +261,6 @@ type incompatibilityResponse struct {
 	ID              int    `json:"id" example:"3"`
 	Name            string `json:"name" example:"Miedo a petardos"`
 	Level           string `json:"level" example:"BAJA"`
-	Kind            string `json:"kind" example:"TRIGGER"`
 	Code            string `json:"code,omitempty" example:"MIEDOSO"`
 	TargetTraitCode string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }

@@ -146,7 +146,7 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 		args[i] = dog.ID()
 	}
 	query := `
-		SELECT di.dog_id, i.id, i.name, i.level_type, i.kind, i.code, i.target_trait_code
+		SELECT di.dog_id, i.id, i.name, i.level_type, i.code, i.target_trait_code
 		FROM dog_incompatibilities di
 		JOIN incompatibilities i ON i.id = di.incompatibility_id
 		WHERE di.dog_id IN (` + strings.Join(placeholders, ",") + `)
@@ -165,19 +165,16 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 
 	for rows.Next() {
 		var dogID, incompID int
-		var incompatName, levelType, kind string
+		var incompatName, levelType string
 		var code, target sql.NullString
-		if err := rows.Scan(&dogID, &incompID, &incompatName, &levelType, &kind, &code, &target); err != nil {
+		if err := rows.Scan(&dogID, &incompID, &incompatName, &levelType, &code, &target); err != nil {
 			return err
 		}
 		dog, ok := dogByID[dogID]
 		if !ok {
-			// The JOIN guarantees dog_id matches a dog we just loaded.
-			// If this fires, the DB has a row referencing a missing dog.
 			return fmt.Errorf("incompatibility %d references unknown dog %d", incompID, dogID)
 		}
-		switch domain.IncompatibilityKind(kind) {
-		case domain.IncompatibilityKindTrait:
+		if code.Valid {
 			trait, err := domain.NewTraitIncompatibility(incompID, code.String, incompatName, domain.IncompatibilityLevel(levelType))
 			if err != nil {
 				return fmt.Errorf("reconstruct trait %d: %w", incompID, err)
@@ -185,7 +182,7 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 			if _, err := dog.AddTrait(trait); err != nil {
 				return fmt.Errorf("attach trait %d to dog %d: %w", incompID, dogID, err)
 			}
-		case domain.IncompatibilityKindTrigger:
+		} else {
 			trigger, err := domain.NewTriggerIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType), target.String)
 			if err != nil {
 				return fmt.Errorf("reconstruct trigger %d: %w", incompID, err)
@@ -193,8 +190,6 @@ func (repo *DogRepository) loadIncompatibilitiesForDogs(ctx context.Context, dog
 			if _, err := dog.AddIncompatibility(trigger); err != nil {
 				return fmt.Errorf("attach trigger %d to dog %d: %w", incompID, dogID, err)
 			}
-		default:
-			return fmt.Errorf("incompatibility %d has unknown kind %q", incompID, kind)
 		}
 	}
 	return rows.Err()

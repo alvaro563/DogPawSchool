@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of all activities in the system, most recent first. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
+                "description": "Returns a paginated list of all activities in the system, most recent first. Optionally filter by date range with from and to query params (RFC3339). Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
                 ],
@@ -42,6 +42,18 @@ const docTemplate = `{
                         "description": "Number of activities to skip for pagination (default 0)",
                         "name": "offset",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter activities from this date (RFC3339)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter activities before this date (RFC3339)",
+                        "name": "to",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -49,6 +61,12 @@ const docTemplate = `{
                         "description": "List of activities",
                         "schema": {
                             "$ref": "#/definitions/handler.listActivitiesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid date range",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
                         }
                     },
                     "500": {
@@ -1466,76 +1484,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/dogs/{id}/incompatibilities": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Idempotently attaches an existing incompatibility (looked up by id) to a dog. If the dog already has that incompatibility, returns 200 with ` + "`" + `added: false` + "`" + ` and the current list (no DB write). Otherwise persists the change and returns 201 with ` + "`" + `added: true` + "`" + ` and the updated list. Both the dog and the incompatibility must exist.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "dogs"
-                ],
-                "summary": "Add an incompatibility to a dog",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Dog ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Incompatibility to attach",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.addIncompatibilityRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Incompatibility was already attached (added=false, idempotent no-op)",
-                        "schema": {
-                            "$ref": "#/definitions/handler.addIncompatibilityResponse"
-                        }
-                    },
-                    "201": {
-                        "description": "Incompatibility newly attached (added=true)",
-                        "schema": {
-                            "$ref": "#/definitions/handler.addIncompatibilityResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid id, invalid body, or validation error",
-                        "schema": {
-                            "$ref": "#/definitions/handler.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Dog or incompatibility not found",
-                        "schema": {
-                            "$ref": "#/definitions/handler.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "$ref": "#/definitions/handler.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/dogs/{id}/incompatibilities/{incompatibility_id}": {
             "delete": {
                 "security": [
@@ -1652,6 +1600,70 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dogs/{id}/photo": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets or clears the profile photo URL. An empty \"\" clears the photo.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dogs"
+                ],
+                "summary": "Set the profile photo of a dog",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Dog ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Photo URL",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.setPhotoRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Photo updated",
+                        "schema": {
+                            "$ref": "#/definitions/handler.setPhotoResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id or body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Dog not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -3227,6 +3239,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "ROUTE"
                 },
+                "available_spots": {
+                    "type": "integer",
+                    "example": 5
+                },
                 "closed": {
                     "type": "boolean",
                     "example": false
@@ -3234,6 +3250,10 @@ const docTemplate = `{
                 "date": {
                     "type": "string",
                     "example": "2026-08-01T10:00:00Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Paseo grupal por la ribera del río"
                 },
                 "duration_in_hours": {
                     "type": "integer",
@@ -3264,6 +3284,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "ROUTE"
                 },
+                "available_spots": {
+                    "type": "integer",
+                    "example": 5
+                },
                 "closed": {
                     "type": "boolean",
                     "example": false
@@ -3271,6 +3295,10 @@ const docTemplate = `{
                 "date": {
                     "type": "string",
                     "example": "2026-08-01T10:00:00Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Paseo grupal por la ribera del río"
                 },
                 "duration_in_hours": {
                     "type": "integer",
@@ -3291,40 +3319,6 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Paseo Río"
-                }
-            }
-        },
-        "handler.addIncompatibilityRequest": {
-            "type": "object",
-            "properties": {
-                "incompatibility_id": {
-                    "type": "integer",
-                    "example": 3
-                }
-            }
-        },
-        "handler.addIncompatibilityResponse": {
-            "type": "object",
-            "properties": {
-                "added": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "dog_id": {
-                    "type": "integer",
-                    "example": 42
-                },
-                "incompatibilities": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handler.incompatibilityDTO"
-                    }
-                },
-                "traits": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handler.incompatibilityDTO"
-                    }
                 }
             }
         },
@@ -3546,10 +3540,6 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 3
                 },
-                "kind": {
-                    "type": "string",
-                    "example": "TRIGGER"
-                },
                 "level": {
                     "type": "string",
                     "example": "ABSOLUTA"
@@ -3574,10 +3564,6 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 3
-                },
-                "kind": {
-                    "type": "string",
-                    "example": "TRIGGER"
                 },
                 "level": {
                     "type": "string",
@@ -3784,6 +3770,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2026-09-01T10:00:00Z"
                 },
+                "description": {
+                    "type": "string",
+                    "example": "Descripción actualizada"
+                },
                 "duration_in_hours": {
                     "type": "integer",
                     "example": 3
@@ -3870,10 +3860,6 @@ const docTemplate = `{
                 "code": {
                     "type": "string",
                     "example": "MIEDOSO"
-                },
-                "kind": {
-                    "type": "string",
-                    "example": "TRAIT"
                 },
                 "level": {
                     "type": "string",
@@ -4000,6 +3986,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2026-08-01T10:00:00Z"
                 },
+                "description": {
+                    "type": "string",
+                    "example": "Paseo grupal por la ribera del río"
+                },
                 "duration_in_hours": {
                     "type": "integer",
                     "example": 2
@@ -4075,10 +4065,6 @@ const docTemplate = `{
                 "code": {
                     "type": "string",
                     "example": "MIEDOSO"
-                },
-                "kind": {
-                    "type": "string",
-                    "example": "TRIGGER"
                 },
                 "level": {
                     "type": "string",
@@ -4329,6 +4315,25 @@ const docTemplate = `{
                 "sex": {
                     "type": "string",
                     "example": "FEMALE"
+                }
+            }
+        },
+        "handler.setPhotoRequest": {
+            "type": "object",
+            "properties": {
+                "photo_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.setPhotoResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "photo_url": {
+                    "type": "string"
                 }
             }
         },

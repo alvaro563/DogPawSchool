@@ -13,8 +13,8 @@ import (
 
 // ErrIncompatibilityInUse aliases the domain sentinel returned by Delete
 // when the incompatibility is still attached to at least one dog (FK
-// 23503 from dog_incompatibilities) or, for a TRAIT, still referenced as
-// the target of at least one TRIGGER.
+// 23503 from dog_incompatibilities) or, for a trait, still referenced as
+// the target of at least one trigger.
 var ErrIncompatibilityInUse = domain.ErrIncompatibilityInUse
 
 type IncompatibilityRepository struct {
@@ -25,10 +25,8 @@ func NewIncompatibilityRepository(db *sql.DB) *IncompatibilityRepository {
 	return &IncompatibilityRepository{db: db}
 }
 
-// incompatibilitySelectClause is the projection reused by every reader.
-const incompatibilitySelectClause = `SELECT id, name, level_type, kind, code, target_trait_code FROM incompatibilities`
+const incompatibilitySelectClause = `SELECT id, name, level_type, code, target_trait_code FROM incompatibilities`
 
-// incompatRowScanner abstracts sql.Row and sql.Rows for the shared scan helper.
 type incompatRowScanner interface {
 	Scan(dest ...any) error
 }
@@ -38,21 +36,16 @@ func scanIncompatibility(row incompatRowScanner) (*domain.Incompatibility, error
 		incompID     int
 		incompatName string
 		levelType    string
-		kind         string
 		code         sql.NullString
 		target       sql.NullString
 	)
-	if err := row.Scan(&incompID, &incompatName, &levelType, &kind, &code, &target); err != nil {
+	if err := row.Scan(&incompID, &incompatName, &levelType, &code, &target); err != nil {
 		return nil, err
 	}
-	switch domain.IncompatibilityKind(kind) {
-	case domain.IncompatibilityKindTrait:
+	if code.Valid {
 		return domain.NewTraitIncompatibility(incompID, code.String, incompatName, domain.IncompatibilityLevel(levelType))
-	case domain.IncompatibilityKindTrigger:
-		return domain.NewTriggerIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType), target.String)
-	default:
-		return nil, fmt.Errorf("reconstruct incompatibility %d: unknown kind %q", incompID, kind)
 	}
+	return domain.NewTriggerIncompatibility(incompID, incompatName, domain.IncompatibilityLevel(levelType), target.String)
 }
 
 func (repo *IncompatibilityRepository) GetIncompatibilityByID(ctx context.Context, id int) (*domain.Incompatibility, error) {
@@ -67,9 +60,6 @@ func (repo *IncompatibilityRepository) GetIncompatibilityByID(ctx context.Contex
 	return incompat, nil
 }
 
-// GetByCode fetches the incompatibility identified by its trait code.
-// Returns ErrNotFound when no TRAIT carries that code. Used to validate
-// that a TRIGGER's target_trait_code references an existing TRAIT.
 func (repo *IncompatibilityRepository) GetByCode(ctx context.Context, code string) (*domain.Incompatibility, error) {
 	const query = incompatibilitySelectClause + ` WHERE code = $1`
 	incompat, err := scanIncompatibility(runner(ctx, repo.db).QueryRowContext(ctx, query, code))
@@ -84,13 +74,12 @@ func (repo *IncompatibilityRepository) GetByCode(ctx context.Context, code strin
 
 func (repo *IncompatibilityRepository) Create(ctx context.Context, incomp *domain.Incompatibility) (int, error) {
 	const query = `
-		INSERT INTO incompatibilities (kind, code, name, level_type, target_trait_code)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO incompatibilities (code, name, level_type, target_trait_code)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id
 	`
 	var newIncompatID int64
 	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
-		string(incomp.Kind()),
 		nullString(incomp.Code()),
 		incomp.Name(),
 		string(incomp.Type()),
@@ -102,22 +91,12 @@ func (repo *IncompatibilityRepository) Create(ctx context.Context, incomp *domai
 	return int(newIncompatID), nil
 }
 
-// List returns every incompatibility, optionally filtered by level and/or
-// kind. Passing nil for a filter means "no filter on that dimension".
-func (repo *IncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error) {
+func (repo *IncompatibilityRepository) List(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
 	query := incompatibilitySelectClause
-	args := make([]any, 0, 2)
+	args := make([]any, 0, 1)
 	if level != nil {
 		args = append(args, string(*level))
-		query += fmt.Sprintf(` WHERE level_type = $%d`, len(args))
-	}
-	if kind != nil {
-		args = append(args, string(*kind))
-		if level != nil {
-			query += fmt.Sprintf(` AND kind = $%d`, len(args))
-		} else {
-			query += fmt.Sprintf(` WHERE kind = $%d`, len(args))
-		}
+		query += ` WHERE level_type = $1`
 	}
 	query += ` ORDER BY name`
 
@@ -144,11 +123,11 @@ func (repo *IncompatibilityRepository) List(ctx context.Context, level *domain.I
 func (repo *IncompatibilityRepository) Update(ctx context.Context, incomp *domain.Incompatibility) error {
 	const query = `
 		UPDATE incompatibilities
-		SET name = $1, level_type = $2, kind = $3, code = $4, target_trait_code = $5
-		WHERE id = $6
+		SET name = $1, level_type = $2, code = $3, target_trait_code = $4
+		WHERE id = $5
 	`
 	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
-		incomp.Name(), string(incomp.Type()), string(incomp.Kind()),
+		incomp.Name(), string(incomp.Type()),
 		nullString(incomp.Code()), nullString(incomp.TargetTraitCode()), incomp.ID(),
 	)
 	if err != nil {
@@ -165,8 +144,6 @@ func (repo *IncompatibilityRepository) Update(ctx context.Context, incomp *domai
 }
 
 func (repo *IncompatibilityRepository) Delete(ctx context.Context, id int) error {
-	// A TRAIT still targeted by at least one TRIGGER cannot be deleted
-	// (there is no FK on target_trait_code, so this is checked here).
 	incompat, err := repo.GetIncompatibilityByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -174,7 +151,7 @@ func (repo *IncompatibilityRepository) Delete(ctx context.Context, id int) error
 		}
 		return fmt.Errorf("delete incompatibility %d: %w", id, err)
 	}
-	if incompat.IsTrait() {
+	if incompat.Code() != "" {
 		const checkQuery = `SELECT COUNT(*) FROM incompatibilities WHERE target_trait_code = $1`
 		var count int
 		if err := runner(ctx, repo.db).QueryRowContext(ctx, checkQuery, incompat.Code()).Scan(&count); err != nil {

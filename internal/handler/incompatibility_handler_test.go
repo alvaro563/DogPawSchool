@@ -15,6 +15,14 @@ import (
 	incompatuc "dogpaw/internal/usecase/incompatibility"
 )
 
+func mustNewIncompat(id int, name string, level domain.IncompatibilityLevel) *domain.Incompatibility {
+	in, err := domain.NewTriggerIncompatibility(id, name, level, "MACHO_ENTERO")
+	if err != nil {
+		panic(err)
+	}
+	return in
+}
+
 type stubIncompatibilityRegisterer struct {
 	fn func(ctx context.Context, in incompatuc.RegisterIncompatibilityInput) (incompatuc.RegisterIncompatibilityOutput, error)
 }
@@ -154,8 +162,8 @@ func TestIncompatRegister_InternalError(t *testing.T) {
 func TestIncompatList_Success(t *testing.T) {
 	t.Parallel()
 	incompats := []*domain.Incompatibility{
-		domain.MustNewIncompatibility(1, "A", domain.IncompatibilityLevelBaja),
-		domain.MustNewIncompatibility(2, "B", domain.IncompatibilityLevelMedia),
+		mustNewIncompat(1, "A", domain.IncompatibilityLevelBaja),
+		mustNewIncompat(2, "B", domain.IncompatibilityLevelMedia),
 	}
 	stub := &stubIncompatibilityLister{fn: func(ctx context.Context, in incompatuc.ListIncompatibilitiesInput) (incompatuc.ListIncompatibilitiesOutput, error) {
 		assert.Nil(t, in.Level())
@@ -207,7 +215,7 @@ func TestIncompatList_InternalError(t *testing.T) {
 
 func TestIncompatGetByID_Success(t *testing.T) {
 	t.Parallel()
-	want := domain.MustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
+	want := mustNewIncompat(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
 	h := newIncompatHandlerGet(&stubIncompatibilityGetter{fn: func(ctx context.Context, in incompatuc.GetIncompatibilityInput) (incompatuc.GetIncompatibilityOutput, error) {
 		assert.Equal(t, 3, in.ID())
 		return incompatuc.GetIncompatibilityOutput{Incompatibility: want}, nil
@@ -246,7 +254,7 @@ func TestIncompatGetByID_NotFound(t *testing.T) {
 
 func TestIncompatModify_Success(t *testing.T) {
 	t.Parallel()
-	existing := domain.MustNewIncompatibility(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
+	existing := mustNewIncompat(3, "Miedo a petardos", domain.IncompatibilityLevelBaja)
 	h := newIncompatHandlerMod(&stubIncompatibilityModifier{fn: func(ctx context.Context, in incompatuc.ModifyIncompatibilityInput) (incompatuc.ModifyIncompatibilityOutput, error) {
 		assert.Equal(t, 3, in.ID())
 		assert.NotNil(t, in.Patch().Name)

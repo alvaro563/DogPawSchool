@@ -12,44 +12,38 @@ import (
 
 func validTriggerInput() RegisterIncompatibilityInput {
 	return MustNewRegisterIncompatibilityInput("Reacciona mal al transportin", domain.IncompatibilityLevelMedia,
-		domain.IncompatibilityKindTrigger, "", "MIEDOSO")
+		 "", "MIEDOSO")
 }
 
 func validTraitInput() RegisterIncompatibilityInput {
 	return MustNewRegisterIncompatibilityInput("Miedoso", domain.IncompatibilityLevelBaja,
-		domain.IncompatibilityKindTrait, "MIEDOSO", "")
+		 "MIEDOSO", "")
 }
 
 func TestNewRegisterIncompatibilityInput(t *testing.T) {
 	t.Parallel()
 	t.Run("empty_name", func(t *testing.T) {
 		_, err := NewRegisterIncompatibilityInput("", domain.IncompatibilityLevelMedia,
-			domain.IncompatibilityKindTrigger, "", "MIEDOSO")
+			 "", "MIEDOSO")
 		assertValidationError(t, err, "name")
 	})
 
 	t.Run("invalid_level", func(t *testing.T) {
 		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevel("OTHER"),
-			domain.IncompatibilityKindTrigger, "", "MIEDOSO")
+			 "", "MIEDOSO")
 		assertValidationError(t, err, "level")
-	})
-
-	t.Run("invalid_kind", func(t *testing.T) {
-		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevelMedia,
-			domain.IncompatibilityKind("OTHER"), "", "MIEDOSO")
-		assertValidationError(t, err, "kind")
 	})
 
 	t.Run("trait_without_code", func(t *testing.T) {
 		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevelMedia,
-			domain.IncompatibilityKindTrait, "", "")
+			 "", "")
 		assertValidationError(t, err, "code")
 	})
 
 	t.Run("trigger_without_target", func(t *testing.T) {
 		_, err := NewRegisterIncompatibilityInput("x", domain.IncompatibilityLevelMedia,
-			domain.IncompatibilityKindTrigger, "", "")
-		assertValidationError(t, err, "target_trait_code")
+			 "", "")
+		assertValidationError(t, err, "code")
 	})
 }
 
@@ -76,7 +70,7 @@ func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
 		assert.Equal(t, 0, captured.ID(), "id must be 0 (will be set by repo)")
 		assert.Equal(t, "Reacciona mal al transportin", captured.Name())
 		assert.Equal(t, domain.IncompatibilityLevelMedia, captured.Type())
-		assert.True(t, captured.IsTrigger())
+		assert.True(t, captured.TargetTraitCode() != "")
 		assert.Equal(t, "MIEDOSO", captured.TargetTraitCode())
 	})
 
@@ -93,7 +87,7 @@ func TestRegisterIncompatibilityUseCase_Execute(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 6, out.ID)
 		assert.NotNil(t, captured)
-		assert.True(t, captured.IsTrait())
+		assert.True(t, captured.Code() != "")
 		assert.Equal(t, "MIEDOSO", captured.Code())
 	})
 

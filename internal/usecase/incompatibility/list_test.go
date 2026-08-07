@@ -13,7 +13,7 @@ import (
 func TestNewListIncompatibilitiesInput_InvalidLevel(t *testing.T) {
 	t.Parallel()
 	bad := domain.IncompatibilityLevel("OTHER")
-	_, err := NewListIncompatibilitiesInput(&bad, nil)
+	_, err := NewListIncompatibilitiesInput(&bad)
 	assert.Error(t, err)
 	var verr *ValidationError
 	assert.True(t, errors.As(err, &verr))
@@ -29,13 +29,13 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 		}
 		var capturedLevel *domain.IncompatibilityLevel
 		mock := &mockIncompatibilityRepository{
-			list: func(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error) {
+			list: func(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
 				capturedLevel = level
 				return incompats, nil
 			},
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
-		out, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil, nil))
+		out, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil))
 		assert.NoError(t, err)
 		assert.Len(t, out.Incompatibilities, 2)
 		assert.Nil(t, capturedLevel, "no level filter should be passed to repo")
@@ -44,14 +44,14 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 	t.Run("list_filtered_by_level", func(t *testing.T) {
 		var capturedLevel *domain.IncompatibilityLevel
 		mock := &mockIncompatibilityRepository{
-			list: func(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error) {
+			list: func(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
 				capturedLevel = level
 				return nil, nil
 			},
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
 		media := domain.IncompatibilityLevelMedia
-		_, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(&media, nil))
+		_, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(&media))
 		assert.NoError(t, err)
 		assert.NotNil(t, capturedLevel)
 		assert.Equal(t, domain.IncompatibilityLevelMedia, *capturedLevel)
@@ -59,12 +59,12 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 
 	t.Run("empty_list", func(t *testing.T) {
 		mock := &mockIncompatibilityRepository{
-			list: func(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error) {
+			list: func(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
 				return []*domain.Incompatibility{}, nil
 			},
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
-		out, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil, nil))
+		out, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil))
 		assert.NoError(t, err)
 		assert.Empty(t, out.Incompatibilities)
 	})
@@ -72,12 +72,12 @@ func TestListIncompatibilitiesUseCase_Execute(t *testing.T) {
 	t.Run("repo_error", func(t *testing.T) {
 		repoErr := errors.New("db timeout")
 		mock := &mockIncompatibilityRepository{
-			list: func(ctx context.Context, level *domain.IncompatibilityLevel, kind *domain.IncompatibilityKind) ([]*domain.Incompatibility, error) {
+			list: func(ctx context.Context, level *domain.IncompatibilityLevel) ([]*domain.Incompatibility, error) {
 				return nil, repoErr
 			},
 		}
 		uc := NewListIncompatibilitiesUseCase(mock)
-		_, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil, nil))
+		_, err := uc.Execute(context.Background(), MustNewListIncompatibilitiesInput(nil))
 		assert.True(t, errors.Is(err, repoErr))
 	})
 }

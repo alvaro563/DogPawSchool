@@ -21,7 +21,7 @@ func validRegisterInput() RegisterReservationInput {
 // for at least one more booking. Anchored to fixedNow so the test
 // is deterministic regardless of the wall clock.
 func validFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
 }
 
 // validDog returns a dog owned by the given user.
@@ -161,7 +161,7 @@ func TestRegisterReservationUseCase_ActivityNotFound(t *testing.T) {
 
 func TestRegisterReservationUseCase_ActivityInPast(t *testing.T) {
 	t.Parallel()
-	pastActivity := domain.MustNewActivity(10, "Paseo", "Central", domain.TypeRoute, 5, 1,
+	pastActivity := domain.MustNewActivity(10, "Paseo", "", "Central", domain.TypeRoute, 5, 1,
 		fixedNow.Add(-24*time.Hour))
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {

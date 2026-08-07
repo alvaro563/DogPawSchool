@@ -77,8 +77,12 @@ type DogModifier interface {
 	Execute(ctx context.Context, input doguc.ModifyDogInput) (doguc.ModifyDogOutput, error)
 }
 
-type DogIncompatibilityAdder interface {
-	Execute(ctx context.Context, input doguc.AddDogIncompatibilityInput) (doguc.AddDogIncompatibilityOutput, error)
+type DogTraitAdder interface {
+	Execute(ctx context.Context, input doguc.AddDogTraitInput) (doguc.AddDogTraitOutput, error)
+}
+
+type DogTriggerAdder interface {
+	Execute(ctx context.Context, input doguc.AddDogTriggerInput) (doguc.AddDogTriggerOutput, error)
 }
 
 type DogIncompatibilityRemover interface {
@@ -97,6 +101,10 @@ type DogHeatSetter interface {
 	Execute(ctx context.Context, input doguc.SetDogHeatInput) (doguc.SetDogHeatOutput, error)
 }
 
+type DogPhotoSetter interface {
+	Execute(ctx context.Context, input doguc.SetDogPhotoInput) (doguc.SetDogPhotoOutput, error)
+}
+
 type DogHandler struct {
 	register              DogRegistrar
 	get                   DogGetter
@@ -112,11 +120,13 @@ type DogHandler struct {
 	listByAgeBracket      DogByAgeBracketLister
 	listBySizeBracket     DogBySizeBracketLister
 	modify                DogModifier
-	addIncompat           DogIncompatibilityAdder
+	addTrait              DogTraitAdder
+	addTrigger            DogTriggerAdder
 	removeIncompat        DogIncompatibilityRemover
 	delete                DogDeleter
 	setNeutered           DogNeuteredSetter
 	setHeat               DogHeatSetter
+	setPhoto              DogPhotoSetter
 }
 
 func NewDogHandler(
@@ -134,11 +144,13 @@ func NewDogHandler(
 	listByAgeBracket DogByAgeBracketLister,
 	listBySizeBracket DogBySizeBracketLister,
 	modify DogModifier,
-	addIncompat DogIncompatibilityAdder,
+	addTrait DogTraitAdder,
+	addTrigger DogTriggerAdder,
 	removeIncompat DogIncompatibilityRemover,
 	deleteDog DogDeleter,
 	setNeutered DogNeuteredSetter,
 	setHeat DogHeatSetter,
+	setPhoto DogPhotoSetter,
 ) *DogHandler {
 	return &DogHandler{
 		register:              register,
@@ -155,11 +167,13 @@ func NewDogHandler(
 		listByAgeBracket:      listByAgeBracket,
 		listBySizeBracket:     listBySizeBracket,
 		modify:                modify,
-		addIncompat:           addIncompat,
+		addTrait:              addTrait,
+		addTrigger:            addTrigger,
 		removeIncompat:        removeIncompat,
 		delete:                deleteDog,
 		setNeutered:           setNeutered,
 		setHeat:               setHeat,
+		setPhoto:              setPhoto,
 	}
 }
 
@@ -377,47 +391,30 @@ func (h *DogHandler) Modify(c *gin.Context) {
 	c.JSON(http.StatusOK, modifyDogResponse{ID: output.ID})
 }
 
-// AddIncompatibility godoc
-// @Summary      Add an incompatibility to a dog
-// @Description  Idempotently attaches an existing incompatibility (looked up by id) to a dog. If the dog already has that incompatibility, returns 200 with `added: false` and the current list (no DB write). Otherwise persists the change and returns 201 with `added: true` and the updated list. Both the dog and the incompatibility must exist.
-// @Tags         dogs
-// @Accept       json
-// @Produce      json
-// @Param        id   path      int                            true  "Dog ID"
-// @Param        body body      addIncompatibilityRequest      true  "Incompatibility to attach"
-// @Success      201  {object}  addIncompatibilityResponse     "Incompatibility newly attached (added=true)"
-// @Success      200  {object}  addIncompatibilityResponse     "Incompatibility was already attached (added=false, idempotent no-op)"
-// @Failure      400  {object}  errorResponse                  "Invalid id, invalid body, or validation error"
-// @Failure      404  {object}  errorResponse                  "Dog or incompatibility not found"
-// @Failure      500  {object}  errorResponse                  "Internal server error"
-// @Security     BearerAuth
-// @Router       /api/v1/dogs/{id}/incompatibilities [post]
-func (h *DogHandler) AddIncompatibility(c *gin.Context) {
+type addTraitRequest struct {
+	TraitID int `json:"trait_id" binding:"required"`
+}
+
+func (h *DogHandler) AddTrait(c *gin.Context) {
 	dogID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || dogID <= 0 {
-		c.JSON(http.StatusBadRequest, errorResponse{
-			Error: "validation",
-			Field: "id",
-		})
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
 
-	var request addIncompatibilityRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse{
-			Error:   "invalid_request",
-			Details: err.Error(),
-		})
+	var req addTraitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
 		return
 	}
 
-	in, err := doguc.NewAddDogIncompatibilityInput(dogID, request.IncompatibilityID)
+	in, err := doguc.NewAddDogTraitInput(dogID, req.TraitID)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	output, err := h.addIncompat.Execute(c.Request.Context(), in)
+	output, err := h.addTrait.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -427,11 +424,50 @@ func (h *DogHandler) AddIncompatibility(c *gin.Context) {
 	if output.Added {
 		status = http.StatusCreated
 	}
-	c.JSON(status, addIncompatibilityResponse{
-		DogID:             output.ID,
-		Added:             output.Added,
-		Traits:            toIncompatibilityDTOs(output.Traits),
-		Incompatibilities: toIncompatibilityDTOs(output.Incompatibilities),
+	c.JSON(status, gin.H{
+		"dog_id": output.ID,
+		"added":  output.Added,
+		"traits": toIncompatibilityDTOs(output.Traits),
+	})
+}
+
+type addTriggerRequest struct {
+	TriggerID int `json:"trigger_id" binding:"required"`
+}
+
+func (h *DogHandler) AddTrigger(c *gin.Context) {
+	dogID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || dogID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
+		return
+	}
+
+	var req addTriggerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
+		return
+	}
+
+	in, err := doguc.NewAddDogTriggerInput(dogID, req.TriggerID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.addTrigger.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	status := http.StatusOK
+	if output.Added {
+		status = http.StatusCreated
+	}
+	c.JSON(status, gin.H{
+		"dog_id":            output.ID,
+		"added":             output.Added,
+		"incompatibilities": toIncompatibilityDTOs(output.Incompatibilities),
 	})
 }
 
@@ -898,6 +934,56 @@ func (h *DogHandler) SetHeat(c *gin.Context) {
 	})
 }
 
+type setPhotoRequest struct {
+	PhotoURL string `json:"photo_url"`
+}
+
+// SetPhoto godoc
+// @Summary      Set the profile photo of a dog
+// @Description  Sets or clears the profile photo URL. An empty "" clears the photo.
+// @Tags         dogs
+// @Accept       json
+// @Produce      json
+// @Param        id   path      int               true  "Dog ID"
+// @Param        body body      setPhotoRequest   true  "Photo URL"
+// @Success      200  {object}  setPhotoResponse  "Photo updated"
+// @Failure      400  {object}  errorResponse     "Invalid id or body"
+// @Failure      404  {object}  errorResponse     "Dog not found"
+// @Failure      500  {object}  errorResponse     "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/dogs/{id}/photo [patch]
+func (h *DogHandler) SetPhoto(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
+		return
+	}
+	var request setPhotoRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
+		return
+	}
+	in, err := doguc.NewSetDogPhotoInput(id, request.PhotoURL)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.setPhoto.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, setPhotoResponse{
+		ID:       output.ID,
+		PhotoURL: output.PhotoURL,
+	})
+}
+
+type setPhotoResponse struct {
+	ID       int    `json:"id"`
+	PhotoURL string `json:"photo_url"`
+}
+
 // listDogsResponse is the wire format for every dog list endpoint.
 // Defined here as a private type because it was previously embedded in
 // the response envelope; we now build it via the toListDogsResponse
@@ -1095,6 +1181,10 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_heat_for_sex"})
 		return
 	}
+	if errors.Is(err, doguc.ErrNotATrait) || errors.Is(err, doguc.ErrNotATrigger) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_incompatibility_kind"})
+		return
+	}
 	slog.Error("internal error",
 		"err", err.Error(),
 		"path", c.Request.URL.Path,
@@ -1180,17 +1270,6 @@ type modifyDogResponse struct {
 	ID int `json:"id" example:"42"`
 }
 
-type addIncompatibilityRequest struct {
-	IncompatibilityID int `json:"incompatibility_id" example:"3"`
-}
-
-type addIncompatibilityResponse struct {
-	DogID             int                  `json:"dog_id" example:"42"`
-	Added             bool                 `json:"added" example:"true"`
-	Traits            []incompatibilityDTO `json:"traits"`
-	Incompatibilities []incompatibilityDTO `json:"incompatibilities"`
-}
-
 type removeIncompatibilityResponse struct {
 	DogID             int                  `json:"dog_id" example:"42"`
 	Removed           bool                 `json:"removed" example:"true"`
@@ -1222,7 +1301,6 @@ type incompatibilityDTO struct {
 	ID              int    `json:"id" example:"3"`
 	Name            string `json:"name" example:"Reactivo a machos enteros"`
 	Level           string `json:"level" example:"ABSOLUTA"`
-	Kind            string `json:"kind" example:"TRIGGER"`
 	Code            string `json:"code,omitempty" example:"MIEDOSO"`
 	TargetTraitCode string `json:"target_trait_code,omitempty" example:"MACHO_ENTERO"`
 }
@@ -1271,7 +1349,6 @@ func toIncompatibilityDTO(incompat *domain.Incompatibility) incompatibilityDTO {
 		ID:              incompat.ID(),
 		Name:            incompat.Name(),
 		Level:           string(incompat.Type()),
-		Kind:            string(incompat.Kind()),
 		Code:            incompat.Code(),
 		TargetTraitCode: incompat.TargetTraitCode(),
 	}

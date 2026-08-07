@@ -1,0 +1,3 @@
+BEGIN;
+ALTER TABLE activities DROP COLUMN IF EXISTS description;
+COMMIT;

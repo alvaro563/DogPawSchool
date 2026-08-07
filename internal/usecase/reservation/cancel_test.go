@@ -29,20 +29,20 @@ func validConfirmedReservation(id, activityID, dogID, passID int) *domain.Reserv
 // room for at least one more booking. Anchored to fixedNow so the
 // test is deterministic regardless of the wall clock.
 func farFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
 }
 
 // nearFutureActivity returns an activity 1 hour in the future. The
 // cancellation late window is 2h, so this counts as a LATE cancel
 // when the use case runs at fixedNow.
 func nearFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(1*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(1*time.Hour))
 }
 
 // pastActivity returns an activity 24h in the past relative to
 // fixedNow. Used to verify the activity-in-past guard.
 func pastActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour))
 }
 
 // newCancelUseCase wires the use case with default no-op mocks for

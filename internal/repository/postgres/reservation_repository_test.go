@@ -47,7 +47,7 @@ func TestReservationRepository_ListByActivity(t *testing.T) {
 	user := insertBaseUser(t, db)
 	dog := insertBaseDog(t, db, user.ID())
 	act1 := insertBaseActivity(t, db)
-	act2, err := domain.NewActivity(0, "Segunda Actividad", "Otro Lugar",
+	act2, err := domain.NewActivity(0, "Segunda Actividad", "", "Otro Lugar",
 		domain.TypeIndividual, 5, 2, time.Now().Add(21*24*time.Hour))
 	require.NoError(t, err)
 	actRepo := NewActivityRepository(db)
@@ -115,7 +115,7 @@ func TestConcurrency_ActivityCapacity(t *testing.T) {
 	user := insertBaseUser(t, db)
 
 	actRepo := NewActivityRepository(db)
-	activity, err := domain.NewActivity(0, "Concurrency Capacity Test", "Test Location",
+	activity, err := domain.NewActivity(0, "Concurrency Capacity Test", "", "Test Location",
 		domain.TypeRoute, 1, 1, now.Add(7*24*time.Hour))
 	require.NoError(t, err)
 	actID, err := actRepo.Create(ctx, activity)

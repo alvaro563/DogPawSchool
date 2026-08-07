@@ -3,10 +3,15 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import { resolve as nodeResolve } from 'node:path'
 
 export default defineConfig({
   plugins: [
+    TanStackRouterVite({
+      routesDirectory: './src/routes',
+      generatedRouteTree: './src/route-tree.gen.ts',
+    }),
     react(),
     tailwindcss(),
     VitePWA({ registerType: 'autoUpdate' }),

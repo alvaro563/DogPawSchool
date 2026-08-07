@@ -80,11 +80,13 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	listByAgeBracketUC := doguc.NewListByAgeBracketUseCase(repo)
 	listBySizeBracketUC := doguc.NewListBySizeBracketUseCase(repo)
 	modifyUC := doguc.NewModifyDogUseCase(transactor, repo)
-	addIncompatUC := doguc.NewAddDogIncompatibilityUseCase(transactor, repo, incompatRepo)
+	addTraitUC := doguc.NewAddDogTraitUseCase(transactor, repo, incompatRepo)
+	addTriggerUC := doguc.NewAddDogTriggerUseCase(transactor, repo, incompatRepo)
 	removeIncompatUC := doguc.NewRemoveDogIncompatibilityUseCase(transactor, repo)
 	deleteDogUC := doguc.NewDeleteDogUseCase(repo)
 	setNeuteredUC := doguc.NewSetDogNeuteredUseCase(transactor, repo)
 	setHeatUC := doguc.NewSetDogHeatUseCase(transactor, repo)
+	setPhotoUC := doguc.NewSetDogPhotoUseCase(transactor, repo)
 
 	registerIncompatUC := incompatuc.NewRegisterIncompatibilityUseCase(incompatRepo)
 	listIncompatUC := incompatuc.NewListIncompatibilitiesUseCase(incompatRepo)
@@ -147,7 +149,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 
 	activityH := handler.NewActivityHandler(
 		registerActivityUC, getActivityUC, modifyActivityUC,
-		listAllActivityUC, listUpcomingActivityUC, closeActivityUC,
+		listAllActivityUC, listUpcomingActivityUC, closeActivityUC, reservationRepo,
 	)
 
 	dogH := handler.NewDogHandler(
@@ -165,11 +167,13 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		listByAgeBracketUC,
 		listBySizeBracketUC,
 		modifyUC,
-		addIncompatUC,
+		addTraitUC,
+		addTriggerUC,
 		removeIncompatUC,
 		deleteDogUC,
 		setNeuteredUC,
 		setHeatUC,
+		setPhotoUC,
 	)
 
 	userRepo := postgres.NewUserRepository(db)
@@ -255,8 +259,10 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 			admin.PATCH("/dogs/:id", dogH.Modify)
 			admin.PATCH("/dogs/:id/neutered", dogH.SetNeutered)
 			admin.PATCH("/dogs/:id/heat", dogH.SetHeat)
+			admin.PATCH("/dogs/:id/photo", dogH.SetPhoto)
 			admin.DELETE("/dogs/:id", dogH.Delete)
-			admin.POST("/dogs/:id/incompatibilities", dogH.AddIncompatibility)
+			admin.POST("/dogs/:id/traits", dogH.AddTrait)
+			admin.POST("/dogs/:id/incompatibilities", dogH.AddTrigger)
 			admin.DELETE("/dogs/:id/incompatibilities/:incompatibility_id", dogH.RemoveIncompatibility)
 
 			admin.POST("/incompatibilities", incompatH.Register)

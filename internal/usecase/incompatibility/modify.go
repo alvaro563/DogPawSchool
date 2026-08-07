@@ -8,9 +8,6 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// ModifyIncompatibilityInput is the validated command to apply a
-// partial update to an existing incompatibility. The patch
-// *values* are validated by domain.Incompatibility.ApplyPatch.
 type ModifyIncompatibilityInput struct {
 	id    int
 	patch domain.IncompatibilityPatch
@@ -19,8 +16,6 @@ type ModifyIncompatibilityInput struct {
 func (in ModifyIncompatibilityInput) ID() int                            { return in.id }
 func (in ModifyIncompatibilityInput) Patch() domain.IncompatibilityPatch { return in.patch }
 
-// NewModifyIncompatibilityInput validates id > 0. Empty patch is
-// allowed (Execute short-circuits to a no-op).
 func NewModifyIncompatibilityInput(id int, patch domain.IncompatibilityPatch) (ModifyIncompatibilityInput, error) {
 	if id <= 0 {
 		return ModifyIncompatibilityInput{}, &ValidationError{Field: "id"}
@@ -28,7 +23,6 @@ func NewModifyIncompatibilityInput(id int, patch domain.IncompatibilityPatch) (M
 	return ModifyIncompatibilityInput{id: id, patch: patch}, nil
 }
 
-// MustNewModifyIncompatibilityInput panics on validation error. For tests.
 func MustNewModifyIncompatibilityInput(id int, patch domain.IncompatibilityPatch) ModifyIncompatibilityInput {
 	in, err := NewModifyIncompatibilityInput(id, patch)
 	if err != nil {
@@ -37,13 +31,10 @@ func MustNewModifyIncompatibilityInput(id int, patch domain.IncompatibilityPatch
 	return in
 }
 
-// ModifyIncompatibilityOutput carries the post-mutation incompatibility.
 type ModifyIncompatibilityOutput struct {
 	Incompatibility *domain.Incompatibility
 }
 
-// ModifyIncompatibilityUseCase applies a partial update to an
-// incompatibility (name and/or level). An empty body is a no-op.
 type ModifyIncompatibilityUseCase struct {
 	repo domain.IncompatibilityRepository
 }
@@ -62,7 +53,7 @@ func (uc *ModifyIncompatibilityUseCase) Execute(ctx context.Context, input Modif
 	}
 
 	patch := input.Patch()
-	if patch.TargetTraitCode != nil && incompat.IsTrigger() {
+	if patch.TargetTraitCode != nil && incompat.TargetTraitCode() != "" {
 		if err := validateTriggerTarget(ctx, uc.repo, *patch.TargetTraitCode); err != nil {
 			return ModifyIncompatibilityOutput{}, err
 		}
@@ -92,6 +83,6 @@ func (uc *ModifyIncompatibilityUseCase) Execute(ctx context.Context, input Modif
 }
 
 func isEmptyIncompatibilityPatch(patch domain.IncompatibilityPatch) bool {
-	return patch.Name == nil && patch.Level == nil && patch.Kind == nil &&
+	return patch.Name == nil && patch.Level == nil &&
 		patch.Code == nil && patch.TargetTraitCode == nil
 }

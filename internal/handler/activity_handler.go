@@ -36,13 +36,18 @@ type ActivityCloser interface {
 	Execute(ctx context.Context, input activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error)
 }
 
+type ActivitySlotCounter interface {
+	CountHeldSlotsBatch(ctx context.Context, activityIDs []int) (map[int]int, error)
+}
+
 type ActivityHandler struct {
-	register ActivityRegisterer
-	get      ActivityGetter
-	modify   ActivityModifier
-	list     ActivityLister
-	upcoming ActivityUpcomingLister
-	close    ActivityCloser
+	register    ActivityRegisterer
+	get         ActivityGetter
+	modify      ActivityModifier
+	list        ActivityLister
+	upcoming    ActivityUpcomingLister
+	close       ActivityCloser
+	slotCounter ActivitySlotCounter
 }
 
 func NewActivityHandler(
@@ -52,14 +57,16 @@ func NewActivityHandler(
 	list ActivityLister,
 	upcoming ActivityUpcomingLister,
 	close ActivityCloser,
+	slotCounter ActivitySlotCounter,
 ) *ActivityHandler {
 	return &ActivityHandler{
-		register: register,
-		get:      get,
-		modify:   modify,
-		list:     list,
-		upcoming: upcoming,
-		close:    close,
+		register:    register,
+		get:         get,
+		modify:      modify,
+		list:        list,
+		upcoming:    upcoming,
+		close:       close,
+		slotCounter: slotCounter,
 	}
 }
 
@@ -85,7 +92,7 @@ func (h *ActivityHandler) Register(c *gin.Context) {
 		return
 	}
 	in, err := activityuc.NewRegisterActivityInput(
-		request.Name, request.Location,
+		request.Name, request.Description, request.Location,
 		domain.ActivityType(request.ActivityType),
 		request.MaxCapacity, request.DurationInHours, request.Date,
 	)
@@ -104,25 +111,57 @@ func (h *ActivityHandler) Register(c *gin.Context) {
 
 // List godoc
 // @Summary      List all activities
-// @Description  Returns a paginated list of all activities in the system, most recent first. Limit defaults to 50 and is capped at 100. Offset defaults to 0.
+// @Description  Returns a paginated list of all activities in the system, most recent first. Optionally filter by date range with from and to query params (RFC3339). Limit defaults to 50 and is capped at 100. Offset defaults to 0.
 // @Tags         activities
 // @Produce      json
-// @Param        limit   query  int  false  "Maximum number of activities to return (default 50, max 100)"
-// @Param        offset  query  int  false  "Number of activities to skip for pagination (default 0)"
+// @Param        limit   query  int    false  "Maximum number of activities to return (default 50, max 100)"
+// @Param        offset  query  int    false  "Number of activities to skip for pagination (default 0)"
+// @Param        from    query  string false  "Filter activities from this date (RFC3339)"
+// @Param        to      query  string false  "Filter activities before this date (RFC3339)"
 // @Success      200  {object}  listActivitiesResponse  "List of activities"
+// @Failure      400  {object}  errorResponse           "Invalid date range"
 // @Failure      500  {object}  errorResponse           "Internal server error"
 // @Security     BearerAuth
 // @Router       /api/v1/activities [get]
 func (h *ActivityHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	in, _ := activityuc.NewListAllActivitiesInput(limit, offset)
+
+	var from, to time.Time
+	fromStr := c.Query("from")
+	toStr := c.Query("to")
+	if fromStr != "" || toStr != "" {
+		var err error
+		from, err = time.Parse(time.RFC3339, fromStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "from", Details: "invalid RFC3339 date"})
+			return
+		}
+		to, err = time.Parse(time.RFC3339, toStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "to", Details: "invalid RFC3339 date"})
+			return
+		}
+	}
+
+	in, err := activityuc.NewListAllActivitiesInput(limit, offset, from, to)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
 	output, err := h.list.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toListActivitiesResponse(output.Activities, in))
+
+	heldSlots, err := h.computeHeldSlots(c.Request.Context(), output.Activities)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, toListActivitiesResponse(output.Activities, in, heldSlots))
 }
 
 // ListUpcoming godoc
@@ -145,7 +184,14 @@ func (h *ActivityHandler) ListUpcoming(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toListActivitiesResponse(output.Activities, in))
+
+	heldSlots, err := h.computeHeldSlots(c.Request.Context(), output.Activities)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, toListActivitiesResponse(output.Activities, in, heldSlots))
 }
 
 // GetByID godoc
@@ -176,7 +222,12 @@ func (h *ActivityHandler) GetByID(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toActivityDTO(output.Activity))
+	heldSlots, err := h.computeHeldSlots(c.Request.Context(), []*domain.Activity{output.Activity})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toActivityDTO(output.Activity, heldSlots[output.Activity.ID()]))
 }
 
 // Modify godoc
@@ -206,6 +257,7 @@ func (h *ActivityHandler) Modify(c *gin.Context) {
 	}
 	patch := domain.ActivityPatch{
 		Name:            request.Name,
+		Description:     request.Description,
 		Location:        request.Location,
 		MaxCapacity:     request.MaxCapacity,
 		DurationInHours: request.DurationInHours,
@@ -225,11 +277,17 @@ func (h *ActivityHandler) Modify(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toActivityDTO(output.Activity))
+	heldSlots, err := h.computeHeldSlots(c.Request.Context(), []*domain.Activity{output.Activity})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toActivityDTO(output.Activity, heldSlots[output.Activity.ID()]))
 }
 
 type registerActivityRequest struct {
 	Name            string    `json:"name" example:"Paseo Río"`
+	Description     string    `json:"description" example:"Paseo grupal por la ribera del río"`
 	Location        string    `json:"location" example:"Parking Central"`
 	ActivityType    string    `json:"activity_type" example:"ROUTE"`
 	MaxCapacity     int       `json:"max_capacity" example:"8"`
@@ -250,6 +308,7 @@ type listActivitiesResponse struct {
 
 type modifyActivityRequest struct {
 	Name            *string    `json:"name,omitempty" example:"Paseo Largo"`
+	Description     *string    `json:"description,omitempty" example:"Descripción actualizada"`
 	Location        *string    `json:"location,omitempty" example:"Río"`
 	ActivityType    *string    `json:"activity_type,omitempty" example:"SOCIALIZATION_GROUP"`
 	MaxCapacity     *int       `json:"max_capacity,omitempty" example:"12"`
@@ -316,8 +375,10 @@ func (h *ActivityHandler) Close(c *gin.Context) {
 type activityResponse struct {
 	ID              int       `json:"id" example:"42"`
 	Name            string    `json:"name" example:"Paseo Río"`
+	Description     string    `json:"description" example:"Paseo grupal por la ribera del río"`
 	ActivityType    string    `json:"activity_type" example:"ROUTE"`
 	MaxCapacity     int       `json:"max_capacity" example:"8"`
+	AvailableSpots  int       `json:"available_spots" example:"5"`
 	Location        string    `json:"location" example:"Parking Central"`
 	DurationInHours int       `json:"duration_in_hours" example:"2"`
 	Date            time.Time `json:"date" example:"2026-08-01T10:00:00Z"`
@@ -337,10 +398,10 @@ type activityPagination interface {
 
 // toListActivitiesResponse builds the list response envelope with
 // the normalized limit/offset from the validated input.
-func toListActivitiesResponse(activities []*domain.Activity, in activityPagination) listActivitiesResponse {
+func toListActivitiesResponse(activities []*domain.Activity, in activityPagination, heldSlots map[int]int) listActivitiesResponse {
 	dtos := make([]activityDTO, len(activities))
 	for i, activity := range activities {
-		dtos[i] = toActivityDTO(activity)
+		dtos[i] = toActivityDTO(activity, heldSlots[activity.ID()])
 	}
 	return listActivitiesResponse{
 		Activities: dtos,
@@ -351,15 +412,31 @@ func toListActivitiesResponse(activities []*domain.Activity, in activityPaginati
 }
 
 // toActivityDTO converts a domain.Activity into the HTTP wire format.
-func toActivityDTO(activity *domain.Activity) activityDTO {
+func toActivityDTO(activity *domain.Activity, heldSlots int) activityDTO {
 	return activityDTO{
 		ID:              activity.ID(),
 		Name:            activity.Name(),
+		Description:     activity.Description(),
 		ActivityType:    string(activity.Type()),
 		MaxCapacity:     activity.MaxCapacity(),
+		AvailableSpots:  activity.MaxCapacity() - heldSlots,
 		Location:        activity.Location(),
 		DurationInHours: activity.DurationInHours(),
 		Date:            activity.Date(),
 		Closed:          activity.IsClosed(),
 	}
+}
+
+// computeHeldSlots returns a map of activityID → slot-holding
+// reservation count. Returns an empty map for degrated mode (when
+// the slot counter is not available).
+func (h *ActivityHandler) computeHeldSlots(ctx context.Context, activities []*domain.Activity) (map[int]int, error) {
+	if h.slotCounter == nil || len(activities) == 0 {
+		return map[int]int{}, nil
+	}
+	ids := make([]int, len(activities))
+	for i, a := range activities {
+		ids[i] = a.ID()
+	}
+	return h.slotCounter.CountHeldSlotsBatch(ctx, ids)
 }

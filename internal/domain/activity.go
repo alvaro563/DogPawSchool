@@ -31,6 +31,7 @@ func (activityType ActivityType) IsValid() bool {
 type Activity struct {
 	id              int
 	name            string
+	description     string
 	activityType    ActivityType
 	maxCapacity     int
 	location        string
@@ -40,7 +41,7 @@ type Activity struct {
 }
 
 // NewActivity creates an Activity with validated fields.
-func NewActivity(id int, name, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time) (*Activity, error) {
+func NewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time) (*Activity, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("activity: id must not be negative")
 	}
@@ -65,6 +66,7 @@ func NewActivity(id int, name, location string, activityType ActivityType, maxCa
 	return &Activity{
 		id:              id,
 		name:            name,
+		description:     description,
 		activityType:    activityType,
 		maxCapacity:     maxCapacity,
 		location:        location,
@@ -75,8 +77,8 @@ func NewActivity(id int, name, location string, activityType ActivityType, maxCa
 
 // MustNewActivity is like NewActivity but panics on error. Intended for
 // tests and seed data where the inputs are known to be valid.
-func MustNewActivity(id int, name, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time) *Activity {
-	activity, err := NewActivity(id, name, location, activityType, maxCapacity, durationInHours, date)
+func MustNewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time) *Activity {
+	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date)
 	if err != nil {
 		panic(err)
 	}
@@ -85,6 +87,7 @@ func MustNewActivity(id int, name, location string, activityType ActivityType, m
 
 func (activity *Activity) ID() int              { return activity.id }
 func (activity *Activity) Name() string         { return activity.name }
+func (activity *Activity) Description() string  { return activity.description }
 func (activity *Activity) Type() ActivityType   { return activity.activityType }
 func (activity *Activity) MaxCapacity() int     { return activity.maxCapacity }
 func (activity *Activity) Location() string     { return activity.location }
@@ -123,8 +126,8 @@ func (activity *Activity) IsFinished(now time.Time) bool {
 // Reservation (NewReservationWithStatus) and Invitation (NewInvitation
 // vs NewPendingInvitation) already separate creation from
 // reconstitution.
-func ReconstituteActivity(id int, name, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, closed bool) (*Activity, error) {
-	activity, err := NewActivity(id, name, location, activityType, maxCapacity, durationInHours, date)
+func ReconstituteActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, closed bool) (*Activity, error) {
+	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +167,7 @@ func (activity *Activity) IsExtra() bool { return activity.activityType == TypeE
 // mutated. See ApplyPatch for per-field validation.
 type ActivityPatch struct {
 	Name            *string
+	Description     *string
 	Location        *string
 	ActivityType    *ActivityType
 	MaxCapacity     *int
@@ -189,6 +193,9 @@ func (activity *Activity) ApplyPatch(patch ActivityPatch) error {
 			return &ActivityValidationError{Field: "name"}
 		}
 		activity.name = *patch.Name
+	}
+	if patch.Description != nil {
+		activity.description = *patch.Description
 	}
 	if patch.Location != nil {
 		if *patch.Location == "" {
@@ -232,5 +239,6 @@ type ActivityRepository interface {
 	Update(ctx context.Context, activity *Activity) error
 	Delete(ctx context.Context, id int) error
 	List(ctx context.Context, limit, offset int) ([]*Activity, error)
+	ListByDateRange(ctx context.Context, from, to time.Time, limit, offset int) ([]*Activity, error)
 	ListUpcoming(ctx context.Context, limit, offset int) ([]*Activity, error)
 }

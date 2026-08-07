@@ -28,7 +28,7 @@ func TestNewIncompatibility(t *testing.T) {
 
 		for _, s := range scenarios {
 			t.Run(s.name, func(t *testing.T) {
-				i, err := domain.NewIncompatibility(s.id, s.nombre, s.tipo)
+				i, err := domain.NewTriggerIncompatibility(s.id, s.nombre, s.tipo, "MACHO_ENTERO")
 				assert.NoError(t, err)
 				assert.NotNil(t, i)
 				assert.Equal(t, s.expectedID, i.ID())
@@ -53,7 +53,7 @@ func TestNewIncompatibility(t *testing.T) {
 
 		for _, s := range scenarios {
 			t.Run(s.name, func(t *testing.T) {
-				i, err := domain.NewIncompatibility(s.id, s.nombre, s.tipo)
+				i, err := domain.NewTriggerIncompatibility(s.id, s.nombre, s.tipo, "MACHO_ENTERO")
 				assert.Error(t, err)
 				assert.Nil(t, i)
 				assert.Contains(t, err.Error(), s.expectedError)
@@ -86,7 +86,7 @@ func TestIncompatibilityLevel_IsValid(t *testing.T) {
 func TestIncompatibility_Getters(t *testing.T) {
 	t.Parallel()
 	t.Run("getters_return_constructor_values", func(t *testing.T) {
-		i, err := domain.NewIncompatibility(42, "Miedo a tormentas", domain.IncompatibilityLevelBaja)
+		i, err := domain.NewTriggerIncompatibility(42, "Miedo a tormentas", domain.IncompatibilityLevelBaja, "MACHO_ENTERO")
 		assert.NoError(t, err)
 		assert.NotNil(t, i)
 		assert.Equal(t, 42, i.ID())

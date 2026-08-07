@@ -13,6 +13,7 @@ import (
 // can construct one.
 type RegisterActivityInput struct {
 	name            string
+	description     string
 	location        string
 	activityType    domain.ActivityType
 	maxCapacity     int
@@ -21,6 +22,7 @@ type RegisterActivityInput struct {
 }
 
 func (in RegisterActivityInput) Name() string                      { return in.name }
+func (in RegisterActivityInput) Description() string               { return in.description }
 func (in RegisterActivityInput) Location() string                  { return in.location }
 func (in RegisterActivityInput) ActivityType() domain.ActivityType { return in.activityType }
 func (in RegisterActivityInput) MaxCapacity() int                  { return in.maxCapacity }
@@ -31,7 +33,7 @@ func (in RegisterActivityInput) Date() time.Time                   { return in.d
 // first *ValidationError encountered. The returned input is, by
 // construction, always valid.
 func NewRegisterActivityInput(
-	name, location string,
+	name, description, location string,
 	activityType domain.ActivityType,
 	maxCapacity, durationInHours int,
 	date time.Time,
@@ -55,19 +57,19 @@ func NewRegisterActivityInput(
 		return RegisterActivityInput{}, &ValidationError{Field: "date"}
 	}
 	return RegisterActivityInput{
-		name: name, location: location, activityType: activityType,
+		name: name, description: description, location: location, activityType: activityType,
 		maxCapacity: maxCapacity, durationInHours: durationInHours, date: date,
 	}, nil
 }
 
 // MustNewRegisterActivityInput panics on validation error. For tests.
 func MustNewRegisterActivityInput(
-	name, location string,
+	name, description, location string,
 	activityType domain.ActivityType,
 	maxCapacity, durationInHours int,
 	date time.Time,
 ) RegisterActivityInput {
-	in, err := NewRegisterActivityInput(name, location, activityType, maxCapacity, durationInHours, date)
+	in, err := NewRegisterActivityInput(name, description, location, activityType, maxCapacity, durationInHours, date)
 	if err != nil {
 		panic(err)
 	}
@@ -89,7 +91,7 @@ func NewRegisterActivityUseCase(repo domain.ActivityRepository) *RegisterActivit
 }
 
 func (uc *RegisterActivityUseCase) Execute(ctx context.Context, input RegisterActivityInput) (RegisterActivityOutput, error) {
-	activity, err := domain.NewActivity(0, input.Name(), input.Location(), input.ActivityType(),
+	activity, err := domain.NewActivity(0, input.Name(), input.Description(), input.Location(), input.ActivityType(),
 		input.MaxCapacity(), input.DurationInHours(), input.Date())
 	if err != nil {
 		return RegisterActivityOutput{}, err
