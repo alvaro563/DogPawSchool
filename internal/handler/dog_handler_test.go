@@ -58,22 +58,6 @@ func (s *stubModifier) Execute(ctx context.Context, in doguc.ModifyDogInput) (do
 	return s.fn(ctx, in)
 }
 
-type stubTraitAdder struct {
-	fn func(ctx context.Context, in doguc.AddDogTraitInput) (doguc.AddDogTraitOutput, error)
-}
-
-func (s *stubTraitAdder) Execute(ctx context.Context, in doguc.AddDogTraitInput) (doguc.AddDogTraitOutput, error) {
-	return s.fn(ctx, in)
-}
-
-type stubTriggerAdder struct {
-	fn func(ctx context.Context, in doguc.AddDogTriggerInput) (doguc.AddDogTriggerOutput, error)
-}
-
-func (s *stubTriggerAdder) Execute(ctx context.Context, in doguc.AddDogTriggerInput) (doguc.AddDogTriggerOutput, error) {
-	return s.fn(ctx, in)
-}
-
 type stubIncompatibilityRemover struct {
 	fn func(ctx context.Context, in doguc.RemoveDogIncompatibilityInput) (doguc.RemoveDogIncompatibilityOutput, error)
 }
@@ -187,10 +171,6 @@ func newTestHandlerGet(get DogGetter) *DogHandler {
 }
 
 func newTestHandlerFull(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier) *DogHandler {
-	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil, nil, nil)
-}
-
-func newTestHandlerFull4(reg DogRegistrar, list DogLister, listByOwner DogListerByOwner, mod DogModifier) *DogHandler {
 	return NewDogHandler(reg, nil, list, listByOwner, nil, nil, nil, nil, nil, nil, nil, nil, nil, mod, nil, nil, nil, nil, nil, nil, nil)
 }
 
