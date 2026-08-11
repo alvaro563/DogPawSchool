@@ -134,12 +134,16 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	listByDogReservationsUC := reservationuc.NewListByDogReservationsUseCase(reservationRepo)
 	listByPassReservationsUC := reservationuc.NewListByPassReservationsUseCase(reservationRepo)
 	listByActivityReservationsUC := reservationuc.NewListByActivityReservationsUseCase(reservationRepo)
+	listAllReservationsUC := reservationuc.NewListAllReservationsUseCase(reservationRepo)
+	listUpcomingAllUC := reservationuc.NewListUpcomingAllUseCase(reservationRepo)
 	reservationH := handler.NewReservationHandler(
 		registerReservationUC, cancelReservationUC,
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
 		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
 		markNoShowReservationUC, completeReservationUC,
 		confirmPendingReservationUC, rejectPendingReservationUC,
+		listAllReservationsUC,
+		listUpcomingAllUC,
 	)
 
 	closeActivityUC := activityuc.NewCloseActivityUseCase(
@@ -287,6 +291,8 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 			admin.GET("/dogs/:id/reservations", reservationH.ListByDog)
 			admin.GET("/passes/:id/reservations", reservationH.ListByPass)
 			admin.GET("/activities/:id/reservations", reservationH.ListByActivity)
+			admin.GET("/reservations", reservationH.ListAll)
+			admin.GET("/reservations/upcoming", reservationH.ListUpcomingAll)
 		}
 	}
 

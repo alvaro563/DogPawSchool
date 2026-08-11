@@ -44,6 +44,14 @@ type ReservationListerByActivity interface {
 	Execute(ctx context.Context, input reservationuc.ListByActivityReservationsInput) (reservationuc.ListByActivityReservationsOutput, error)
 }
 
+type ReservationListerAll interface {
+	Execute(ctx context.Context, input reservationuc.ListAllReservationsInput) (reservationuc.ListAllReservationsOutput, error)
+}
+
+type ReservationUpcomingAllLister interface {
+	Execute(ctx context.Context, input reservationuc.ListUpcomingAllInput) (reservationuc.ListUpcomingAllOutput, error)
+}
+
 type ReservationNoShower interface {
 	Execute(ctx context.Context, input reservationuc.MarkReservationNoShowInput) (reservationuc.MarkReservationNoShowOutput, error)
 }
@@ -78,6 +86,8 @@ type ReservationHandler struct {
 	complete       ReservationCompleter
 	confirm        ReservationConfirmer
 	reject         ReservationRejecter
+	listAll        ReservationListerAll
+	listUpcomingAll ReservationUpcomingAllLister
 }
 
 func NewReservationHandler(
@@ -93,6 +103,8 @@ func NewReservationHandler(
 	complete ReservationCompleter,
 	confirm ReservationConfirmer,
 	reject ReservationRejecter,
+	listAll ReservationListerAll,
+	listUpcomingAll ReservationUpcomingAllLister,
 ) *ReservationHandler {
 	return &ReservationHandler{
 		register:       register,
@@ -107,6 +119,8 @@ func NewReservationHandler(
 		complete:       complete,
 		confirm:        confirm,
 		reject:         reject,
+		listAll:        listAll,
+		listUpcomingAll: listUpcomingAll,
 	}
 }
 
@@ -695,6 +709,55 @@ func (h *ReservationHandler) ListByActivity(c *gin.Context) {
 		return
 	}
 	output, err := h.listByActivity.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
+}
+
+// ListAll godoc
+// @Summary      List all reservations
+// @Description  Returns a paginated list of every reservation in the
+// @Description  system, most recent first. Admin only.
+// @Tags         reservations
+// @Produce      json
+// @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
+// @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
+// @Success      200      {object}  listReservationsResponse
+// @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
+// @Router       /api/v1/reservations [get]
+func (h *ReservationHandler) ListAll(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	in, _ := reservationuc.NewListAllReservationsInput(limit, offset)
+	output, err := h.listAll.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
+}
+
+// ListUpcomingAll godoc
+// @Summary      List all upcoming reservations
+// @Description  Returns a paginated list of every CONFIRMED reservation
+// @Description  whose activity date is at or after now, soonest first.
+// @Description  Admin only.
+// @Tags         reservations
+// @Produce      json
+// @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
+// @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
+// @Success      200      {object}  listReservationsResponse
+// @Failure      500      {object}  errorResponse
+// @Security     BearerAuth
+// @Router       /api/v1/reservations/upcoming [get]
+func (h *ReservationHandler) ListUpcomingAll(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	in, _ := reservationuc.NewListUpcomingAllInput(limit, offset)
+	output, err := h.listUpcomingAll.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return

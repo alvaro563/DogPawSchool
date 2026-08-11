@@ -31,6 +31,8 @@ type mockReservationRepository struct {
 	listByDogView      func(ctx context.Context, dogID, limit, offset int) ([]*domain.ReservationView, error)
 	listByPassView     func(ctx context.Context, passID, limit, offset int) ([]*domain.ReservationView, error)
 	listByActivityView func(ctx context.Context, activityID, limit, offset int) ([]*domain.ReservationView, error)
+	listAllView        func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
+	listAllUpcomingView func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
 }
 
 func (m *mockReservationRepository) Create(ctx context.Context, reservation *domain.Reservation) (int, error) {
@@ -119,6 +121,20 @@ func (m *mockReservationRepository) ListByPassView(ctx context.Context, passID, 
 func (m *mockReservationRepository) ListByActivityView(ctx context.Context, activityID, limit, offset int) ([]*domain.ReservationView, error) {
 	if m.listByActivityView != nil {
 		return m.listByActivityView(ctx, activityID, limit, offset)
+	}
+	return nil, nil
+}
+
+func (m *mockReservationRepository) ListAllView(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error) {
+	if m.listAllView != nil {
+		return m.listAllView(ctx, limit, offset)
+	}
+	return nil, nil
+}
+
+func (m *mockReservationRepository) ListAllUpcomingView(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error) {
+	if m.listAllUpcomingView != nil {
+		return m.listAllUpcomingView(ctx, limit, offset)
 	}
 	return nil, nil
 }

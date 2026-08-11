@@ -259,4 +259,15 @@ type ReservationRepository interface {
 	// for a given activity, oldest first (chronological order is
 	// the most useful for a class roster).
 	ListByActivityView(ctx context.Context, activityID, limit, offset int) ([]*ReservationView, error)
+
+	// ListAllView returns the views of every reservation in the
+	// system, ordered by created_at DESC. Paginated via limit and
+	// offset. Intended for admin dashboards and global reports.
+	ListAllView(ctx context.Context, limit, offset int) ([]*ReservationView, error)
+
+	// ListAllUpcomingView returns the views of every CONFIRMED
+	// reservation whose activity date is at or after the current
+	// time, ordered by activity date ASC. Paginated via limit and
+	// offset. Intended for the admin global upcoming view.
+	ListAllUpcomingView(ctx context.Context, limit, offset int) ([]*ReservationView, error)
 }

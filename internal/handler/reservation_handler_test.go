@@ -78,16 +78,18 @@ func newReservationHandler(
 	complete ReservationCompleter,
 	confirm ReservationConfirmer,
 	reject ReservationRejecter,
+	listAll ReservationListerAll,
+	listUpcomingAll ReservationUpcomingAllLister,
 ) *ReservationHandler {
-	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity, noShow, complete, confirm, reject)
+	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity, noShow, complete, confirm, reject, listAll, listUpcomingAll)
 }
 
 func newReservationHandlerReg(reg ReservationRegisterer) *ReservationHandler {
-	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerCancel(cancel ReservationCanceler) *ReservationHandler {
-	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // newCancelledReservation builds a domain.Reservation in the given
@@ -599,35 +601,35 @@ func (s *stubReservationListerByActivity) Execute(ctx context.Context, in reserv
 }
 
 func newReservationHandlerGet(get ReservationGetter) *ReservationHandler {
-	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByUser(l ReservationListerByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListUpcoming(l ReservationListerUpcomingByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByDog(l ReservationListerByDog) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByPass(l ReservationListerByPass) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerListByActivity(l ReservationListerByActivity) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerNoShow(noShow ReservationNoShower) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, noShow, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, noShow, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerComplete(complete ReservationCompleter) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, complete, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, complete, nil, nil, nil, nil)
 }
 
 func sampleViewOwnedBy(userID int) *domain.ReservationView {
@@ -1337,7 +1339,7 @@ func TestReservationConfirmPending_Success(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{Reservation: reservation}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil)
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
@@ -1357,7 +1359,7 @@ func TestReservationConfirmPending_InvalidID(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil)
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/abc/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "abc"}}
 
@@ -1376,7 +1378,7 @@ func TestReservationConfirmPending_NotPending(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{}, reservationuc.ErrNotPending
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil)
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
@@ -1397,7 +1399,7 @@ func TestReservationRejectPending_Success(t *testing.T) {
 			return reservationuc.RejectPendingReservationOutput{Reservation: reservation}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil)
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
@@ -1416,7 +1418,7 @@ func TestReservationRejectPending_NotFound(t *testing.T) {
 			return reservationuc.RejectPendingReservationOutput{}, reservationuc.ErrNotFound
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil)
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
@@ -1435,7 +1437,7 @@ func TestReservationConfirmPending_NotFound(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{}, reservationuc.ErrNotFound
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil)
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 
@@ -1454,7 +1456,7 @@ func TestReservationRejectPending_NotPending(t *testing.T) {
 			return reservationuc.RejectPendingReservationOutput{}, reservationuc.ErrNotPending
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil)
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
 

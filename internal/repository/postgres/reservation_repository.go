@@ -580,4 +580,28 @@ func (repo *ReservationRepository) CountHeldSlotsBatch(ctx context.Context, acti
 	return result, nil
 }
 
+// ListAllView returns the views of every reservation in the system,
+// ordered by created_at DESC. Used by the admin global reservation
+// list endpoint.
+func (repo *ReservationRepository) ListAllView(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error) {
+	query := reservationViewSelectClause + `
+		JOIN passes p ON p.id = r.pass_id
+		ORDER BY r.created_at DESC
+		LIMIT $1 OFFSET $2`
+	return queryReservationViews(ctx, runner(ctx, repo.db), query, limit, offset)
+}
+
+// ListAllUpcomingView returns the views of every CONFIRMED reservation
+// whose activity date is at or after the current time, ordered by
+// activity date ASC.
+func (repo *ReservationRepository) ListAllUpcomingView(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error) {
+	query := reservationViewSelectClause + `
+		JOIN passes p ON p.id = r.pass_id
+		WHERE r.status = $1
+		  AND a.date >= NOW()
+		ORDER BY a.date ASC
+		LIMIT $2 OFFSET $3`
+	return queryReservationViews(ctx, runner(ctx, repo.db), query, string(domain.StatusConfirmed), limit, offset)
+}
+
 var _ domain.ReservationRepository = (*ReservationRepository)(nil)

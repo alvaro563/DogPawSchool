@@ -234,12 +234,16 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 	listByDogReservationsUC := reservationuc.NewListByDogReservationsUseCase(reservationRepo)
 	listByPassReservationsUC := reservationuc.NewListByPassReservationsUseCase(reservationRepo)
 	listByActivityReservationsUC := reservationuc.NewListByActivityReservationsUseCase(reservationRepo)
+	listAllReservationsUC := reservationuc.NewListAllReservationsUseCase(reservationRepo)
+	listUpcomingAllUC := reservationuc.NewListUpcomingAllUseCase(reservationRepo)
 	reservationH := NewReservationHandler(
 		registerReservationUC, cancelReservationUC,
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
 		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
 		markNoShowUC, completeUC,
 		confirmPendingUC, rejectPendingUC,
+		listAllReservationsUC,
+		listUpcomingAllUC,
 	)
 
 	v1 := r.Group("/api/v1")

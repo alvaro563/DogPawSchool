@@ -114,6 +114,8 @@ export function ActivityDetailSheet({
               </p>
             </SheetHeader>
 
+            <div className="px-4 pb-6">
+
             {activity.description && (
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
                 {activity.description}
@@ -230,6 +232,8 @@ export function ActivityDetailSheet({
                 </Button>
               </div>
             )}
+
+            </div>
           </>
         )}
       </SheetContent>

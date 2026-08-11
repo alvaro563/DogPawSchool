@@ -24,3 +24,31 @@ export async function createReservation(
 ): Promise<CreateReservationResponse> {
   return apiClient.post<CreateReservationResponse>(`/users/${userId}/reservations`, body);
 }
+
+export async function confirmReservation(
+  userId: number,
+  reservationId: number,
+): Promise<{ id: number; status: string }> {
+  return apiClient.post<{ id: number; status: string }>(
+    `/users/${userId}/reservations/${reservationId}/confirm`,
+  );
+}
+
+export async function rejectReservation(
+  userId: number,
+  reservationId: number,
+): Promise<{ id: number; status: string }> {
+  return apiClient.post<{ id: number; status: string }>(
+    `/users/${userId}/reservations/${reservationId}/reject`,
+  );
+}
+
+export async function fetchAllReservations(): Promise<ReservationView[]> {
+  const data = await apiClient.get<ReservationListResponse>('/reservations', { limit: '200' });
+  return data.reservations;
+}
+
+export async function fetchUpcomingReservations(): Promise<ReservationView[]> {
+  const data = await apiClient.get<ReservationListResponse>('/reservations/upcoming', { limit: '200' });
+  return data.reservations;
+}

@@ -1,3 +1,11 @@
+export interface IncompatibilityDTO {
+  id: number;
+  name: string;
+  level: string;
+  code?: string;
+  target_trait_code?: string;
+}
+
 export interface Dog {
   id: number;
   name: string;
@@ -8,9 +16,13 @@ export interface Dog {
   heat: boolean;
   weight_kg: number;
   photo_url: string;
+  medical_notes: string;
+  educator_notes: string;
   passport: string;
   user_id: number;
   is_active: boolean;
+  traits: IncompatibilityDTO[];
+  incompatibilities: IncompatibilityDTO[];
 }
 
 export interface DogListResponse {
