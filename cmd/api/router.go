@@ -117,6 +117,9 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
 		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
 	)
+	registerAdminReservationUC := reservationuc.NewRegisterAdminReservationUseCase(
+		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
+	)
 	cancelReservationUC := reservationuc.NewCancelReservationUseCase(
 		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
 	)
@@ -144,6 +147,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		confirmPendingReservationUC, rejectPendingReservationUC,
 		listAllReservationsUC,
 		listUpcomingAllUC,
+		registerAdminReservationUC,
 	)
 
 	closeActivityUC := activityuc.NewCloseActivityUseCase(
@@ -242,6 +246,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		admin.Use(handler.AuthRequired(jwtSecret, userRepo))
 		admin.Use(handler.AdminRequired())
 		{
+			admin.POST("/reservations", reservationH.RegisterAdmin)
 			admin.GET("/users", userH.List)
 			admin.PATCH("/users/:user_id", userH.Update)
 			admin.POST("/users/:user_id/deactivate", userH.Deactivate)

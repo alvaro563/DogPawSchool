@@ -20,6 +20,7 @@ const userNavItems: NavItem[] = [
 
 const adminNavItems: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/calendar', label: 'Calendario', icon: CalendarDays },
   { to: '/admin/users', label: 'Usuarios', icon: Users },
   { to: '/admin/dogs', label: 'Perros', icon: Dog },
   { to: '/admin/activities', label: 'Actividades', icon: School },
@@ -111,8 +112,6 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
             <User className="h-4 w-4" strokeWidth={2} />
             Alta Cliente
           </button>
-
-          <Separator text="" />
 
           <Link
             to={'/incompatibilities' as '/'}

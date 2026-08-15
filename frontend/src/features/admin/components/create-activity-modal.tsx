@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import apiClient from '@/infrastructure/api/http-client';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,75 @@ const ACTIVITY_TYPES = [
   { value: 'EXTRA', label: 'Evento extra' },
 ];
 
+interface TimePickerProps {
+  value: string;
+  onChange: (v: string) => void;
+}
+
+function TimePicker({ value, onChange }: TimePickerProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const parts = value.split(':');
+  const hours = parseInt(parts[0], 10) || 0;
+  const minutes = parseInt(parts[1], 10) || 0;
+
+  const build = useCallback(
+    (h: number, m: number) =>
+      `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`,
+    [],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex h-9 w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm"
+      >
+        {value}
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 rounded-lg border border-border bg-popover p-3 shadow-lg">
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col items-center gap-1">
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours + 1, minutes))}>
+                <ChevronUp className="h-4 w-4" />
+              </Button>
+              <span className="w-10 text-center text-sm font-medium tabular-nums">
+                {String(hours).padStart(2, '0')}
+              </span>
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours - 1, minutes))}>
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </div>
+            <span className="self-center text-lg font-bold">:</span>
+            <div className="flex flex-col items-center gap-1">
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours, minutes + 1))}>
+                <ChevronUp className="h-4 w-4" />
+              </Button>
+              <span className="w-10 text-center text-sm font-medium tabular-nums">
+                {String(minutes).padStart(2, '0')}
+              </span>
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours, minutes - 1))}>
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface CreateActivityModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -36,7 +105,8 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
   const [activityType, setActivityType] = useState('SOCIALIZATION_GROUP');
   const [maxCapacity, setMaxCapacity] = useState(8);
   const [durationInHours, setDurationInHours] = useState(2);
-  const [date, setDate] = useState('');
+  const [datePart, setDatePart] = useState('');
+  const [timePart, setTimePart] = useState('10:00');
   const [error, setError] = useState('');
 
   const mutation = useMutation({
@@ -48,14 +118,15 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
         activity_type: activityType,
         max_capacity: maxCapacity,
         duration_in_hours: durationInHours,
-        date: new Date(date).toISOString(),
+        date: new Date(`${datePart}T${timePart}:00`).toISOString(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'], refetchType: 'all' });
       setName('');
       setDescription('');
       setLocation('');
-      setDate('');
+      setDatePart('');
+      setTimePart('10:00');
       setError('');
       onOpenChange(false);
     },
@@ -66,7 +137,7 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!name || !location || !date) {
+    if (!name || !location || !datePart || !timePart) {
       setError('Completa todos los campos obligatorios');
       return;
     }
@@ -109,9 +180,15 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
               <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="number" value={durationInHours} min={1} onChange={(e) => setDurationInHours(+e.target.value)} />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium">Fecha y hora</label>
-            <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} required />
+          <div className="flex gap-2">
+            <div className="w-1/2 space-y-1.5">
+              <label className="text-xs font-medium">Fecha</label>
+              <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="date" value={datePart} onChange={(e) => setDatePart(e.target.value)} required />
+            </div>
+            <div className="w-1/2 space-y-1.5">
+              <label className="text-xs font-medium">Hora</label>
+              <TimePicker value={timePart} onChange={setTimePart} />
+            </div>
           </div>
 
           {error && (

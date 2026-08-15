@@ -16,7 +16,7 @@ function RootLayout() {
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link
-            to="/"
+            to={isAuthenticated ? (user?.role === 'ADMIN' ? '/admin' : '/calendar') : '/auth/login'}
             className="flex items-center gap-2 font-semibold tracking-tight transition-colors hover:opacity-80"
           >
             <PawPrint className="h-6 w-6 text-foreground" strokeWidth={2.5} />

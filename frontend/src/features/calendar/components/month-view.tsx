@@ -108,21 +108,23 @@ export function MonthView({
                   {day.getDate()}
                 </span>
               </div>
-              <div className="flex flex-col gap-0.5 overflow-hidden">
-                {dayActivities.slice(0, 3).map((activity) => (
+              <div className="flex min-h-0 flex-col gap-0.5 overflow-visible">
+                {dayActivities.map((activity) => (
                   <ActivityCard
                     key={activity.id}
                     activity={activity}
                     reservationStatus={userReservationMap.get(activity.id)}
                     onClick={onActivityClick}
                     compact
+                    density={
+                      dayActivities.length <= 3
+                        ? 'comfortable'
+                        : dayActivities.length <= 6
+                          ? 'compact'
+                          : 'minimal'
+                    }
                   />
                 ))}
-                {dayActivities.length > 3 && (
-                  <p className="px-1 text-[10px] text-muted-foreground">
-                    +{dayActivities.length - 3} más
-                  </p>
-                )}
               </div>
             </div>
           );

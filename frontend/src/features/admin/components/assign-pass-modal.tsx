@@ -43,7 +43,7 @@ export function AssignPassModal({ open, onOpenChange }: AssignPassModalProps) {
         num_of_sessions: numSessions,
         price,
         pass_type: passType,
-        expires_at: expiresAt || undefined,
+        expires_at: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'], refetchType: 'all' });

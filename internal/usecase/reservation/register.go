@@ -13,11 +13,12 @@ import (
 // into an activity, paid from a pass. All fields are private: the
 // only way to obtain one is NewRegisterReservationInput.
 type RegisterReservationInput struct {
-	userID     int
-	activityID int
-	dogID      int
-	passID     int
-	now        time.Time
+	userID        int
+	activityID    int
+	dogID         int
+	passID        int
+	now           time.Time
+	adminOverride bool
 }
 
 func (in RegisterReservationInput) UserID() int     { return in.userID }
@@ -178,7 +179,7 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 	if dog == nil {
 		return 0, domain.StatusConfirmed, ErrInvalidDog
 	}
-	if dog.UserID() != input.UserID() {
+	if !input.adminOverride && dog.UserID() != input.UserID() {
 		return 0, domain.StatusConfirmed, ErrInvalidDog
 	}
 
@@ -189,20 +190,22 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 	//   - ABSOLUTA: the booking is blocked.
 	//   - MEDIA/BAJA: the booking is kept pending, slot held, until an
 	//     admin confirms or rejects it.
-	others, err := uc.dogRepo.GetByIDs(ctx, slotHolders)
-	if err != nil {
-		return 0, domain.StatusConfirmed, fmt.Errorf("get dogs holding a slot in activity %d: %w", input.ActivityID(), err)
-	}
-	conflicts := make([]domain.CompatibilityConflict, 0, len(others))
-	for _, other := range others {
-		conflicts = append(conflicts, dog.ConflictsWith(other)...)
-	}
 	status := domain.StatusConfirmed
-	if len(conflicts) > 0 {
-		if hasAbsoluteConflict(conflicts) {
-			return 0, domain.StatusConfirmed, &IncompatibleDogsError{Conflicts: conflicts}
+	if !input.adminOverride {
+		others, err := uc.dogRepo.GetByIDs(ctx, slotHolders)
+		if err != nil {
+			return 0, domain.StatusConfirmed, fmt.Errorf("get dogs holding a slot in activity %d: %w", input.ActivityID(), err)
 		}
-		status = domain.StatusPendingToConfirm
+		conflicts := make([]domain.CompatibilityConflict, 0, len(others))
+		for _, other := range others {
+			conflicts = append(conflicts, dog.ConflictsWith(other)...)
+		}
+		if len(conflicts) > 0 {
+			if hasAbsoluteConflict(conflicts) {
+				return 0, domain.StatusConfirmed, &IncompatibleDogsError{Conflicts: conflicts}
+			}
+			status = domain.StatusPendingToConfirm
+		}
 	}
 
 	// 4. Pass must exist, be owned by UserID, not be exhausted, and
@@ -218,7 +221,7 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 	if pass == nil {
 		return 0, domain.StatusConfirmed, ErrInvalidPass
 	}
-	if pass.UserID() != input.UserID() {
+	if !input.adminOverride && pass.UserID() != input.UserID() {
 		return 0, domain.StatusConfirmed, ErrInvalidPass
 	}
 	if pass.IsExhausted() {

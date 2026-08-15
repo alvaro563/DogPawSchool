@@ -1,15 +1,17 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MapPin, Clock, Users, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { MapPin, Clock, Users, AlertCircle, CheckCircle2, Shield } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { fetchDogsByOwner } from '@/infrastructure/repositories/dog-repository.impl';
-import { fetchPassesByUser } from '@/infrastructure/repositories/pass-repository.impl';
-import { createReservation } from '@/infrastructure/repositories/reservation-repository.impl';
+import { fetchDogsByOwner, fetchAllActiveDogs } from '@/infrastructure/repositories/dog-repository.impl';
+import { fetchPassesByUser, fetchAllPasses } from '@/infrastructure/repositories/pass-repository.impl';
+import { fetchAllUsers } from '@/infrastructure/repositories/user-repository.impl';
+import { createReservation, createAdminReservation } from '@/infrastructure/repositories/reservation-repository.impl';
 import { formatActivityTime } from '@/features/calendar/hooks/use-calendar';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import type { Activity } from '@/domain/entities/activity';
+import type { User } from '@/domain/entities/user';
 import type { ApiError } from '@/infrastructure/api/http-client';
 
 interface ActivityDetailSheetProps {
@@ -45,23 +47,35 @@ export function ActivityDetailSheet({
   open,
   onOpenChange,
 }: ActivityDetailSheetProps) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [selectedDogId, setSelectedDogId] = useState<number | null>(null);
   const [selectedPassId, setSelectedPassId] = useState<number | null>(null);
   const [mutationError, setMutationError] = useState('');
 
   const { data: dogs = [], isLoading: dogsLoading } = useQuery({
-    queryKey: ['dogs', user?.id],
-    queryFn: () => fetchDogsByOwner(user!.id),
+    queryKey: isAdmin ? ['dogs', 'all-active'] : ['dogs', user?.id],
+    queryFn: () => (isAdmin ? fetchAllActiveDogs() : fetchDogsByOwner(user!.id)),
     enabled: open && !!user,
   });
 
   const { data: passes = [], isLoading: passesLoading } = useQuery({
-    queryKey: ['passes', user?.id],
-    queryFn: () => fetchPassesByUser(user!.id),
+    queryKey: isAdmin ? ['passes', 'all'] : ['passes', user?.id],
+    queryFn: () => (isAdmin ? fetchAllPasses() : fetchPassesByUser(user!.id)),
     enabled: open && !!user,
   });
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchAllUsers,
+    enabled: open && isAdmin,
+  });
+
+  const ownerMap = useMemo(() => {
+    const map = new Map<number, User>();
+    for (const u of users) map.set(u.id, u);
+    return map;
+  }, [users]);
 
   const availablePasses = useMemo(
     () => passes.filter((p) => p.remaining_sessions > 0),
@@ -69,17 +83,24 @@ export function ActivityDetailSheet({
   );
 
   const reservationMutation = useMutation({
-    mutationFn: () =>
-      createReservation(user!.id, {
+    mutationFn: () => {
+      const body = {
         activity_id: activity!.id,
         dog_id: selectedDogId!,
         pass_id: selectedPassId!,
-      }),
+      };
+      return isAdmin
+        ? createAdminReservation(body)
+        : createReservation(user!.id, body);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       queryClient.invalidateQueries({ queryKey: ['reservations'] });
       queryClient.invalidateQueries({ queryKey: ['passes'] });
       queryClient.invalidateQueries({ queryKey: ['dogs'] });
+      if (isAdmin) {
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      }
       setMutationError('');
       setSelectedDogId(null);
       setSelectedPassId(null);
@@ -109,9 +130,17 @@ export function ActivityDetailSheet({
           <>
             <SheetHeader>
               <SheetTitle className="text-xl font-bold">{activity.name}</SheetTitle>
-              <p className="text-xs text-muted-foreground">
-                {TYPE_LABELS[activity.activity_type] || activity.activity_type}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {TYPE_LABELS[activity.activity_type] || activity.activity_type}
+                </p>
+                {isAdmin && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                    <Shield className="h-3 w-3" />
+                    Reserva admin
+                  </span>
+                )}
+              </div>
             </SheetHeader>
 
             <div className="px-4 pb-6">
@@ -154,9 +183,13 @@ export function ActivityDetailSheet({
               <div className="mt-6 rounded-lg bg-sky-50 p-4 dark:bg-sky-950/30">
                 <div className="flex items-center gap-2 text-sm font-medium text-sky-700 dark:text-sky-300">
                   <CheckCircle2 className="h-4 w-4" />
-                  {reservationStatus === 'CONFIRMED'
-                    ? 'Ya tienes una reserva confirmada'
-                    : 'Tienes una reserva pendiente de confirmación'}
+                  {isAdmin
+                    ? (reservationStatus === 'CONFIRMED'
+                      ? 'Reserva confirmada (admin)'
+                      : 'Reserva pendiente de confirmación (admin)')
+                    : (reservationStatus === 'CONFIRMED'
+                      ? 'Ya tienes una reserva confirmada'
+                      : 'Tienes una reserva pendiente de confirmación')}
                 </div>
               </div>
             )}
@@ -164,7 +197,9 @@ export function ActivityDetailSheet({
             {/* Reservation form */}
             {canReserve && (
               <div className="mt-6 space-y-4 border-t border-border pt-6">
-                <p className="text-sm font-semibold">Reservar plaza</p>
+                <p className="text-sm font-semibold">
+                  {isAdmin ? 'Reservar plaza (admin)' : 'Reservar plaza'}
+                </p>
 
                 {/* Dog selector */}
                 <div className="space-y-1.5">
@@ -182,7 +217,9 @@ export function ActivityDetailSheet({
                       <option value="">Selecciona un perro</option>
                       {dogs.map((d) => (
                         <option key={d.id} value={d.id}>
-                          {d.name}
+                          {isAdmin
+                            ? `${d.name} · ${ownerMap.get(d.user_id)?.name ?? 'Propietario #' + d.user_id}`
+                            : d.name}
                         </option>
                       ))}
                     </select>
@@ -205,7 +242,9 @@ export function ActivityDetailSheet({
                       <option value="">Selecciona un bono</option>
                       {availablePasses.map((p) => (
                         <option key={p.id} value={p.id}>
-                          Bono {p.pass_type === 'GENERICO' ? 'genérico' : 'específico'} — {p.remaining_sessions} sesiones
+                          {isAdmin
+                            ? `Bono ${p.pass_type === 'GENERICO' ? 'genérico' : 'específico'} · ${ownerMap.get(p.user_id)?.name ?? 'Usuario #' + p.user_id} · ${p.remaining_sessions} sesiones`
+                            : `Bono ${p.pass_type === 'GENERICO' ? 'genérico' : 'específico'} — ${p.remaining_sessions} sesiones`}
                         </option>
                       ))}
                     </select>

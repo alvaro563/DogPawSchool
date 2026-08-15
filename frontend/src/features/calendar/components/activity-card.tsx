@@ -8,6 +8,7 @@ interface ActivityCardProps {
   reservationStatus: string | undefined;
   onClick: (activity: Activity) => void;
   compact?: boolean;
+  density?: 'comfortable' | 'compact' | 'minimal';
 }
 
 export function ActivityCard({
@@ -15,6 +16,7 @@ export function ActivityCard({
   reservationStatus,
   onClick,
   compact = false,
+  density = 'compact',
 }: ActivityCardProps) {
   const isBooked = reservationStatus === 'CONFIRMED';
   const isPending = reservationStatus === 'PENDING_TO_CONFIRM';
@@ -30,17 +32,37 @@ export function ActivityCard({
         : 'border-l-[3px] border-l-primary/40';
 
   if (compact) {
+    const densityClasses = {
+      comfortable: {
+        wrapper: 'rounded-md px-2 py-1',
+        name: 'text-xs leading-tight',
+        time: 'text-[10px] leading-tight',
+      },
+      compact: {
+        wrapper: 'rounded-md px-1 py-0.5',
+        name: 'text-[10px] leading-tight',
+        time: 'text-[9px] leading-tight',
+      },
+      minimal: {
+        wrapper: 'rounded px-0.5 py-0',
+        name: 'text-[9px] leading-tight',
+        time: 'text-[8px] leading-tight',
+      },
+    }[density];
+
     return (
       <button
         onClick={() => onClick(activity)}
         className={cn(
-          'w-full rounded-md px-2 py-1 text-left transition-colors hover:bg-muted',
+          'w-full min-h-0 text-left transition-colors hover:bg-muted',
+          densityClasses.wrapper,
           borderColor,
           (isFull || isPast) && 'opacity-50',
         )}
+        title={`${activity.name} · ${formatActivityTime(activity.date, activity.duration_in_hours)}`}
       >
-        <div className="truncate text-xs font-medium">{activity.name}</div>
-        <div className="text-[10px] text-muted-foreground">
+        <div className={cn('truncate font-medium', densityClasses.name)}>{activity.name}</div>
+        <div className={cn('truncate text-muted-foreground', densityClasses.time)}>
           {formatActivityTime(activity.date, activity.duration_in_hours)}
         </div>
       </button>

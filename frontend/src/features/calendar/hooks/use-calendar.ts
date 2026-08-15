@@ -49,7 +49,7 @@ function toISO(d: Date): string {
 }
 
 export function useCalendar() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [currentDate, setCurrentDate] = useState(() => startOfMonth(new Date()));
   const [viewMode, setViewMode] = useState<ViewMode>('month');
 
@@ -73,19 +73,22 @@ export function useCalendar() {
 
   const { data: reservations = [] } = useQuery({
     queryKey: ['reservations', user?.id],
-    queryFn: () => fetchUserReservations(user!.id, 'CONFIRMED,PENDING_TO_CONFIRM'),
-    enabled: !!user,
+    queryFn: () => fetchUserReservations(user!.id),
+    enabled: !!user && !isAdmin,
   });
 
+  const SHOWN_STATUSES = new Set(['CONFIRMED', 'PENDING_TO_CONFIRM']);
   const userReservationMap = useMemo(() => {
+    if (isAdmin) return new Map<number, string>();
     const map = new Map<number, string>();
     for (const r of reservations) {
+      if (!SHOWN_STATUSES.has(r.status)) continue;
       const prev = map.get(r.activity_id);
       if (prev === 'CONFIRMED') continue;
       map.set(r.activity_id, r.status);
     }
     return map;
-  }, [reservations]);
+  }, [reservations, isAdmin]);
 
   const navigate = useCallback(
     (direction: 1 | -1) => {

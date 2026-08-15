@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Activity } from '@/domain/entities/activity';
 import { ActivityCard } from './activity-card';
+import { layoutOverlappingActivities } from '@/features/calendar/utils/calendar-layout';
 
 interface WeekViewProps {
   currentDate: Date;
@@ -46,17 +47,6 @@ export function WeekView({
     return map;
   }, [activities]);
 
-  function getTop(activity: Activity): number {
-    const d = new Date(activity.date);
-    const hours = d.getHours();
-    const minutes = d.getMinutes();
-    return (hours - 8) * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
-  }
-
-  function getHeight(activity: Activity): number {
-    return activity.duration_in_hours * HOUR_HEIGHT;
-  }
-
   return (
     <div className="flex flex-1 flex-col">
       {/* Day headers */}
@@ -85,7 +75,10 @@ export function WeekView({
 
       {/* Time grid */}
       <div className="relative flex-1 overflow-auto">
-        <div className="grid grid-cols-[3rem_repeat(7,1fr)]">
+        <div
+          className="relative grid min-w-[720px] grid-cols-[3rem_repeat(7,1fr)]"
+          style={{ height: HOURS.length * HOUR_HEIGHT }}
+        >
           {HOURS.map((hour) => (
             <div
               key={hour}
@@ -106,36 +99,47 @@ export function WeekView({
           ))}
 
           {/* Activities positioned absolutely */}
-          {weekDays.map((day) => {
+          {weekDays.map((day, dayIndex) => {
             const dayStr = day.toDateString();
             const dayActs = dayActivityMap.get(dayStr) || [];
-            return dayActs.map((activity) => {
-              const top = getTop(activity);
-              if (top < 0) return null;
-              const dayIndex = weekDays.findIndex((d) => d.toDateString() === dayStr);
-              if (dayIndex < 0) return null;
-              return (
-                <div
-                  key={activity.id}
-                  className="absolute"
-                  style={{
-                    top,
-                    height: getHeight(activity),
-                    left: `calc(3rem + (100% - 3rem) / 7 * ${dayIndex})`,
-                    width: `calc((100% - 3rem) / 7 - 4px)`,
-                  }}
-                >
-                  <div className="mx-0.5 h-full overflow-hidden">
-                    <ActivityCard
-                      activity={activity}
-                      reservationStatus={userReservationMap.get(activity.id)}
-                      onClick={onActivityClick}
-                      compact
-                    />
-                  </div>
-                </div>
-              );
-            });
+            const positioned = layoutOverlappingActivities(dayActs);
+            if (positioned.length === 0) return null;
+
+            return (
+              <div
+                key={dayStr}
+                className="absolute top-0 bottom-0"
+                style={{
+                  left: `calc(${(dayIndex * 100) / 7}% + ${3 * (1 - dayIndex / 7)}rem)`,
+                  width: `calc(${100 / 7}% - ${3 / 7}rem)`,
+                }}
+              >
+                {positioned.map(({ activity, startMinutes, endMinutes, column, totalColumns }) => {
+                  const top = (startMinutes - 8 * 60) * (HOUR_HEIGHT / 60);
+                  if (top + (endMinutes - startMinutes) * (HOUR_HEIGHT / 60) < 0) return null;
+                  return (
+                    <div
+                      key={activity.id}
+                      className="absolute"
+                      style={{
+                        top: Math.max(0, top),
+                        height: Math.max((endMinutes - startMinutes) * (HOUR_HEIGHT / 60), 48),
+                        left: `${(column * 100) / totalColumns}%`,
+                        width: `calc(${100 / totalColumns}% - 2px)`,
+                      }}
+                    >
+                      <ActivityCard
+                        activity={activity}
+                        reservationStatus={userReservationMap.get(activity.id)}
+                        onClick={onActivityClick}
+                        compact
+                        density="comfortable"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            );
           })}
         </div>
       </div>

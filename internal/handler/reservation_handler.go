@@ -16,6 +16,10 @@ type ReservationRegisterer interface {
 	Execute(ctx context.Context, input reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error)
 }
 
+type AdminReservationRegisterer interface {
+	Execute(ctx context.Context, input reservationuc.RegisterAdminReservationInput) (reservationuc.RegisterAdminReservationOutput, error)
+}
+
 type ReservationCanceler interface {
 	Execute(ctx context.Context, input reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error)
 }
@@ -75,6 +79,7 @@ type ReservationRejecter interface {
 // RejectPending).
 type ReservationHandler struct {
 	register       ReservationRegisterer
+	adminRegister  AdminReservationRegisterer
 	cancel         ReservationCanceler
 	get            ReservationGetter
 	listByUser     ReservationListerByUser
@@ -105,9 +110,11 @@ func NewReservationHandler(
 	reject ReservationRejecter,
 	listAll ReservationListerAll,
 	listUpcomingAll ReservationUpcomingAllLister,
+	adminRegister AdminReservationRegisterer,
 ) *ReservationHandler {
 	return &ReservationHandler{
 		register:       register,
+		adminRegister:  adminRegister,
 		cancel:         cancel,
 		get:            get,
 		listByUser:     listByUser,
@@ -174,6 +181,41 @@ func (h *ReservationHandler) Register(c *gin.Context) {
 	}
 
 	output, err := h.register.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Header("Location", "/api/v1/reservations/"+strconv.Itoa(output.ID))
+	c.JSON(http.StatusCreated, registerReservationResponse{ID: output.ID, Status: string(output.Status)})
+}
+
+// RegisterAdmin godoc
+// @Summary      Create an admin reservation
+// @Description  Books any dog with any usable school pass. Admin authority
+// @Description  bypasses ownership and compatibility conflicts and confirms
+// @Description  the reservation immediately.
+// @Tags         reservations
+// @Accept       json
+// @Produce      json
+// @Param        reservation body registerReservationRequest true "Reservation to create"
+// @Success      201 {object} registerReservationResponse
+// @Failure      400 {object} errorResponse
+// @Failure      409 {object} errorResponse
+// @Failure      500 {object} errorResponse
+// @Security     BearerAuth
+// @Router       /api/v1/reservations [post]
+func (h *ReservationHandler) RegisterAdmin(c *gin.Context) {
+	var request registerReservationRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
+		return
+	}
+	in, err := reservationuc.NewRegisterAdminReservationInput(request.ActivityID, request.DogID, request.PassID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.adminRegister.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
 		return

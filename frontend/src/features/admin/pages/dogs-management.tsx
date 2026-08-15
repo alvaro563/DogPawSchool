@@ -86,28 +86,41 @@ export function DogsManagementPage() {
     const tOwner = searchOwner.trim().toLowerCase();
     if (!tDog && !tBreed && !tOwner) return dogs;
     return dogs.filter((d) => {
-      if (tDog && !d.name.toLowerCase().includes(tDog)) return false;
-      if (tBreed && !d.breed.toLowerCase().includes(tBreed)) return false;
-      if (tOwner && !(ownerMap.get(d.user_id) || '').toLowerCase().includes(tOwner)) return false;
+      if (tDog && !d.name.toLowerCase().startsWith(tDog)) return false;
+      if (tBreed && !d.breed.toLowerCase().startsWith(tBreed)) return false;
+      if (tOwner && !(ownerMap.get(d.user_id) || '').toLowerCase().startsWith(tOwner)) return false;
       return true;
     });
   }, [dogs, searchDog, searchBreed, searchOwner, ownerMap]);
 
-  const dogSuggestions = useMemo(
-    () => dogs.slice(0, 20).map((d) => ({ key: `dog-${d.id}`, label: d.name })),
-    [dogs],
-  );
-  const breedSuggestions = useMemo(
-    () => [...new Set(dogs.map((d) => d.breed))].sort().map((b) => ({ key: `breed-${b}`, label: b })),
-    [dogs],
-  );
-  const ownerSuggestions = useMemo(
-    () =>
-      [...new Map(users.filter((u) => dogs.some((d) => d.user_id === u.id)).map((u) => [u.id, u])).values()].map(
-        (u) => ({ key: `owner-${u.id}`, label: u.name }),
-      ),
-    [dogs, users],
-  );
+  const dogSuggestions = useMemo(() => {
+    const t = searchDog.toLowerCase();
+    const names = dogs
+      .filter((d) => !t || d.name.toLowerCase().startsWith(t))
+      .map((d) => d.name);
+    return [...new Set(names)]
+      .slice(0, 20)
+      .map((name, i) => ({ key: `dog-${name}-${i}`, label: name }));
+  }, [dogs, searchDog]);
+
+  const breedSuggestions = useMemo(() => {
+    const t = searchBreed.toLowerCase();
+    return [...new Set(dogs.map((d) => d.breed))]
+      .filter((b) => !t || b.toLowerCase().startsWith(t))
+      .sort()
+      .map((b) => ({ key: `breed-${b}`, label: b }));
+  }, [dogs, searchBreed]);
+
+  const ownerSuggestions = useMemo(() => {
+    const t = searchOwner.toLowerCase();
+    return [
+      ...new Map(
+        users.filter((u) => dogs.some((d) => d.user_id === u.id)).map((u) => [u.id, u]),
+      ).values(),
+    ]
+      .filter((u) => !t || u.name.toLowerCase().startsWith(t))
+      .map((u) => ({ key: `owner-${u.id}`, label: u.name }));
+  }, [dogs, users, searchOwner]);
 
   return (
     <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">

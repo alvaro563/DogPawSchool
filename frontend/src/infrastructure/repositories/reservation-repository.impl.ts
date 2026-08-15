@@ -52,3 +52,9 @@ export async function fetchUpcomingReservations(): Promise<ReservationView[]> {
   const data = await apiClient.get<ReservationListResponse>('/reservations/upcoming', { limit: '200' });
   return data.reservations;
 }
+
+export async function createAdminReservation(
+  body: CreateReservationRequest,
+): Promise<CreateReservationResponse> {
+  return apiClient.post<CreateReservationResponse>('/reservations', body);
+}
