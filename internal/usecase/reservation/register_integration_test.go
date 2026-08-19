@@ -14,6 +14,7 @@ import (
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -542,4 +543,68 @@ func TestNoConflictCreatesConfirmed(t *testing.T) {
 	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
 	require.NoError(t, err)
 	require.Equal(t, 9, gotPass.RemainingSessions(), "one session consumed for the booking")
+}
+
+// TestListActivityRosterUseCase_Integration verifies the full
+// backend pipeline against real Postgres: two owners, three
+// reservations (CONFIRMED, PENDING, CANCELLED_LATE). The output
+// must partition correctly, resolve the owner names in a single
+// user query, and drop the cancelled one.
+func TestListActivityRosterUseCase_Integration(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	ownerAna := seedIntegrationUser(t, "ana-roster@test.com")
+	ownerJuan := seedIntegrationUser(t, "juan-roster@test.com")
+	activity := seedIntegrationActivity(t, 10, now.Add(7*24*time.Hour))
+
+	// Two dogs for Ana (one confirmed, one pending), one dog for
+	// Juan (confirmed), one cancelled for Ana (must be dropped).
+	dogAna1 := seedIntegrationDog(t, ownerAna.ID(), "Luna", nil, nil)
+	dogAna2 := seedIntegrationDog(t, ownerAna.ID(), "Maya", nil, nil)
+	dogJuan := seedIntegrationDog(t, ownerJuan.ID(), "Toby", nil, nil)
+	dogAna3 := seedIntegrationDog(t, ownerAna.ID(), "Coco", nil, nil)
+
+	passAna := seedIntegrationPass(t, ownerAna.ID(), 10)
+	passJuan := seedIntegrationPass(t, ownerJuan.ID(), 10)
+	passAna2 := seedIntegrationPass(t, ownerAna.ID(), 10)
+
+	// Confirmed entries: Luna (Ana), Toby (Juan).
+	seedIntegrationReservation(t, activity.ID(), dogAna1.ID(), passAna.ID(), domain.StatusConfirmed, now.Add(-2*time.Hour))
+	seedIntegrationReservation(t, activity.ID(), dogJuan.ID(), passJuan.ID(), domain.StatusConfirmed, now.Add(-1*time.Hour))
+	// Pending entry: Maya (Ana).
+	seedIntegrationReservation(t, activity.ID(), dogAna2.ID(), passAna2.ID(), domain.StatusPendingToConfirm, now.Add(-30*time.Minute))
+	// Dropped entry: Coco (Ana) cancelled late.
+	seedIntegrationReservation(t, activity.ID(), dogAna3.ID(), passAna.ID(), domain.StatusCancelledLate, now.Add(-15*time.Minute))
+
+	uc := NewListActivityRosterUseCase(
+		postgres.NewActivityRepository(testDB),
+		postgres.NewReservationRepository(testDB),
+		postgres.NewUserRepository(testDB),
+	)
+	out, err := uc.Execute(context.Background(), MustNewListActivityRosterInput(activity.ID()))
+	require.NoError(t, err)
+	require.NotNil(t, out.Activity)
+	assert.Equal(t, activity.ID(), out.Activity.ID())
+
+	require.Len(t, out.Confirmed, 2, "two CONFIRMED")
+	// Order is created_at ASC: Luna (older) then Toby.
+	assert.Equal(t, dogAna1.ID(), out.Confirmed[0].DogID())
+	assert.Equal(t, "Luna", out.Confirmed[0].DogName())
+	assert.Equal(t, ownerAna.ID(), out.Confirmed[0].OwnerID())
+	assert.Equal(t, ownerAna.Name(), out.Confirmed[0].OwnerName())
+	assert.Equal(t, dogJuan.ID(), out.Confirmed[1].DogID())
+	assert.Equal(t, "Toby", out.Confirmed[1].DogName())
+	assert.Equal(t, ownerJuan.ID(), out.Confirmed[1].OwnerID())
+	assert.Equal(t, ownerJuan.Name(), out.Confirmed[1].OwnerName())
+
+	require.Len(t, out.Pending, 1, "one PENDING_TO_CONFIRM")
+	assert.Equal(t, dogAna2.ID(), out.Pending[0].DogID())
+	assert.Equal(t, "Maya", out.Pending[0].DogName())
+	assert.Equal(t, ownerAna.ID(), out.Pending[0].OwnerID())
+	assert.Equal(t, ownerAna.Name(), out.Pending[0].OwnerName())
+
+	// Negative path: invalid activity id returns ErrInvalidActivity.
+	_, err = uc.Execute(context.Background(), MustNewListActivityRosterInput(99999))
+	assert.ErrorIs(t, err, ErrInvalidActivity)
 }

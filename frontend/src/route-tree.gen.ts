@@ -15,11 +15,16 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
-import { Route as AuthenticatedAdminActivitiesRouteImport } from './routes/_authenticated/admin/activities'
-import { Route as AuthenticatedAdminDogsRouteImport } from './routes/_authenticated/admin/dogs'
 import { Route as AuthenticatedAdminPassesRouteImport } from './routes/_authenticated/admin/passes'
 import { Route as AuthenticatedAdminReservationsRouteImport } from './routes/_authenticated/admin/reservations'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as AuthenticatedAdminActivitiesIndexRouteImport } from './routes/_authenticated/admin/activities/index'
+import { Route as AuthenticatedAdminActivitiesIdRouteImport } from './routes/_authenticated/admin/activities/$id'
+import { Route as AuthenticatedAdminDogsIndexRouteImport } from './routes/_authenticated/admin/dogs/index'
+import { Route as AuthenticatedAdminDogsInactiveRouteImport } from './routes/_authenticated/admin/dogs/inactive'
+import { Route as AuthenticatedAdminPendingReservationsIndexRouteImport } from './routes/_authenticated/admin/pending-reservations/index'
+import { Route as AuthenticatedAdminTodayClassesIndexRouteImport } from './routes/_authenticated/admin/today-classes/index'
+import { Route as AuthenticatedAdminTodayClassesIdRouteImport } from './routes/_authenticated/admin/today-classes/$id'
 
 const AuthenticatedActiveDogsLazyRouteImport = createFileRoute(
   '/_authenticated/active-dogs',
@@ -127,17 +132,6 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
-const AuthenticatedAdminActivitiesRoute =
-  AuthenticatedAdminActivitiesRouteImport.update({
-    id: '/activities',
-    path: '/activities',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminDogsRoute = AuthenticatedAdminDogsRouteImport.update({
-  id: '/dogs',
-  path: '/dogs',
-  getParentRoute: () => AuthenticatedAdminRoute,
-} as any)
 const AuthenticatedAdminPassesRoute =
   AuthenticatedAdminPassesRouteImport.update({
     id: '/passes',
@@ -163,6 +157,48 @@ const AuthenticatedDogDetailIdLazyRoute =
   } as any).lazy(() =>
     import('./routes/_authenticated/dog-detail.$id.lazy').then((d) => d.Route),
   )
+const AuthenticatedAdminActivitiesIndexRoute =
+  AuthenticatedAdminActivitiesIndexRouteImport.update({
+    id: '/activities/',
+    path: '/activities/',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminActivitiesIdRoute =
+  AuthenticatedAdminActivitiesIdRouteImport.update({
+    id: '/activities/$id',
+    path: '/activities/$id',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminDogsIndexRoute =
+  AuthenticatedAdminDogsIndexRouteImport.update({
+    id: '/dogs/',
+    path: '/dogs/',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminDogsInactiveRoute =
+  AuthenticatedAdminDogsInactiveRouteImport.update({
+    id: '/dogs/inactive',
+    path: '/dogs/inactive',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminPendingReservationsIndexRoute =
+  AuthenticatedAdminPendingReservationsIndexRouteImport.update({
+    id: '/pending-reservations/',
+    path: '/pending-reservations/',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminTodayClassesIndexRoute =
+  AuthenticatedAdminTodayClassesIndexRouteImport.update({
+    id: '/today-classes/',
+    path: '/today-classes/',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminTodayClassesIdRoute =
+  AuthenticatedAdminTodayClassesIdRouteImport.update({
+    id: '/today-classes/$id',
+    path: '/today-classes/$id',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -175,13 +211,18 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileLazyRoute
   '/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
-  '/admin/activities': typeof AuthenticatedAdminActivitiesRoute
-  '/admin/dogs': typeof AuthenticatedAdminDogsRoute
   '/admin/passes': typeof AuthenticatedAdminPassesRoute
   '/admin/reservations': typeof AuthenticatedAdminReservationsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
+  '/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
+  '/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
+  '/admin/activities/': typeof AuthenticatedAdminActivitiesIndexRoute
+  '/admin/dogs/': typeof AuthenticatedAdminDogsIndexRoute
+  '/admin/pending-reservations/': typeof AuthenticatedAdminPendingReservationsIndexRoute
+  '/admin/today-classes/': typeof AuthenticatedAdminTodayClassesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -193,13 +234,18 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileLazyRoute
   '/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
-  '/admin/activities': typeof AuthenticatedAdminActivitiesRoute
-  '/admin/dogs': typeof AuthenticatedAdminDogsRoute
   '/admin/passes': typeof AuthenticatedAdminPassesRoute
   '/admin/reservations': typeof AuthenticatedAdminReservationsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
+  '/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
+  '/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
+  '/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
+  '/admin/activities': typeof AuthenticatedAdminActivitiesIndexRoute
+  '/admin/dogs': typeof AuthenticatedAdminDogsIndexRoute
+  '/admin/pending-reservations': typeof AuthenticatedAdminPendingReservationsIndexRoute
+  '/admin/today-classes': typeof AuthenticatedAdminTodayClassesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -214,13 +260,18 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileLazyRoute
   '/_authenticated/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
-  '/_authenticated/admin/activities': typeof AuthenticatedAdminActivitiesRoute
-  '/_authenticated/admin/dogs': typeof AuthenticatedAdminDogsRoute
   '/_authenticated/admin/passes': typeof AuthenticatedAdminPassesRoute
   '/_authenticated/admin/reservations': typeof AuthenticatedAdminReservationsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
+  '/_authenticated/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
+  '/_authenticated/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
+  '/_authenticated/admin/activities/': typeof AuthenticatedAdminActivitiesIndexRoute
+  '/_authenticated/admin/dogs/': typeof AuthenticatedAdminDogsIndexRoute
+  '/_authenticated/admin/pending-reservations/': typeof AuthenticatedAdminPendingReservationsIndexRoute
+  '/_authenticated/admin/today-classes/': typeof AuthenticatedAdminTodayClassesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -235,13 +286,18 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reservations'
     | '/auth/login'
-    | '/admin/activities'
-    | '/admin/dogs'
     | '/admin/passes'
     | '/admin/reservations'
     | '/admin/users'
     | '/dog-detail/$id'
     | '/admin/'
+    | '/admin/activities/$id'
+    | '/admin/dogs/inactive'
+    | '/admin/today-classes/$id'
+    | '/admin/activities/'
+    | '/admin/dogs/'
+    | '/admin/pending-reservations/'
+    | '/admin/today-classes/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -253,13 +309,18 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reservations'
     | '/auth/login'
-    | '/admin/activities'
-    | '/admin/dogs'
     | '/admin/passes'
     | '/admin/reservations'
     | '/admin/users'
     | '/dog-detail/$id'
     | '/admin'
+    | '/admin/activities/$id'
+    | '/admin/dogs/inactive'
+    | '/admin/today-classes/$id'
+    | '/admin/activities'
+    | '/admin/dogs'
+    | '/admin/pending-reservations'
+    | '/admin/today-classes'
   id:
     | '__root__'
     | '/'
@@ -273,13 +334,18 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/reservations'
     | '/auth/login'
-    | '/_authenticated/admin/activities'
-    | '/_authenticated/admin/dogs'
     | '/_authenticated/admin/passes'
     | '/_authenticated/admin/reservations'
     | '/_authenticated/admin/users'
     | '/_authenticated/dog-detail/$id'
     | '/_authenticated/admin/'
+    | '/_authenticated/admin/activities/$id'
+    | '/_authenticated/admin/dogs/inactive'
+    | '/_authenticated/admin/today-classes/$id'
+    | '/_authenticated/admin/activities/'
+    | '/_authenticated/admin/dogs/'
+    | '/_authenticated/admin/pending-reservations/'
+    | '/_authenticated/admin/today-classes/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -374,20 +440,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/admin/activities': {
-      id: '/_authenticated/admin/activities'
-      path: '/activities'
-      fullPath: '/admin/activities'
-      preLoaderRoute: typeof AuthenticatedAdminActivitiesRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/dogs': {
-      id: '/_authenticated/admin/dogs'
-      path: '/dogs'
-      fullPath: '/admin/dogs'
-      preLoaderRoute: typeof AuthenticatedAdminDogsRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
     '/_authenticated/admin/passes': {
       id: '/_authenticated/admin/passes'
       path: '/passes'
@@ -416,25 +468,87 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDogDetailIdLazyRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/activities/': {
+      id: '/_authenticated/admin/activities/'
+      path: '/activities'
+      fullPath: '/admin/activities/'
+      preLoaderRoute: typeof AuthenticatedAdminActivitiesIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/activities/$id': {
+      id: '/_authenticated/admin/activities/$id'
+      path: '/activities/$id'
+      fullPath: '/admin/activities/$id'
+      preLoaderRoute: typeof AuthenticatedAdminActivitiesIdRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/dogs/': {
+      id: '/_authenticated/admin/dogs/'
+      path: '/dogs'
+      fullPath: '/admin/dogs/'
+      preLoaderRoute: typeof AuthenticatedAdminDogsIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/dogs/inactive': {
+      id: '/_authenticated/admin/dogs/inactive'
+      path: '/dogs/inactive'
+      fullPath: '/admin/dogs/inactive'
+      preLoaderRoute: typeof AuthenticatedAdminDogsInactiveRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/pending-reservations/': {
+      id: '/_authenticated/admin/pending-reservations/'
+      path: '/pending-reservations'
+      fullPath: '/admin/pending-reservations/'
+      preLoaderRoute: typeof AuthenticatedAdminPendingReservationsIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/today-classes/': {
+      id: '/_authenticated/admin/today-classes/'
+      path: '/today-classes'
+      fullPath: '/admin/today-classes/'
+      preLoaderRoute: typeof AuthenticatedAdminTodayClassesIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/today-classes/$id': {
+      id: '/_authenticated/admin/today-classes/$id'
+      path: '/today-classes/$id'
+      fullPath: '/admin/today-classes/$id'
+      preLoaderRoute: typeof AuthenticatedAdminTodayClassesIdRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
   }
 }
 
 interface AuthenticatedAdminRouteChildren {
-  AuthenticatedAdminActivitiesRoute: typeof AuthenticatedAdminActivitiesRoute
-  AuthenticatedAdminDogsRoute: typeof AuthenticatedAdminDogsRoute
   AuthenticatedAdminPassesRoute: typeof AuthenticatedAdminPassesRoute
   AuthenticatedAdminReservationsRoute: typeof AuthenticatedAdminReservationsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+  AuthenticatedAdminActivitiesIdRoute: typeof AuthenticatedAdminActivitiesIdRoute
+  AuthenticatedAdminDogsInactiveRoute: typeof AuthenticatedAdminDogsInactiveRoute
+  AuthenticatedAdminTodayClassesIdRoute: typeof AuthenticatedAdminTodayClassesIdRoute
+  AuthenticatedAdminActivitiesIndexRoute: typeof AuthenticatedAdminActivitiesIndexRoute
+  AuthenticatedAdminDogsIndexRoute: typeof AuthenticatedAdminDogsIndexRoute
+  AuthenticatedAdminPendingReservationsIndexRoute: typeof AuthenticatedAdminPendingReservationsIndexRoute
+  AuthenticatedAdminTodayClassesIndexRoute: typeof AuthenticatedAdminTodayClassesIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
-  AuthenticatedAdminActivitiesRoute: AuthenticatedAdminActivitiesRoute,
-  AuthenticatedAdminDogsRoute: AuthenticatedAdminDogsRoute,
   AuthenticatedAdminPassesRoute: AuthenticatedAdminPassesRoute,
   AuthenticatedAdminReservationsRoute: AuthenticatedAdminReservationsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+  AuthenticatedAdminActivitiesIdRoute: AuthenticatedAdminActivitiesIdRoute,
+  AuthenticatedAdminDogsInactiveRoute: AuthenticatedAdminDogsInactiveRoute,
+  AuthenticatedAdminTodayClassesIdRoute: AuthenticatedAdminTodayClassesIdRoute,
+  AuthenticatedAdminActivitiesIndexRoute:
+    AuthenticatedAdminActivitiesIndexRoute,
+  AuthenticatedAdminDogsIndexRoute: AuthenticatedAdminDogsIndexRoute,
+  AuthenticatedAdminPendingReservationsIndexRoute:
+    AuthenticatedAdminPendingReservationsIndexRoute,
+  AuthenticatedAdminTodayClassesIndexRoute:
+    AuthenticatedAdminTodayClassesIndexRoute,
 }
 
 const AuthenticatedAdminRouteWithChildren =

@@ -413,6 +413,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/activities/{id}/roster": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the activity together with its confirmed\nand pending-to-confirm attendees, each annotated\nwith the dog owner's id and name. Server-side\npartitioning keeps the response shape stable for\nthe admin dashboard: the client can render the\npage with a single fetch. Admin only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List an activity's roster (admin class-day view)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Activity roster",
+                        "schema": {
+                            "$ref": "#/definitions/handler.activityRosterResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/login": {
             "post": {
                 "description": "Authenticates a user with email and password. On success it returns a signed JWT (HS256) and the user profile. The token expires after 24 hours and carries the user ID (sub) and role (role) claims.",
@@ -2382,6 +2434,51 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/reservations/pending": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every reservation in StatusPendingToConfirm,\neach annotated with the dog owner's id and name.\nServer-side partitioning and batched owner lookup\nkeep the response shape stable: the admin can\nrender the triage page with a single fetch and\nzero filtering. Admin only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "List pending reservations awaiting admin approval",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of pending reservations to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of pending reservations to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pending reservations",
+                        "schema": {
+                            "$ref": "#/definitions/handler.pendingReservationsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/reservations/upcoming": {
             "get": {
                 "security": [
@@ -2420,6 +2517,64 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reservations/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin-only. Cancels any CONFIRMED reservation\nregardless of the owner. The owner user_id is not\nrequired in the path because the admin does not need\nto know who owns the reservation to cancel it.\nIn-time vs late window policy and refund rules are\nidentical to the user-cancel endpoint above.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Admin-cancel a reservation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reservation cancelled",
+                        "schema": {
+                            "$ref": "#/definitions/handler.cancelReservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid reservation_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Already cancelled / activity in past",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -3467,6 +3622,51 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.activityRosterEntryDTO": {
+            "type": "object",
+            "properties": {
+                "dog_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "dog_name": {
+                    "type": "string",
+                    "example": "Luna"
+                },
+                "owner_id": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "owner_name": {
+                    "type": "string",
+                    "example": "Carlos García"
+                },
+                "reservation_id": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "handler.activityRosterResponse": {
+            "type": "object",
+            "properties": {
+                "activity": {
+                    "$ref": "#/definitions/handler.activityDTO"
+                },
+                "confirmed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.activityRosterEntryDTO"
+                    }
+                },
+                "pending": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.activityRosterEntryDTO"
+                    }
+                }
+            }
+        },
         "handler.cancelReservationResponse": {
             "type": "object",
             "properties": {
@@ -4120,6 +4320,67 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.pendingReservationEntryDTO": {
+            "type": "object",
+            "properties": {
+                "activity_date": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "activity_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "activity_location": {
+                    "type": "string",
+                    "example": "Parking Central"
+                },
+                "activity_name": {
+                    "type": "string",
+                    "example": "Paseo Río"
+                },
+                "dog_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "dog_name": {
+                    "type": "string",
+                    "example": "Luna"
+                },
+                "owner_id": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "owner_name": {
+                    "type": "string",
+                    "example": "Carlos García"
+                },
+                "reservation_id": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "handler.pendingReservationsResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.pendingReservationEntryDTO"
+                    }
+                }
+            }
+        },
         "handler.registerActivityRequest": {
             "type": "object",
             "properties": {
@@ -4384,6 +4645,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 42
+                },
+                "owner_id": {
+                    "type": "integer",
+                    "example": 7
                 },
                 "pass_id": {
                     "type": "integer",

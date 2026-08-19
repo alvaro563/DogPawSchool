@@ -3,6 +3,7 @@ import { ClipboardList, Dog, Ticket } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { fetchUserReservations } from '@/infrastructure/repositories/reservation-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
+import { CancelReservationButton } from '@/features/admin/components/cancel-reservation-button';
 import type { ReservationView } from '@/domain/entities/reservation';
 
 const SHOWN_STATUSES = new Set(['CONFIRMED', 'PENDING_TO_CONFIRM']);
@@ -88,9 +89,23 @@ export function ReservationListPage() {
                   )}
                 </div>
               </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || 'bg-muted text-muted-foreground'}`}>
-                {STATUS_LABELS[r.status] || r.status}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || 'bg-muted text-muted-foreground'}`}>
+                  {STATUS_LABELS[r.status] || r.status}
+                </span>
+                {r.status === 'CONFIRMED' && (
+                  <CancelReservationButton
+                    reservationId={r.id}
+                    ownerId={r.owner_id}
+                    dogName={r.dog_name}
+                    activityName={r.activity_name}
+                    activityDate={r.activity_date}
+                    isAdmin={false}
+                    onInvalidate={() => {}}
+                    variant="compact"
+                  />
+                )}
+              </div>
             </div>
           ))}
         </div>

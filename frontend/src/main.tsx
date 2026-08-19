@@ -4,6 +4,8 @@ import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { routeTree } from './route-tree.gen'
 import { AuthProvider } from '@/features/auth/hooks/use-auth'
+import { ToastProvider } from '@/features/ui/hooks/toast-context'
+import { ToastViewport } from '@/components/ui/toast'
 import './index.css'
 
 const queryClient = new QueryClient()
@@ -26,9 +28,13 @@ declare module '@tanstack/react-router' {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <RouterProvider router={router} />
-      </AuthProvider>
+      <ToastProvider>
+        <ToastViewport />
+        <AuthProvider>
+          <RouterProvider router={router} />
+        </AuthProvider>
+      </ToastProvider>
     </QueryClientProvider>
   </StrictMode>,
 )
+

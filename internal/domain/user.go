@@ -174,6 +174,7 @@ type UserRepository interface {
 	Create(ctx context.Context, user *User) (int, error)
 	Update(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id int) (*User, error)
+	GetByIDs(ctx context.Context, ids []int) ([]*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	ListAll(ctx context.Context) ([]*User, error)
 	ListAllPaged(ctx context.Context, limit, offset int) ([]*User, error)

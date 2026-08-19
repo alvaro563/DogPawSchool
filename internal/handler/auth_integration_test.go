@@ -239,6 +239,8 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 	listByActivityReservationsUC := reservationuc.NewListByActivityReservationsUseCase(reservationRepo)
 	listAllReservationsUC := reservationuc.NewListAllReservationsUseCase(reservationRepo)
 	listUpcomingAllUC := reservationuc.NewListUpcomingAllUseCase(reservationRepo)
+	listActivityRosterUC := reservationuc.NewListActivityRosterUseCase(activityRepo, reservationRepo, userRepo)
+	listPendingUC := reservationuc.NewListPendingReservationsUseCase(reservationRepo, userRepo)
 	reservationH := NewReservationHandler(
 		registerReservationUC, cancelReservationUC,
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
@@ -248,6 +250,8 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 		listAllReservationsUC,
 		listUpcomingAllUC,
 		registerAdminReservationUC,
+		listActivityRosterUC,
+		listPendingUC,
 	)
 
 	v1 := r.Group("/api/v1")
@@ -279,6 +283,7 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 		admin.Use(AuthRequired(jwtTestSecret, userRepo))
 		admin.Use(AdminRequired())
 		{
+			admin.POST("/reservations/:id/cancel", reservationH.CancelAdmin)
 			admin.GET("/users", userH.List)
 			admin.PATCH("/users/:user_id", userH.Update)
 			admin.POST("/users/:user_id/deactivate", userH.Deactivate)
@@ -317,6 +322,8 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 			admin.GET("/dogs/:id/reservations", reservationH.ListByDog)
 			admin.GET("/passes/:id/reservations", reservationH.ListByPass)
 			admin.GET("/activities/:id/reservations", reservationH.ListByActivity)
+			admin.GET("/activities/:id/roster", reservationH.ListActivityRoster)
+			admin.GET("/reservations/pending", reservationH.ListPending)
 		}
 	}
 
@@ -855,4 +862,283 @@ func TestAuthz_AdminSeeAnyProfile(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestActivityRosterHTTP_Success exercises the full HTTP router for
+// the admin class-day roster endpoint: seed → login → GET → assert.
+// This is the regression guard that would have caught the missing
+// route in the router or a path mismatch between the router and the
+// frontend's fetchActivityRoster call.
+func TestActivityRosterHTTP_Success(t *testing.T) {
+	if integrationDB == nil {
+		t.Fatal("integrationDB is nil — TestMain did not run or failed")
+	}
+	cleanIntegrationTables(t, integrationDB)
+	router := buildAuthTestRouter(integrationDB)
+
+	// One admin user (to drive the request) and one regular user
+	// (to own the dog + pass that populate the roster).
+	admin := seedAdminUser(t, integrationDB, "admin-roster@dogpaw.com", "admin-pw-123")
+	owner := seedTestUser(t, integrationDB, "owner-roster@dogpaw.com", "owner-pw-123")
+
+	// Seed activity, dog, pass, and one CONFIRMED + one PENDING
+	// reservation directly via the repos. We bypass the full
+	// register use case to keep the test focused on the roster
+	// endpoint shape, not the registration flow.
+	activityRepo := postgres.NewActivityRepository(integrationDB)
+	dogRepo := postgres.NewDogRepository(integrationDB)
+	passRepo := postgres.NewPassRepository(integrationDB)
+	reservationRepo := postgres.NewReservationRepository(integrationDB)
+
+	activity, err := domain.NewActivity(0, "Paseo Río", "", "Parking Central",
+		domain.TypeRoute, 5, 1, time.Now().Add(7*24*time.Hour))
+	require.NoError(t, err)
+	activityID, err := activityRepo.Create(context.Background(), activity)
+	require.NoError(t, err)
+
+	dog, err := domain.NewDog(0, "Luna", "Labrador", "ES-ROSTER-1", 24,
+		domain.SexFemale, 22.5, owner.ID())
+	require.NoError(t, err)
+	dogID, err := dogRepo.Create(context.Background(), dog)
+	require.NoError(t, err)
+
+	// Second dog so we can have one CONFIRMED and one PENDING
+	// without hitting the UNIQUE (activity_id, dog_id) constraint.
+	dog2, err := domain.NewDog(0, "Toby", "Border Collie", "ES-ROSTER-2", 36,
+		domain.SexMale, 18.0, owner.ID())
+	require.NoError(t, err)
+	dog2ID, err := dogRepo.Create(context.Background(), dog2)
+	require.NoError(t, err)
+
+	pass, err := domain.NewPass(0, 5, 5, 5000, domain.PassGeneric, owner.ID(),
+		time.Now().UTC(), time.Now().UTC(), nil)
+	require.NoError(t, err)
+	passID, err := passRepo.Create(context.Background(), pass)
+	require.NoError(t, err)
+
+	confirmedRes, err := domain.NewReservationWithStatus(0, activityID, dogID, passID,
+		domain.StatusConfirmed, time.Now().UTC())
+	require.NoError(t, err)
+	_, err = reservationRepo.Create(context.Background(), confirmedRes)
+	require.NoError(t, err)
+
+	pendingRes, err := domain.NewReservationWithStatus(0, activityID, dog2ID, passID,
+		domain.StatusPendingToConfirm, time.Now().UTC().Add(time.Minute))
+	require.NoError(t, err)
+	_, err = reservationRepo.Create(context.Background(), pendingRes)
+	require.NoError(t, err)
+
+	token := loginAndGetToken(t, router, admin.Email(), "admin-pw-123")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet,
+		fmt.Sprintf("/api/v1/activities/%d/roster", activityID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "roster endpoint must be wired under the admin router group")
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+
+	act, ok := body["activity"].(map[string]interface{})
+	require.True(t, ok, "response must include the activity envelope")
+	assert.EqualValues(t, activityID, act["id"])
+
+	confirmed, ok := body["confirmed"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, confirmed, 1)
+	ce := confirmed[0].(map[string]interface{})
+	assert.Equal(t, "Luna", ce["dog_name"])
+	assert.EqualValues(t, owner.ID(), ce["owner_id"])
+	assert.Equal(t, owner.Name(), ce["owner_name"])
+
+	pending, ok := body["pending"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, pending, 1)
+	pe := pending[0].(map[string]interface{})
+	assert.Equal(t, "Toby", pe["dog_name"])
+	assert.EqualValues(t, owner.ID(), pe["owner_id"])
+	assert.Equal(t, owner.Name(), pe["owner_name"])
+}
+
+// TestActivityRosterHTTP_NoAdminPrefix is a regression guard against
+// a refactor that would add an `/admin` URL prefix to the
+// `admin := v1.Group("")` Gin group. Adding that prefix would break
+// every existing admin endpoint whose path the frontend calls
+// WITHOUT `/admin` (e.g. /reservations, /users, /dogs). The test
+// asserts that the roster path under `/admin` returns 404 (does not
+// exist) so the no-prefix convention is fixed by the suite.
+func TestActivityRosterHTTP_NoAdminPrefix(t *testing.T) {
+	if integrationDB == nil {
+		t.Fatal("integrationDB is nil — TestMain did not run or failed")
+	}
+	cleanIntegrationTables(t, integrationDB)
+	router := buildAuthTestRouter(integrationDB)
+
+	admin := seedAdminUser(t, integrationDB, "admin-noprefix@dogpaw.com", "admin-pw-123")
+	token := loginAndGetToken(t, router, admin.Email(), "admin-pw-123")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/activities/1/roster", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code,
+		"the Gin admin group must NOT add a /admin URL prefix — "+
+			"the frontend client-side /admin is unrelated to the API prefix")
+}
+
+// TestPendingReservationsHTTP_Success exercises the full HTTP
+// router for the admin "pending to approve" endpoint: seed two
+// owners + three PENDING + one CONFIRMED, then assert the response
+// contains exactly the three pending entries with their owners
+// resolved and the CONFIRMED dropped.
+func TestPendingReservationsHTTP_Success(t *testing.T) {
+	if integrationDB == nil {
+		t.Fatal("integrationDB is nil — TestMain did not run or failed")
+	}
+	cleanIntegrationTables(t, integrationDB)
+	router := buildAuthTestRouter(integrationDB)
+
+	admin := seedAdminUser(t, integrationDB, "admin-pending@dogpaw.com", "admin-pw-123")
+	ownerA := seedTestUser(t, integrationDB, "ana-pending@dogpaw.com", "ana-pw-123")
+	ownerB := seedTestUser(t, integrationDB, "juan-pending@dogpaw.com", "juan-pw-123")
+
+	activityRepo := postgres.NewActivityRepository(integrationDB)
+	dogRepo := postgres.NewDogRepository(integrationDB)
+	passRepo := postgres.NewPassRepository(integrationDB)
+	reservationRepo := postgres.NewReservationRepository(integrationDB)
+
+	activity, err := domain.NewActivity(0, "Paseo Pendientes", "", "Central",
+		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour))
+	require.NoError(t, err)
+	activityID, err := activityRepo.Create(context.Background(), activity)
+	require.NoError(t, err)
+
+	dogA1, err := domain.NewDog(0, "Luna", "Labrador", "ES-PEND-A1", 24,
+		domain.SexFemale, 22.5, ownerA.ID())
+	require.NoError(t, err)
+	dogA1ID, err := dogRepo.Create(context.Background(), dogA1)
+	require.NoError(t, err)
+
+	dogB, err := domain.NewDog(0, "Toby", "Border Collie", "ES-PEND-B", 36,
+		domain.SexMale, 18.0, ownerB.ID())
+	require.NoError(t, err)
+	dogBID, err := dogRepo.Create(context.Background(), dogB)
+	require.NoError(t, err)
+
+	dogA2, err := domain.NewDog(0, "Maya", "Golden", "ES-PEND-A2", 30,
+		domain.SexFemale, 25.0, ownerA.ID())
+	require.NoError(t, err)
+	dogA2ID, err := dogRepo.Create(context.Background(), dogA2)
+	require.NoError(t, err)
+
+	// Fourth dog so the CONFIRMED entry can use a different dog
+	// (the UNIQUE (activity_id, dog_id) constraint blocks re-using
+	// dogA1 for both a PENDING and a CONFIRMED row).
+	dogA3, err := domain.NewDog(0, "Coco", "Beagle", "ES-PEND-A3", 28,
+		domain.SexMale, 12.0, ownerA.ID())
+	require.NoError(t, err)
+	dogA3ID, err := dogRepo.Create(context.Background(), dogA3)
+	require.NoError(t, err)
+
+	passA, err := domain.NewPass(0, 5, 5, 5000, domain.PassGeneric, ownerA.ID(),
+		time.Now().UTC(), time.Now().UTC(), nil)
+	require.NoError(t, err)
+	passAID, err := passRepo.Create(context.Background(), passA)
+	require.NoError(t, err)
+
+	passB, err := domain.NewPass(0, 5, 5, 5000, domain.PassGeneric, ownerB.ID(),
+		time.Now().UTC(), time.Now().UTC(), nil)
+	require.NoError(t, err)
+	passBID, err := passRepo.Create(context.Background(), passB)
+	require.NoError(t, err)
+
+	// 3 PENDING + 1 CONFIRMED. The CONFIRMED must NOT appear in the
+	// response (it's not a pending approval).
+	seedRes := func(dogID, passID int, status domain.ReservationStatus) {
+		r, err := domain.NewReservationWithStatus(0, activityID, dogID, passID, status, time.Now().UTC())
+		require.NoError(t, err)
+		_, err = reservationRepo.Create(context.Background(), r)
+		require.NoError(t, err)
+	}
+	seedRes(dogA1ID, passAID, domain.StatusPendingToConfirm)
+	seedRes(dogBID, passBID, domain.StatusPendingToConfirm)
+	seedRes(dogA2ID, passAID, domain.StatusPendingToConfirm)
+	seedRes(dogA3ID, passAID, domain.StatusConfirmed) // must be excluded
+
+	token := loginAndGetToken(t, router, admin.Email(), "admin-pw-123")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reservations/pending", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+
+	pending, ok := body["pending"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, pending, 3, "three PENDING + one CONFIRMED → exactly three entries")
+
+	// Build a map keyed by dog_id for owner-independent assertions.
+	byDogID := make(map[float64]map[string]interface{}, len(pending))
+	for _, raw := range pending {
+		e := raw.(map[string]interface{})
+		dogID, _ := e["dog_id"].(float64)
+		byDogID[dogID] = e
+	}
+
+	luna, ok := byDogID[float64(dogA1ID)]
+	require.True(t, ok, "Luna (ownerA) must be present")
+	assert.Equal(t, "Luna", luna["dog_name"])
+	assert.EqualValues(t, ownerA.ID(), luna["owner_id"])
+	assert.Equal(t, ownerA.Name(), luna["owner_name"])
+
+	toby, ok := byDogID[float64(dogBID)]
+	require.True(t, ok, "Toby (ownerB) must be present")
+	assert.EqualValues(t, ownerB.ID(), toby["owner_id"])
+	assert.Equal(t, ownerB.Name(), toby["owner_name"])
+
+	maya, ok := byDogID[float64(dogA2ID)]
+	require.True(t, ok, "Maya (ownerA) must be present")
+	assert.EqualValues(t, ownerA.ID(), maya["owner_id"])
+
+	// Sanity: pagination fields are echoed. Default limit (no
+	// query param) is 50 (the use case factory's fallback).
+	assert.EqualValues(t, 50, body["limit"])
+	assert.EqualValues(t, 0, body["offset"])
+	assert.EqualValues(t, 3, body["count"])
+}
+
+// TestPendingReservationsHTTP_TrailingSlashRedirects is a
+// regression guard that documents the canonical-path convention:
+// the route is registered WITHOUT a trailing slash, so a request
+// WITH the slash is treated as a redirect to the canonical URL
+// (Gin's default RedirectTrailingSlash). The test asserts that the
+// redirect points to the slash-less form and that following it
+// yields a 200. If someone later registers the path WITH a slash
+// (or disables redirects), this test will fail and force them to
+// consciously update both the frontend and the test.
+func TestPendingReservationsHTTP_TrailingSlashRedirects(t *testing.T) {
+	if integrationDB == nil {
+		t.Fatal("integrationDB is nil — TestMain did not run or failed")
+	}
+	cleanIntegrationTables(t, integrationDB)
+	router := buildAuthTestRouter(integrationDB)
+
+	admin := seedAdminUser(t, integrationDB, "admin-pending-slash@dogpaw.com", "admin-pw-123")
+	token := loginAndGetToken(t, router, admin.Email(), "admin-pw-123")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reservations/pending/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusMovedPermanently, w.Code,
+		"Gin's default behavior is to redirect the trailing-slash variant to the canonical URL")
+	location := w.Header().Get("Location")
+	assert.Contains(t, location, "/api/v1/reservations/pending",
+		"the redirect target must be the slash-less canonical URL")
 }

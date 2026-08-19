@@ -5,6 +5,7 @@ import apiClient from '@/infrastructure/api/http-client';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useToast } from '@/features/ui/hooks/toast-context';
 
 function parseError(err: unknown, fallback: string): string {
   const apiErr = err as { body?: { error?: string; field?: string; details?: string } };
@@ -99,6 +100,7 @@ interface CreateActivityModalProps {
 
 export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalProps) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -128,6 +130,18 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
       setDatePart('');
       setTimePart('10:00');
       setError('');
+
+      const activityDate = new Date(`${datePart}T${timePart}:00`);
+      const formattedDate = activityDate.toLocaleDateString('es-ES', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+      toast.success(
+        'Actividad creada',
+        `${name} programada para ${formattedDate}. Ya aparece en el calendario.`,
+      );
+
       onOpenChange(false);
     },
     onError: (err: unknown) => {

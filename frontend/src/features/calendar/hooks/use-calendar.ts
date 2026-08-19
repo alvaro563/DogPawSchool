@@ -118,6 +118,7 @@ export function useCalendar() {
     goToday,
     activities,
     userReservationMap,
+    userReservations: reservations,
     isLoading,
     error: activitiesError,
   };

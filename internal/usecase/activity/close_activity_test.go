@@ -188,6 +188,9 @@ func (s *stubResRepoForClose) ListAllView(_ context.Context, _, _ int) ([]*domai
 func (s *stubResRepoForClose) ListAllUpcomingView(_ context.Context, _, _ int) ([]*domain.ReservationView, error) {
 	return nil, nil
 }
+func (s *stubResRepoForClose) ListPendingView(_ context.Context, _, _ int) ([]*domain.ReservationView, error) {
+	return nil, nil
+}
 
 // fixedNow is a deterministic clock used by all close tests.
 var fixedNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)

@@ -63,6 +63,21 @@ func (repo *UserRepository) GetByID(ctx context.Context, id int) (*domain.User, 
 	return user, nil
 }
 
+// GetByIDs fetches multiple users by id in a single round-trip using
+// WHERE id = ANY($1::int[]). Order of the returned slice is NOT
+// guaranteed to match the input order — callers that need a stable
+// index should build a map[ID]*User. An empty input returns an empty
+// (non-nil) slice and skips the query, matching the pattern used by
+// the dog and pass repositories. Ids that do not exist are silently
+// dropped (the caller's responsibility to ensure the ids are valid).
+func (repo *UserRepository) GetByIDs(ctx context.Context, ids []int) ([]*domain.User, error) {
+	if len(ids) == 0 {
+		return []*domain.User{}, nil
+	}
+	query := userSelectClause + ` WHERE id = ANY($1::int[]) ORDER BY id ASC`
+	return repo.queryUsers(ctx, query, ids)
+}
+
 // GetByEmail fetches a single user by email (case-sensitive — the DB
 // has no functional index on email). Returns domain.ErrNotFound when no
 // row matches.

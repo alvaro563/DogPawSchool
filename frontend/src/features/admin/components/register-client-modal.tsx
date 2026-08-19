@@ -5,6 +5,7 @@ import { createInvitation } from '@/infrastructure/repositories/invitation-repos
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useToast } from '@/features/ui/hooks/toast-context';
 
 function parseError(err: unknown, fallback: string): string {
   const apiErr = err as { body?: { error?: string; field?: string; details?: string } };
@@ -23,6 +24,7 @@ interface RegisterClientModalProps {
 
 export function RegisterClientModal({ open, onOpenChange }: RegisterClientModalProps) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('REGULAR');
   const [error, setError] = useState('');
@@ -35,6 +37,10 @@ export function RegisterClientModal({ open, onOpenChange }: RegisterClientModalP
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'], refetchType: 'all' });
       setInviteToken(data.token);
       setError('');
+      toast.success(
+        'Invitación creada',
+        `Enlace de alta enviado a ${email}. El cliente puede registrarse con él.`,
+      );
     },
     onError: (err: unknown) => {
       setError(parseError(err, 'Error al crear la invitación.'));

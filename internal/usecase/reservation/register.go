@@ -231,6 +231,19 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 		return 0, domain.StatusConfirmed, ErrPassExpired
 	}
 
+	// 4b. Under admin override, the per-entity ownership checks above
+	// are skipped, but the dog and the pass must still belong to the
+	// same user. Admin authority lets one operator act on behalf of
+	// any user; it does not let them combine one user's dog with
+	// another user's pass: the booking would still consume a session
+	// from a pass that does not belong to the dog's owner. Under
+	// normal flow this case is already impossible (dog.UserID() ==
+	// userID AND pass.UserID() == userID), so the check is only
+	// meaningful on the admin path.
+	if input.adminOverride && dog.UserID() != pass.UserID() {
+		return 0, domain.StatusConfirmed, ErrDogPassOwnerMismatch
+	}
+
 	// 5. Consume one pass session. The audit movement is recorded on
 	// the aggregate; Update flushes it together with the new counter.
 	reason := fmt.Sprintf("Reservation: activity %d, dog %d", input.ActivityID(), input.DogID())

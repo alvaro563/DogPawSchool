@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useCalendar } from '@/features/calendar/hooks/use-calendar';
+import { useSelectedActivity } from '@/features/calendar/hooks/selected-activity-context';
 import { CalendarHeader } from './calendar-header';
 import { MonthView } from './month-view';
 import { WeekView } from './week-view';
@@ -7,6 +8,15 @@ import { DayView } from './day-view';
 import { ActivityDetailSheet } from './activity-detail-sheet';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import type { Activity } from '@/domain/entities/activity';
+import type { ReservationView } from '@/domain/entities/reservation';
+
+const SHOWN_STATUSES = new Set(['CONFIRMED', 'PENDING_TO_CONFIRM']);
+
+export interface ExistingReservation {
+  dogId: number;
+  status: string;
+  passId: number;
+}
 
 export function CalendarView() {
   const {
@@ -17,16 +27,39 @@ export function CalendarView() {
     goToday,
     activities,
     userReservationMap,
+    userReservations,
     isLoading,
   } = useCalendar();
 
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const { activity: contextActivity, setActivity: setContextActivity } = useSelectedActivity();
   const [sheetOpen, setSheetOpen] = useState(false);
 
   function handleActivityClick(activity: Activity) {
-    setSelectedActivity(activity);
+    setContextActivity(activity);
     setSheetOpen(true);
   }
+
+  function handleSheetOpenChange(open: boolean) {
+    setSheetOpen(open);
+    if (!open) {
+      setContextActivity(null);
+    }
+  }
+
+  // Existing reservations for the currently selected activity,
+  // filtered to the two statuses that occupy a slot. Used by the
+  // sheet to (a) exclude already-booked dogs from the selector and
+  // (b) decide whether the user can book ANOTHER dog for the same
+  // activity.
+  const existingReservations = useMemo<ExistingReservation[]>(() => {
+    if (!contextActivity) return [];
+    return userReservations
+      .filter(
+        (r: ReservationView) =>
+          r.activity_id === contextActivity.id && SHOWN_STATUSES.has(r.status),
+      )
+      .map((r) => ({ dogId: r.dog_id, status: r.status, passId: r.pass_id }));
+  }, [contextActivity, userReservations]);
 
   if (isLoading) {
     return (
@@ -73,14 +106,10 @@ export function CalendarView() {
       )}
 
       <ActivityDetailSheet
-        activity={selectedActivity}
-        reservationStatus={
-          selectedActivity
-            ? userReservationMap.get(selectedActivity.id)
-            : undefined
-        }
+        activity={contextActivity}
+        existingReservations={existingReservations}
         open={sheetOpen}
-        onOpenChange={setSheetOpen}
+        onOpenChange={handleSheetOpenChange}
       />
     </div>
   );

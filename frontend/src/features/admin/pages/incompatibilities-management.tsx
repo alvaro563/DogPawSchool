@@ -5,6 +5,7 @@ import { fetchAllIncompatibilities, createIncompatibility } from '@/infrastructu
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { useToast } from '@/features/ui/hooks/toast-context';
 import { cn } from '@/lib/utils';
 import type { ApiError } from '@/infrastructure/api/http-client';
 
@@ -32,6 +33,7 @@ function parseError(err: unknown, fallback: string): string {
 
 export function IncompatibilitiesManagementPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [kind, setKind] = useState<'trait' | 'trigger'>('trait');
   const [name, setName] = useState('');
   const [level, setLevel] = useState('ABSOLUTA');
@@ -60,6 +62,9 @@ export function IncompatibilitiesManagementPage() {
       setCode('');
       setTargetCode('');
       setError('');
+
+      const kindLabel = kind === 'trait' ? 'Rasgo' : 'Incompatibilidad';
+      toast.success(`${kindLabel} creado`, `${name} ya está disponible para asignar a perros.`);
     },
     onError: (err: unknown) => setError(parseError(err, 'Error al crear la incompatibilidad.')),
   });

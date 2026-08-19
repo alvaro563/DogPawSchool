@@ -6,6 +6,7 @@ import { registerDog } from '@/infrastructure/repositories/dog-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useToast } from '@/features/ui/hooks/toast-context';
 
 function parseError(err: unknown, fallback: string): string {
   const apiErr = err as { body?: { error?: string; field?: string; details?: string } };
@@ -24,6 +25,7 @@ interface RegisterDogModalProps {
 
 export function RegisterDogModal({ open, onOpenChange }: RegisterDogModalProps) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [ownerId, setOwnerId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [breed, setBreed] = useState('');
@@ -56,6 +58,11 @@ export function RegisterDogModal({ open, onOpenChange }: RegisterDogModalProps) 
       setBreed('');
       setPassport('');
       setError('');
+
+      const owner = users.find((u) => u.id === ownerId);
+      const ownerName = owner?.name ?? 'el cliente';
+      toast.success('Perro registrado', `${name} (${breed}) ya está en el sistema de ${ownerName}.`);
+
       onOpenChange(false);
     },
     onError: (err: unknown) => {

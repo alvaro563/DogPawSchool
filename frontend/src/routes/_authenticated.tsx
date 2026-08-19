@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Sidebar } from '@/components/layout/sidebar';
 import { AdminModalProvider, useAdminModal } from '@/features/admin/hooks/admin-modal-context';
+import { SelectedActivityProvider } from '@/features/calendar/hooks/selected-activity-context';
 import { CreateActivityModal } from '@/features/admin/components/create-activity-modal';
 import { AssignPassModal } from '@/features/admin/components/assign-pass-modal';
 import { RegisterDogModal } from '@/features/admin/components/register-dog-modal';
@@ -26,32 +27,34 @@ function AuthenticatedLayout() {
 
   return (
     <AdminModalProvider>
-      <div className="flex min-h-[calc(100vh-4rem)]">
-        <aside className="hidden w-64 shrink-0 border-r border-border lg:block">
-          <Sidebar />
-        </aside>
+      <SelectedActivityProvider>
+        <div className="flex min-h-[calc(100vh-4rem)]">
+          <aside className="hidden w-64 shrink-0 border-r border-border lg:block">
+            <Sidebar />
+          </aside>
 
-        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <Button
-            variant="outline"
-            size="icon"
-            className="fixed bottom-4 left-4 z-50 h-12 w-12 rounded-full shadow-lg lg:hidden"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <SheetContent side="left" className="w-72 p-0 pt-10">
-            <SheetTitle className="sr-only">Navegación</SheetTitle>
-            <Sidebar onNavigate={() => setSidebarOpen(false)} />
-          </SheetContent>
-        </Sheet>
+          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="fixed bottom-4 left-4 z-50 h-12 w-12 rounded-full shadow-lg lg:hidden"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <SheetContent side="left" className="w-72 p-0 pt-10">
+              <SheetTitle className="sr-only">Navegación</SheetTitle>
+              <Sidebar onNavigate={() => setSidebarOpen(false)} />
+            </SheetContent>
+          </Sheet>
 
-        <main className="flex-1 overflow-auto">
-          <Outlet />
-        </main>
+          <main className="flex-1 overflow-auto">
+            <Outlet />
+          </main>
 
-        {isAdmin && <GlobalModals />}
-      </div>
+          {isAdmin && <GlobalModals />}
+        </div>
+      </SelectedActivityProvider>
     </AdminModalProvider>
   );
 }

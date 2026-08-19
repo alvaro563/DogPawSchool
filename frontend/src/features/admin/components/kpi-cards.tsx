@@ -11,8 +11,8 @@ interface KpiCardsProps {
 }
 
 const cards = [
-  { key: 'classes', label: 'Clases hoy', icon: CalendarDays, color: 'text-sky-500', bg: 'bg-sky-50 dark:bg-sky-950/30', to: undefined },
-  { key: 'pending', label: 'Pendientes', icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/30', to: undefined },
+  { key: 'classes', label: 'Clases hoy', icon: CalendarDays, color: 'text-sky-500', bg: 'bg-sky-50 dark:bg-sky-950/30', to: '/admin/today-classes' },
+  { key: 'pending', label: 'Pendientes', icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/30', to: '/admin/pending-reservations' },
   { key: 'dogs', label: 'Perros activos', icon: Dog, color: 'text-pink-500', bg: 'bg-pink-50 dark:bg-pink-950/30', to: '/active-dogs' },
   { key: 'passes', label: 'Bonos activos', icon: Ticket, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/30', to: undefined },
 ] as const;

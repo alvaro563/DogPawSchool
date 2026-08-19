@@ -103,6 +103,18 @@ var ErrInvalidStatusFilter = errors.New("invalid status filter")
 // explicitly).
 var ErrDuplicateReservationForDog = errors.New("dog already booked for this activity")
 
+// ErrDogPassOwnerMismatch is returned by RegisterReservationUseCase
+// when adminOverride is true and the dog and the pass belong to
+// different users. Admin authority lets a single operator act on
+// behalf of any user, but it does not let them combine one user's
+// dog with another user's pass: the booking would still attribute
+// a pass session to a user that does not own the dog. Under
+// normal (non-admin) flow the per-entity ownership checks
+// already imply dog.UserID() == pass.UserID() == userID, so
+// this sentinel is only reachable on the admin path. Maps to
+// 400 dog_pass_owner_mismatch.
+var ErrDogPassOwnerMismatch = errors.New("dog and pass must belong to the same user")
+
 // ErrActivityNotStarted is returned by MarkReservationNoShow when
 // the activity's date is at or after now. The policy is that only
 // already-started activities can be marked no-show, so the slot

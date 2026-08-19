@@ -265,6 +265,13 @@ type ReservationRepository interface {
 	// offset. Intended for admin dashboards and global reports.
 	ListAllView(ctx context.Context, limit, offset int) ([]*ReservationView, error)
 
+	// ListPendingView returns the views of every reservation in
+	// StatusPendingToConfirm, ordered by created_at ASC (oldest
+	// first — the order in which the admin should triage them).
+	// Paginated via limit and offset. Intended for the admin
+	// "pending to approve" list page.
+	ListPendingView(ctx context.Context, limit, offset int) ([]*ReservationView, error)
+
 	// ListAllUpcomingView returns the views of every CONFIRMED
 	// reservation whose activity date is at or after the current
 	// time, ordered by activity date ASC. Paginated via limit and

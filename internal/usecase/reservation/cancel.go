@@ -15,11 +15,13 @@ type CancelReservationInput struct {
 	userID        int
 	reservationID int
 	now           time.Time
+	adminOverride bool
 }
 
-func (in CancelReservationInput) UserID() int        { return in.userID }
-func (in CancelReservationInput) ReservationID() int { return in.reservationID }
-func (in CancelReservationInput) Now() time.Time     { return in.now }
+func (in CancelReservationInput) UserID() int            { return in.userID }
+func (in CancelReservationInput) ReservationID() int     { return in.reservationID }
+func (in CancelReservationInput) Now() time.Time         { return in.now }
+func (in CancelReservationInput) AdminOverride() bool    { return in.adminOverride }
 
 // NewCancelReservationInput validates the two ids and accepts a
 // now-Provider so the use case can be tested with a fixed clock.
@@ -34,6 +36,34 @@ func NewCancelReservationInput(userID, reservationID int, now func() time.Time) 
 		now = time.Now
 	}
 	return CancelReservationInput{userID: userID, reservationID: reservationID, now: now()}, nil
+}
+
+// NewCancelReservationAdminInput validates the reservation ID and
+// sets adminOverride so the use case skips the dog/pass ownership
+// checks. The user_id is intentionally left at 0 — the admin does
+// not need to know (and the handler should not require) the owner
+// of the reservation being cancelled. The correct factory for the
+// admin endpoint is this one, NOT NewCancelReservationInput with a
+// placeholder user_id.
+func NewCancelReservationAdminInput(reservationID int, now func() time.Time) (CancelReservationInput, error) {
+	if reservationID <= 0 {
+		return CancelReservationInput{}, &ValidationError{Field: "reservation_id"}
+	}
+	if now == nil {
+		now = time.Now
+	}
+	return CancelReservationInput{reservationID: reservationID, now: now(), adminOverride: true}, nil
+}
+
+// MustNewCancelReservationAdminInput panics on validation error. For
+// tests and other call sites that already know the inputs are
+// valid.
+func MustNewCancelReservationAdminInput(reservationID int, now func() time.Time) CancelReservationInput {
+	in, err := NewCancelReservationAdminInput(reservationID, now)
+	if err != nil {
+		panic(err)
+	}
+	return in
 }
 
 // MustNewCancelReservationInput panics on validation error. For tests.
@@ -150,7 +180,7 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 	if dog == nil {
 		return nil, ErrInvalidDog
 	}
-	if dog.UserID() != input.UserID() {
+	if !input.AdminOverride() && dog.UserID() != input.UserID() {
 		return nil, ErrInvalidDog
 	}
 
@@ -165,7 +195,7 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 	if pass == nil {
 		return nil, ErrInvalidPass
 	}
-	if pass.UserID() != input.UserID() {
+	if !input.AdminOverride() && pass.UserID() != input.UserID() {
 		return nil, ErrInvalidPass
 	}
 

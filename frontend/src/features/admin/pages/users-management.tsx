@@ -2,10 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserCheck, UserX } from 'lucide-react';
 import { fetchAllUsers, deactivateUser } from '@/infrastructure/repositories/user-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
+import { useToast } from '@/features/ui/hooks/toast-context';
 import { cn } from '@/lib/utils';
 
 export function UsersManagementPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['all-users'],
@@ -14,7 +16,12 @@ export function UsersManagementPage() {
 
   const deactivateMutation = useMutation({
     mutationFn: (id: number) => deactivateUser(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-users'] }),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['all-users'] });
+      const target = users.find((u) => u.id === id);
+      const name = target?.name ?? `Usuario #${id}`;
+      toast.success('Usuario desactivado', `${name} ya no puede iniciar sesión.`);
+    },
   });
 
   if (isLoading) return <div className="flex items-center justify-center py-20"><LoadingSpinner size="lg" /></div>;

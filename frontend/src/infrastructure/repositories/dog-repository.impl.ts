@@ -38,6 +38,16 @@ export async function fetchAllActiveDogs(): Promise<Dog[]> {
   return data.dogs;
 }
 
+// fetchAllInactiveDogs lists every dog with is_active=false. Used
+// by the admin's "Perros inactivos" drill-down page. The backend
+// route is /admin/dogs/is_active/:value (the admin Gin group has
+// no URL prefix, see cmd/api/router.go), so the actual call is
+// /dogs/is_active/false. AdminRequired middleware enforces auth.
+export async function fetchAllInactiveDogs(): Promise<Dog[]> {
+  const data = await apiClient.get<DogListResponse>('/dogs/is_active/false', { limit: '10000' });
+  return data.dogs;
+}
+
 export async function fetchDogsByNeutered(): Promise<Dog[]> {
   const data = await apiClient.get<DogListResponse>('/dogs/neutered/true', { limit: '10000' });
   return data.dogs;

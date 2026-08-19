@@ -72,11 +72,20 @@ type ReservationRejecter interface {
 	Execute(ctx context.Context, input reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error)
 }
 
+type ActivityRosterGetter interface {
+	Execute(ctx context.Context, input reservationuc.ListActivityRosterInput) (reservationuc.ListActivityRosterOutput, error)
+}
+
+type PendingReservationsGetter interface {
+	Execute(ctx context.Context, input reservationuc.ListPendingReservationsInput) (reservationuc.ListPendingReservationsOutput, error)
+}
+
 // ReservationHandler owns the HTTP entry points for reservation
 // use cases. It exposes 12 use cases (Register, Cancel, Get,
 // ListByUser, ListUpcomingByUser, ListByDog, ListByPass,
 // ListByActivity, MarkNoShow, CompleteReservation, ConfirmPending,
-// RejectPending).
+// RejectPending) plus the admin-only RegisterAdmin and the
+// class-day roster read (ListActivityRoster).
 type ReservationHandler struct {
 	register       ReservationRegisterer
 	adminRegister  AdminReservationRegisterer
@@ -93,6 +102,8 @@ type ReservationHandler struct {
 	reject         ReservationRejecter
 	listAll        ReservationListerAll
 	listUpcomingAll ReservationUpcomingAllLister
+	activityRoster ActivityRosterGetter
+	listPending    PendingReservationsGetter
 }
 
 func NewReservationHandler(
@@ -111,6 +122,8 @@ func NewReservationHandler(
 	listAll ReservationListerAll,
 	listUpcomingAll ReservationUpcomingAllLister,
 	adminRegister AdminReservationRegisterer,
+	activityRoster ActivityRosterGetter,
+	listPending PendingReservationsGetter,
 ) *ReservationHandler {
 	return &ReservationHandler{
 		register:       register,
@@ -128,6 +141,8 @@ func NewReservationHandler(
 		reject:         reject,
 		listAll:        listAll,
 		listUpcomingAll: listUpcomingAll,
+		activityRoster: activityRoster,
+		listPending:    listPending,
 	}
 }
 
@@ -365,6 +380,46 @@ func (h *ReservationHandler) Cancel(c *gin.Context) {
 		return
 	}
 	in, err := reservationuc.NewCancelReservationInput(userID, reservationID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.cancel.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, cancelReservationResponse{
+		ID:     output.Reservation.ID(),
+		Status: string(output.Reservation.Status()),
+	})
+}
+
+// CancelAdmin godoc
+// @Summary      Admin-cancel a reservation
+// @Description  Admin-only. Cancels any CONFIRMED reservation
+// @Description  regardless of the owner. The owner user_id is not
+// @Description  required in the path because the admin does not need
+// @Description  to know who owns the reservation to cancel it.
+// @Description  In-time vs late window policy and refund rules are
+// @Description  identical to the user-cancel endpoint above.
+// @Tags         reservations
+// @Produce      json
+// @Param        id       path      int                          true   "Reservation ID"
+// @Success      200      {object}  cancelReservationResponse    "Reservation cancelled"
+// @Failure      400      {object}  errorResponse                "Invalid reservation_id"
+// @Failure      404      {object}  errorResponse                "Reservation not found"
+// @Failure      409      {object}  errorResponse                "Already cancelled / activity in past"
+// @Failure      500      {object}  errorResponse                "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/reservations/{id}/cancel [post]
+func (h *ReservationHandler) CancelAdmin(c *gin.Context) {
+	reservationID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || reservationID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
+		return
+	}
+	in, err := reservationuc.NewCancelReservationAdminInput(reservationID, time.Now)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -807,6 +862,192 @@ func (h *ReservationHandler) ListUpcomingAll(c *gin.Context) {
 	c.JSON(http.StatusOK, toListReservationsResponse(output.Views, in))
 }
 
+// ListPending godoc
+// @Summary      List pending reservations awaiting admin approval
+// @Description  Returns every reservation in StatusPendingToConfirm,
+// @Description  each annotated with the dog owner's id and name.
+// @Description  Server-side partitioning and batched owner lookup
+// @Description  keep the response shape stable: the admin can
+// @Description  render the triage page with a single fetch and
+// @Description  zero filtering. Admin only.
+// @Tags         reservations
+// @Produce      json
+// @Param        limit   query     int                          false  "Maximum number of pending reservations to return (default 50, max 100)"
+// @Param        offset  query     int                          false  "Number of pending reservations to skip for pagination (default 0)"
+// @Success      200     {object}  pendingReservationsResponse  "Pending reservations"
+// @Failure      500     {object}  errorResponse                "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/reservations/pending [get]
+func (h *ReservationHandler) ListPending(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	in, err := reservationuc.NewListPendingReservationsInput(limit, offset)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.listPending.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toPendingReservationsResponse(output, in))
+}
+
+// pendingReservationsResponse is the wire format for the admin
+// "pending to approve" list page. It deliberately exposes owner_id
+// and owner_name per entry so the client can render each row
+// without an extra user lookup. Pagination fields mirror the
+// envelope used by the other list endpoints.
+type pendingReservationsResponse struct {
+	Pending []pendingReservationEntryDTO `json:"pending"`
+	Limit   int                          `json:"limit"`
+	Offset  int                          `json:"offset"`
+	Count   int                          `json:"count"`
+}
+
+// pendingReservationEntryDTO is the wire shape for a single pending
+// reservation. It mirrors ActivityRosterEntry for the activity-
+// scoped view but adds activity_date and activity_location because
+// the "pending" page needs to render the class context, not just
+// the attendance.
+type pendingReservationEntryDTO struct {
+	ReservationID    int       `json:"reservation_id"    example:"42"`
+	DogID            int       `json:"dog_id"            example:"5"`
+	DogName          string    `json:"dog_name"          example:"Luna"`
+	OwnerID          int       `json:"owner_id"          example:"7"`
+	OwnerName        string    `json:"owner_name"        example:"Carlos García"`
+	ActivityID       int       `json:"activity_id"       example:"10"`
+	ActivityName     string    `json:"activity_name"     example:"Paseo Río"`
+	ActivityDate     time.Time `json:"activity_date"     example:"2026-08-01T10:00:00Z"`
+	ActivityLocation string    `json:"activity_location" example:"Parking Central"`
+}
+
+// toPendingReservationsResponse converts the use case output into
+// the wire format. Pagination fields are read from the validated
+// input so the client sees the values that the use case actually
+// applied (mirrors the convention used by every other list
+// endpoint in this handler).
+func toPendingReservationsResponse(
+	out reservationuc.ListPendingReservationsOutput,
+	in reservationuc.ListPendingReservationsInput,
+) pendingReservationsResponse {
+	entries := make([]pendingReservationEntryDTO, len(out.Pending))
+	for i, e := range out.Pending {
+		entries[i] = pendingReservationEntryDTO{
+			ReservationID:    e.ReservationID(),
+			DogID:            e.DogID(),
+			DogName:          e.DogName(),
+			OwnerID:          e.OwnerID(),
+			OwnerName:        e.OwnerName(),
+			ActivityID:       e.ActivityID(),
+			ActivityName:     e.ActivityName(),
+			ActivityDate:     e.ActivityDate(),
+			ActivityLocation: e.ActivityLocation(),
+		}
+	}
+	return pendingReservationsResponse{
+		Pending: entries,
+		Limit:   in.Limit(),
+		Offset:  in.Offset(),
+		Count:   len(entries),
+	}
+}
+
+// ListActivityRoster godoc
+// @Summary      List an activity's roster (admin class-day view)
+// @Description  Returns the activity together with its confirmed
+// @Description  and pending-to-confirm attendees, each annotated
+// @Description  with the dog owner's id and name. Server-side
+// @Description  partitioning keeps the response shape stable for
+// @Description  the admin dashboard: the client can render the
+// @Description  page with a single fetch. Admin only.
+// @Tags         reservations
+// @Produce      json
+// @Param        id   path      int                       true  "Activity ID"
+// @Success      200  {object}  activityRosterResponse   "Activity roster"
+// @Failure      400  {object}  errorResponse            "Invalid id"
+// @Failure      404  {object}  errorResponse            "Activity not found"
+// @Failure      500  {object}  errorResponse            "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/admin/activities/{id}/roster [get]
+func (h *ReservationHandler) ListActivityRoster(c *gin.Context) {
+	activityID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || activityID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "activity_id"})
+		return
+	}
+	in, err := reservationuc.NewListActivityRosterInput(activityID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.activityRoster.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toActivityRosterResponse(output))
+}
+
+// activityRosterResponse is the wire format for the admin
+// class-day roster. It deliberately nests activity + confirmed +
+// pending under named keys so the client can render three sections
+// without any grouping logic.
+type activityRosterResponse struct {
+	Activity  activityDTO             `json:"activity"`
+	Confirmed []activityRosterEntryDTO `json:"confirmed"`
+	Pending   []activityRosterEntryDTO `json:"pending"`
+}
+
+// activityRosterEntryDTO is the wire shape for a single attendee
+// on the roster. It is intentionally flat (no nested aggregates) so
+// the client can render the row directly without unwrapping.
+type activityRosterEntryDTO struct {
+	ReservationID int    `json:"reservation_id" example:"42"`
+	DogID         int    `json:"dog_id"         example:"5"`
+	DogName       string `json:"dog_name"       example:"Luna"`
+	OwnerID       int    `json:"owner_id"       example:"7"`
+	OwnerName     string `json:"owner_name"     example:"Carlos García"`
+}
+
+// toActivityRosterResponse converts the use case output into the
+// wire format. The activity is reused from the same DTO shape used
+// by the read-activity endpoints (computed spots are intentionally
+// omitted: the roster is a class-day view, the capacity is read
+// directly from the activity aggregate via available_spots in a
+// separate call when the client needs it).
+func toActivityRosterResponse(out reservationuc.ListActivityRosterOutput) activityRosterResponse {
+	return activityRosterResponse{
+		Activity: activityDTO{
+			ID:               out.Activity.ID(),
+			Name:             out.Activity.Name(),
+			ActivityType:     string(out.Activity.Type()),
+			Location:         out.Activity.Location(),
+			MaxCapacity:      out.Activity.MaxCapacity(),
+			DurationInHours:  out.Activity.DurationInHours(),
+			Date:             out.Activity.Date(),
+			Closed:           out.Activity.IsClosed(),
+		},
+		Confirmed: toActivityRosterEntryDTOs(out.Confirmed),
+		Pending:   toActivityRosterEntryDTOs(out.Pending),
+	}
+}
+
+func toActivityRosterEntryDTOs(entries []reservationuc.ActivityRosterEntry) []activityRosterEntryDTO {
+	dtos := make([]activityRosterEntryDTO, len(entries))
+	for i, e := range entries {
+		dtos[i] = activityRosterEntryDTO{
+			ReservationID: e.ReservationID(),
+			DogID:         e.DogID(),
+			DogName:       e.DogName(),
+			OwnerID:       e.OwnerID(),
+			OwnerName:     e.OwnerName(),
+		}
+	}
+	return dtos
+}
+
 // ============================================================================
 // Shared DTOs (enriched reservation view)
 // ============================================================================
@@ -819,6 +1060,8 @@ type reservationViewDTO struct {
 	ID        int       `json:"id"                example:"42"`
 	Status    string    `json:"status"            example:"CONFIRMED"`
 	CreatedAt time.Time `json:"created_at"         example:"2026-07-20T10:00:00Z"`
+
+	OwnerID int `json:"owner_id"             example:"7"`
 
 	ActivityID       int       `json:"activity_id"        example:"10"`
 	ActivityName     string    `json:"activity_name"      example:"Paseo Río"`
@@ -884,6 +1127,7 @@ func toReservationViewDTO(view *domain.ReservationView) reservationViewDTO {
 		ID:               view.ID(),
 		Status:           string(view.Status()),
 		CreatedAt:        view.CreatedAt(),
+		OwnerID:          view.DogUserID(),
 		ActivityID:       view.ActivityID(),
 		ActivityName:     view.ActivityName(),
 		ActivityDate:     view.ActivityDate(),

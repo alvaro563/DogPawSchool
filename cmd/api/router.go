@@ -114,6 +114,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 
 	reservationRepo := postgres.NewReservationRepository(db)
 	dogRepo := postgres.NewDogRepository(db)
+	userRepo := postgres.NewUserRepository(db)
 	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
 		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
 	)
@@ -139,6 +140,8 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	listByActivityReservationsUC := reservationuc.NewListByActivityReservationsUseCase(reservationRepo)
 	listAllReservationsUC := reservationuc.NewListAllReservationsUseCase(reservationRepo)
 	listUpcomingAllUC := reservationuc.NewListUpcomingAllUseCase(reservationRepo)
+	listActivityRosterUC := reservationuc.NewListActivityRosterUseCase(activityRepo, reservationRepo, userRepo)
+	listPendingUC := reservationuc.NewListPendingReservationsUseCase(reservationRepo, userRepo)
 	reservationH := handler.NewReservationHandler(
 		registerReservationUC, cancelReservationUC,
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
@@ -148,6 +151,8 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		listAllReservationsUC,
 		listUpcomingAllUC,
 		registerAdminReservationUC,
+		listActivityRosterUC,
+		listPendingUC,
 	)
 
 	closeActivityUC := activityuc.NewCloseActivityUseCase(
@@ -184,7 +189,6 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		setPhotoUC,
 	)
 
-	userRepo := postgres.NewUserRepository(db)
 	getUserUC := useruc.NewGetUserUseCase(userRepo)
 	listUsersUC := useruc.NewListUsersUseCase(userRepo)
 	updateUserUC := useruc.NewUpdateUserUseCase(userRepo)
@@ -247,6 +251,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		admin.Use(handler.AdminRequired())
 		{
 			admin.POST("/reservations", reservationH.RegisterAdmin)
+			admin.POST("/reservations/:id/cancel", reservationH.CancelAdmin)
 			admin.GET("/users", userH.List)
 			admin.PATCH("/users/:user_id", userH.Update)
 			admin.POST("/users/:user_id/deactivate", userH.Deactivate)
@@ -296,8 +301,10 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 			admin.GET("/dogs/:id/reservations", reservationH.ListByDog)
 			admin.GET("/passes/:id/reservations", reservationH.ListByPass)
 			admin.GET("/activities/:id/reservations", reservationH.ListByActivity)
+			admin.GET("/activities/:id/roster", reservationH.ListActivityRoster)
 			admin.GET("/reservations", reservationH.ListAll)
 			admin.GET("/reservations/upcoming", reservationH.ListUpcomingAll)
+			admin.GET("/reservations/pending", reservationH.ListPending)
 		}
 	}
 

@@ -3,6 +3,7 @@ import { Ticket, Calendar } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { fetchPassesByUser } from '@/infrastructure/repositories/pass-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
+import { formatPrice } from '@/lib/format';
 
 export function PassListPage() {
   const { user } = useAuth();
@@ -71,7 +72,7 @@ export function PassListPage() {
                     />
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Precio: {pass.price} cént.</span>
+                    <span>Precio: {formatPrice(pass.price)}</span>
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
                       {pass.expires_at ? new Date(pass.expires_at).toLocaleDateString('es-ES') : 'Sin caducidad'}

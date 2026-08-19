@@ -146,3 +146,70 @@ func TestUserRepository_GetByEmailNotFound(t *testing.T) {
 	_, err := repo.GetByEmail(context.Background(), "nobody@test.com")
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+func TestUserRepository_GetByIDs_Empty(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewUserRepository(db)
+	got, err := repo.GetByIDs(context.Background(), nil)
+	require.NoError(t, err)
+	assert.NotNil(t, got, "empty result must be a non-nil slice")
+	assert.Empty(t, got)
+
+	got, err = repo.GetByIDs(context.Background(), []int{})
+	require.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Empty(t, got)
+}
+
+func TestUserRepository_GetByIDs_RoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewUserRepository(db)
+	alice, err := domain.NewUser(0, "Alice", "alice@test.com", repeatedString("z", 60), domain.RoleRegular)
+	require.NoError(t, err)
+	aliceID, err := repo.Create(context.Background(), alice)
+	require.NoError(t, err)
+
+	bob, err := domain.NewUser(0, "Bob", "bob@test.com", repeatedString("x", 60), domain.RoleAdmin)
+	require.NoError(t, err)
+	bobID, err := repo.Create(context.Background(), bob)
+	require.NoError(t, err)
+
+	carla, err := domain.NewUser(0, "Carla", "carla@test.com", repeatedString("y", 60), domain.RoleRegular)
+	require.NoError(t, err)
+	carlaID, err := repo.Create(context.Background(), carla)
+	require.NoError(t, err)
+
+	got, err := repo.GetByIDs(context.Background(), []int{aliceID, bobID, carlaID})
+	require.NoError(t, err)
+	assert.Len(t, got, 3, "every id must be resolved")
+
+	// Build a map so we don't depend on the SQL order.
+	byID := make(map[int]string, len(got))
+	for _, u := range got {
+		byID[u.ID()] = u.Name()
+	}
+	assert.Equal(t, "Alice", byID[aliceID])
+	assert.Equal(t, "Bob", byID[bobID])
+	assert.Equal(t, "Carla", byID[carlaID])
+}
+
+func TestUserRepository_GetByIDs_SkipsMissing(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewUserRepository(db)
+	alice, err := domain.NewUser(0, "Alice", "alice@test.com", repeatedString("z", 60), domain.RoleRegular)
+	require.NoError(t, err)
+	aliceID, err := repo.Create(context.Background(), alice)
+	require.NoError(t, err)
+
+	// 9999 does not exist: must be silently dropped, alice still returned.
+	got, err := repo.GetByIDs(context.Background(), []int{aliceID, 9999})
+	require.NoError(t, err)
+	assert.Len(t, got, 1, "missing ids are silently dropped")
+	assert.Equal(t, aliceID, got[0].ID())
+}

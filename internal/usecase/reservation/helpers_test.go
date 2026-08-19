@@ -33,6 +33,7 @@ type mockReservationRepository struct {
 	listByActivityView func(ctx context.Context, activityID, limit, offset int) ([]*domain.ReservationView, error)
 	listAllView        func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
 	listAllUpcomingView func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
+	listPendingView    func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
 }
 
 func (m *mockReservationRepository) Create(ctx context.Context, reservation *domain.Reservation) (int, error) {
@@ -139,6 +140,13 @@ func (m *mockReservationRepository) ListAllUpcomingView(ctx context.Context, lim
 	return nil, nil
 }
 
+func (m *mockReservationRepository) ListPendingView(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error) {
+	if m.listPendingView != nil {
+		return m.listPendingView(ctx, limit, offset)
+	}
+	return nil, nil
+}
+
 // stubActivityRepository is the local mock for the activity repo used
 // by the RegisterReservationUseCase. It mirrors the activity use
 // case mock interface but is defined here so the reservation tests
@@ -160,6 +168,42 @@ func (s *stubActivityRepository) GetByIDForUpdate(ctx context.Context, id int) (
 	}
 	return nil, nil
 }
+
+// stubUserRepository is the local mock for the user repo used by
+// the ListActivityRosterUseCase. It implements domain.UserRepository
+// with the only method the use case actually calls (GetByIDs) as a
+// closure; every other method falls back to a zero-value no-op so
+// the stub satisfies the interface for free.
+type stubUserRepository struct {
+	getByIDs func(ctx context.Context, ids []int) ([]*domain.User, error)
+}
+
+func (s *stubUserRepository) GetByIDs(ctx context.Context, ids []int) ([]*domain.User, error) {
+	if s.getByIDs != nil {
+		return s.getByIDs(ctx, ids)
+	}
+	return nil, nil
+}
+func (s *stubUserRepository) Create(ctx context.Context, _ *domain.User) (int, error) {
+	return 0, nil
+}
+func (s *stubUserRepository) Update(ctx context.Context, _ *domain.User) error { return nil }
+func (s *stubUserRepository) GetByID(ctx context.Context, _ int) (*domain.User, error) {
+	return nil, nil
+}
+func (s *stubUserRepository) GetByEmail(ctx context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (s *stubUserRepository) ListAll(ctx context.Context) ([]*domain.User, error) {
+	return nil, nil
+}
+func (s *stubUserRepository) ListAllPaged(ctx context.Context, _, _ int) ([]*domain.User, error) {
+	return nil, nil
+}
+func (s *stubUserRepository) ListAllEmails(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+func (s *stubUserRepository) Delete(ctx context.Context, _ int) error { return nil }
 
 func (s *stubActivityRepository) Create(ctx context.Context, activity *domain.Activity) (int, error) {
 	return 0, nil

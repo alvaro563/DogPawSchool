@@ -4,6 +4,7 @@ import { Ticket, User } from 'lucide-react';
 import { fetchAllPasses } from '@/infrastructure/repositories/pass-repository.impl';
 import { fetchAllUsers } from '@/infrastructure/repositories/user-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
+import { formatPrice } from '@/lib/format';
 
 export function PassesManagementPage() {
   const { data: passes = [], isLoading } = useQuery({
@@ -64,7 +65,7 @@ export function PassesManagementPage() {
                     </div>
                     <span className="text-xs tabular-nums text-muted-foreground">{p.remaining_sessions}/{p.num_of_sessions}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{p.price} cént.</span>
+                  <span className="text-xs text-muted-foreground">{formatPrice(p.price)}</span>
                 </div>
               </div>
             );

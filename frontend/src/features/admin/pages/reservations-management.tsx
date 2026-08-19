@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { ClipboardList, Dog } from 'lucide-react';
 import { fetchUpcomingReservations } from '@/infrastructure/repositories/reservation-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
+import { CancelReservationButton } from '@/features/admin/components/cancel-reservation-button';
+import { RejectReservationButton } from '@/features/admin/components/reject-reservation-button';
 
 const STATUS_STYLES: Record<string, string> = {
   CONFIRMED: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
@@ -64,9 +66,31 @@ export function ReservationsManagementPage() {
                   <span className="flex items-center gap-1"><Dog className="h-3 w-3" />{r.dog_name} (ID: {r.dog_id})</span>
                 </div>
               </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || 'bg-muted text-muted-foreground'}`}>
-                {STATUS_LABELS[r.status] || r.status}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || 'bg-muted text-muted-foreground'}`}>
+                  {STATUS_LABELS[r.status] || r.status}
+                </span>
+                {r.status === 'CONFIRMED' && (
+                  <CancelReservationButton
+                    reservationId={r.id}
+                    ownerId={r.owner_id}
+                    dogName={r.dog_name}
+                    activityName={r.activity_name}
+                    activityDate={r.activity_date}
+                    isAdmin={true}
+                    onInvalidate={() => {}}
+                    variant="compact"
+                  />
+                )}
+                {r.status === 'PENDING_TO_CONFIRM' && (
+                  <RejectReservationButton
+                    reservationId={r.id}
+                    ownerId={r.owner_id}
+                    dogName={r.dog_name}
+                    onInvalidate={() => {}}
+                  />
+                )}
+              </div>
             </div>
           ))}
         </div>

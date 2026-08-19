@@ -440,3 +440,239 @@ func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
 	assert.Equal(t, 5, pass.RemainingSessions())
 	assert.Empty(t, pass.PendingMovements())
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Admin override tests
+// ───────────────────────────────────────────────────────────────────
+//
+// The admin endpoint uses NewCancelReservationAdminInput and is
+// expected to bypass the dog/pass ownership checks. The factory
+// itself does not require user_id (the field is left at 0). The
+// tests below document that contract and guard against regressions.
+
+func validAdminCancelInput() CancelReservationInput {
+	return MustNewCancelReservationAdminInput(99, func() time.Time { return fixedNow })
+}
+
+func TestNewCancelReservationAdminInput(t *testing.T) {
+	t.Parallel()
+	in, err := NewCancelReservationAdminInput(10, func() time.Time { return fixedNow })
+	require.NoError(t, err)
+	assert.Equal(t, 10, in.ReservationID())
+	assert.True(t, in.AdminOverride(), "admin factory must set adminOverride")
+	assert.Equal(t, 0, in.UserID(), "admin factory must not require user_id")
+}
+
+func TestNewCancelReservationAdminInput_NilNow(t *testing.T) {
+	t.Parallel()
+	in, err := NewCancelReservationAdminInput(10, nil)
+	require.NoError(t, err)
+	assert.NotZero(t, in.Now())
+}
+
+func TestNewCancelReservationAdminInput_RejectsZeroID(t *testing.T) {
+	t.Parallel()
+	_, err := NewCancelReservationAdminInput(0, func() time.Time { return fixedNow })
+	assert.Error(t, err)
+	_, err = NewCancelReservationAdminInput(-1, func() time.Time { return fixedNow })
+	assert.Error(t, err)
+}
+
+func TestCancelAdmin_SuccessInTime(t *testing.T) {
+	t.Parallel()
+	// Admin cancels a reservation owned by user 99, the activity
+	// is far in the future, the pass is consumed (remaining < num)
+	// so CanRefund() is true. Expectation: success, CANCELLED_IN_TIME,
+	// pass refunded.
+	ownerID := 99
+	activity := farFutureActivity(10)
+	dog := validDog(20, ownerID)
+	now := fixedNow
+	pass := domain.MustNewPass(30, 5, 3, 5, domain.PassGeneric, ownerID, now, now, nil)
+	require.True(t, pass.CanRefund())
+
+	reservation := validConfirmedReservation(99, 10, 20, 30)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		update: func(context.Context, *domain.Pass) error { return nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
+		update: func(_ context.Context, r *domain.Reservation) error {
+			assert.Equal(t, domain.StatusCancelledInTime, r.Status())
+			return nil
+		},
+	}
+	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	output, err := uc.Execute(context.Background(), validAdminCancelInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusCancelledInTime, output.Reservation.Status())
+	// Refund applied: pass.RemainingSessions() went from 3 to 4.
+	// The refund is a pending movement that gets flushed via Update.
+	// Update was called once above.
+}
+
+func TestCancelAdmin_SuccessLateDoesNotRefund(t *testing.T) {
+	t.Parallel()
+	ownerID := 99
+	activity := nearFutureActivity(10)
+	dog := validDog(20, ownerID)
+	now := fixedNow
+	pass := domain.MustNewPass(30, 5, 3, 5, domain.PassGeneric, ownerID, now, now, nil)
+	require.True(t, pass.CanRefund())
+
+	reservation := validConfirmedReservation(99, 10, 20, 30)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		update: func(context.Context, *domain.Pass) error {
+			t.Fatal("pass Update should not be called on late cancel")
+			return nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
+		update: func(_ context.Context, r *domain.Reservation) error {
+			assert.Equal(t, domain.StatusCancelledLate, r.Status())
+			return nil
+		},
+	}
+	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	output, err := uc.Execute(context.Background(), validAdminCancelInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusCancelledLate, output.Reservation.Status())
+}
+
+func TestCancelAdmin_DogOwnedByAnotherUserPasses(t *testing.T) {
+	t.Parallel()
+	// Regression: without adminOverride, DogNotOwnedByUser returns
+	// ErrInvalidDog. With adminOverride, the same setup must
+	// succeed.
+	activity := farFutureActivity(10)
+	dog := validDog(20, 99) // owner 99, admin cancels on their behalf
+	pass := validPass(30, 99, 3)
+	reservation := validConfirmedReservation(99, 10, 20, 30)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		update: func(context.Context, *domain.Pass) error { return nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
+		update: func(context.Context, *domain.Reservation) error { return nil },
+	}
+	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminCancelInput())
+	assert.NoError(t, err, "admin override must bypass dog ownership")
+}
+
+func TestCancelAdmin_PassOwnedByAnotherUserPasses(t *testing.T) {
+	t.Parallel()
+	// Regression: same as the dog test but for pass ownership.
+	activity := farFutureActivity(10)
+	dog := validDog(20, 99)
+	pass := validPass(30, 99, 3) // owner 99
+	reservation := validConfirmedReservation(99, 10, 20, 30)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+		update: func(context.Context, *domain.Pass) error { return nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
+		update: func(context.Context, *domain.Reservation) error { return nil },
+	}
+	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminCancelInput())
+	assert.NoError(t, err, "admin override must bypass pass ownership")
+}
+
+func TestCancelAdmin_ActivityInPast(t *testing.T) {
+	t.Parallel()
+	// Even with admin override, the activity-must-be-in-future
+	// guard still applies. The wire-level use case enforces this
+	// regardless of the actor.
+	activity := pastActivity(10)
+	dog := validDog(20, 99)
+	pass := validPass(30, 99, 3)
+	reservation := validConfirmedReservation(99, 10, 20, 30)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
+	}
+	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminCancelInput())
+	assert.ErrorIs(t, err, ErrActivityInPast)
+}
+
+func TestCancelAdmin_AlreadyCancelled(t *testing.T) {
+	t.Parallel()
+	activity := farFutureActivity(10)
+	dog := validDog(20, 99)
+	pass := validPass(30, 99, 3)
+	// Build a reservation that is already CANCELLED_IN_TIME.
+	reservation := mustNewReservation(99, 10, 20, 30, domain.StatusCancelledInTime, fixedNow)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
+	}
+	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminCancelInput())
+	assert.ErrorIs(t, err, ErrAlreadyCancelled)
+}
+
+func TestCancelAdmin_ReservationNotFound(t *testing.T) {
+	t.Parallel()
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return farFutureActivity(10), nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return nil, domain.ErrNotFound },
+	}
+	uc := newCancelUseCase(activityRepo, nil, nil, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminCancelInput())
+	assert.ErrorIs(t, err, ErrInvalidReservation)
+}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PawPrint, Shield, Activity, AlertCircle,
-  Edit3, Save, X,
+  Edit3, Save, X, Ban, Play,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { fetchDogByID, updateDog } from '@/infrastructure/repositories/dog-repository.impl';
@@ -16,6 +16,7 @@ import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { SexChip } from '@/components/shared/sex-chip';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { useToast } from '@/features/ui/hooks/toast-context';
 import { cn } from '@/lib/utils';
 import type { Dog } from '@/domain/entities/dog';
 import type { ApiError } from '@/infrastructure/api/http-client';
@@ -49,6 +50,7 @@ function parseError(err: unknown, fallback: string): string {
 export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [error, setError] = useState('');
@@ -79,6 +81,31 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
     onError: (err: unknown) => setError(parseError(err, 'Error al actualizar el perro.')),
   });
 
+  // toggleActiveMutation flips the dog's is_active flag through
+  // the same PATCH /dogs/:id endpoint used by the edit form. The
+  // backend (admin.PATCH /dogs/:id) accepts a partial patch that
+  // already includes is_active (see internal/handler/dog_handler.go
+  // modifyDogRequest). We bypass the edit form so the toggle is
+  // one click: confirm dialog → mutation → toast. Disabled while
+  // editing to avoid racing with the BoolField in the form.
+  const toggleActiveMutation = useMutation({
+    mutationFn: () => updateDog(dogId, { is_active: !dog?.is_active }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dog', dogId] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dogs'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dogs-inactive'] });
+      queryClient.invalidateQueries({ queryKey: ['active-dogs'] });
+      queryClient.invalidateQueries({ queryKey: ['dog-pass-detail'] });
+
+      const newActive = !dog?.is_active;
+      toast.success(
+        newActive ? 'Perro activado' : 'Perro desactivado',
+        `${dog?.name ?? 'El perro'} ahora está ${newActive ? 'activo' : 'inactivo'}.`,
+      );
+    },
+    onError: (err: unknown) => setError(parseError(err, 'Error al cambiar el estado del perro.')),
+  });
+
   const addTraitMutation = useMutation({
     mutationFn: (traitId: number) => addTraitToDog(dogId, traitId),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['dog', dogId] }); setError(''); },
@@ -105,6 +132,15 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
   function handleCancel() {
     setIsEditing(false);
     setError('');
+  }
+
+  function handleToggleActive() {
+    if (!dog) return;
+    const verb = dog.is_active ? 'desactivar' : 'activar';
+    const verbCapitalized = verb.charAt(0).toUpperCase() + verb.slice(1);
+    if (confirm(`¿${verbCapitalized} a ${dog.name}?`)) {
+      toggleActiveMutation.mutate();
+    }
   }
 
   if (isLoading) {
@@ -148,10 +184,33 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
               </Button>
             </div>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => { setForm(buildForm(dog)); setIsEditing(true); }}>
-              <Edit3 className="h-3.5 w-3.5" />
-              Editar
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleToggleActive}
+                disabled={toggleActiveMutation.isPending}
+                className={cn(
+                  'gap-1',
+                  dog.is_active
+                    ? 'border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/30'
+                    : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/30',
+                )}
+              >
+                {toggleActiveMutation.isPending ? (
+                  <LoadingSpinner size="sm" className="border-t-background" />
+                ) : dog.is_active ? (
+                  <Ban className="h-3.5 w-3.5" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+                {dog.is_active ? 'Desactivar' : 'Activar'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setForm(buildForm(dog)); setIsEditing(true); }}>
+                <Edit3 className="h-3.5 w-3.5" />
+                Editar
+              </Button>
+            </div>
           )
         )}
       </div>

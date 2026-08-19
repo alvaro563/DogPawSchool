@@ -276,6 +276,18 @@ export function DogsManagementPage() {
           })}
         </div>
       )}
+
+      {!isLoading && filtered.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <button
+            onClick={() => navigate({ to: '/admin/dogs/inactive' })}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border p-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+          >
+            <PawPrint className="h-4 w-4" />
+            Ver perros inactivos
+          </button>
+        </div>
+      )}
     </div>
   );
 }

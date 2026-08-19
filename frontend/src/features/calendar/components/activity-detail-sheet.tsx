@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MapPin, Clock, Users, AlertCircle, CheckCircle2, Shield } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { useToast } from '@/features/ui/hooks/toast-context';
 import { fetchDogsByOwner, fetchAllActiveDogs } from '@/infrastructure/repositories/dog-repository.impl';
 import { fetchPassesByUser, fetchAllPasses } from '@/infrastructure/repositories/pass-repository.impl';
 import { fetchAllUsers } from '@/infrastructure/repositories/user-repository.impl';
@@ -13,10 +14,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import type { Activity } from '@/domain/entities/activity';
 import type { User } from '@/domain/entities/user';
 import type { ApiError } from '@/infrastructure/api/http-client';
+import type { CreateReservationResponse } from '@/domain/entities/reservation';
+
+export interface ExistingReservation {
+  dogId: number;
+  status: string;
+  passId: number;
+}
 
 interface ActivityDetailSheetProps {
   activity: Activity | null;
-  reservationStatus: string | undefined;
+  existingReservations: ExistingReservation[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -43,11 +51,12 @@ function getErrorMessage(status: number): string {
 
 export function ActivityDetailSheet({
   activity,
-  reservationStatus,
+  existingReservations,
   open,
   onOpenChange,
 }: ActivityDetailSheetProps) {
   const { user, isAdmin } = useAuth();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [selectedDogId, setSelectedDogId] = useState<number | null>(null);
   const [selectedPassId, setSelectedPassId] = useState<number | null>(null);
@@ -82,6 +91,29 @@ export function ActivityDetailSheet({
     [passes],
   );
 
+  // Set of dog ids the user already has a slot-holding reservation
+  // for on this activity (CONFIRMED or PENDING_TO_CONFIRM). Used to
+  // exclude already-booked dogs from the selector AND to decide
+  // whether the user can book ANOTHER dog for the same activity.
+  const reservedDogIds = useMemo(
+    () => new Set(existingReservations.map((r) => r.dogId)),
+    [existingReservations],
+  );
+
+  // Dogs the user can STILL book for this activity: their own dogs
+  // minus the ones already reserved. Admins see every active dog.
+  const bookableDogs = useMemo(() => {
+    if (isAdmin) return dogs;
+    return dogs.filter((d) => !reservedDogIds.has(d.id));
+  }, [dogs, reservedDogIds, isAdmin]);
+
+  const hasAnyReservation = existingReservations.length > 0;
+  const canReserve =
+    !!activity &&
+    activity.closed === false &&
+    activity.available_spots > 0 &&
+    bookableDogs.length > 0;
+
   const reservationMutation = useMutation({
     mutationFn: () => {
       const body = {
@@ -93,7 +125,7 @@ export function ActivityDetailSheet({
         ? createAdminReservation(body)
         : createReservation(user!.id, body);
     },
-    onSuccess: () => {
+    onSuccess: (data: CreateReservationResponse) => {
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       queryClient.invalidateQueries({ queryKey: ['reservations'] });
       queryClient.invalidateQueries({ queryKey: ['passes'] });
@@ -104,6 +136,32 @@ export function ActivityDetailSheet({
       setMutationError('');
       setSelectedDogId(null);
       setSelectedPassId(null);
+
+      // Notify the user about the outcome. The backend returns the
+      // persisted status: CONFIRMED (no incompatibilities, or admin
+      // override) or PENDING_TO_CONFIRM (incompatibilities found and
+      // the user must wait for the school to approve).
+      const selectedDog = dogs.find((d) => d.id === selectedDogId);
+      const dogName = selectedDog?.name ?? 'Tu perro';
+      const activityName = activity?.name ?? 'la actividad';
+
+      if (data.status === 'PENDING_TO_CONFIRM') {
+        toast.warning(
+          'Reserva pendiente de confirmación',
+          `${dogName} queda en lista de espera por incompatibilidades. La escuela revisará la reserva y te avisaremos.`,
+        );
+      } else if (isAdmin) {
+        toast.success(
+          'Reserva confirmada',
+          `${dogName} queda inscrito en ${activityName}.`,
+        );
+      } else {
+        toast.success(
+          '¡Reserva confirmada!',
+          `${dogName} ya tiene plaza asegurada en ${activityName}.`,
+        );
+      }
+
       onOpenChange(false);
     },
     onError: (err: ApiError) => {
@@ -116,8 +174,7 @@ export function ActivityDetailSheet({
     reservationMutation.mutate();
   }
 
-  const isBooked = reservationStatus === 'CONFIRMED' || reservationStatus === 'PENDING_TO_CONFIRM';
-  const canReserve = !isBooked && activity && activity.available_spots > 0 && activity.closed === false;
+  const isBooked = hasAnyReservation;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -184,13 +241,18 @@ export function ActivityDetailSheet({
                 <div className="flex items-center gap-2 text-sm font-medium text-sky-700 dark:text-sky-300">
                   <CheckCircle2 className="h-4 w-4" />
                   {isAdmin
-                    ? (reservationStatus === 'CONFIRMED'
+                    ? (existingReservations.every((r) => r.status === 'CONFIRMED')
                       ? 'Reserva confirmada (admin)'
                       : 'Reserva pendiente de confirmación (admin)')
-                    : (reservationStatus === 'CONFIRMED'
-                      ? 'Ya tienes una reserva confirmada'
-                      : 'Tienes una reserva pendiente de confirmación')}
+                    : (existingReservations.every((r) => r.status === 'CONFIRMED')
+                      ? 'Ya tienes una reserva confirmada para esta actividad.'
+                      : 'Tienes una reserva pendiente de confirmación.')}
                 </div>
+                {!isAdmin && canReserve && (
+                  <p className="mt-1 text-xs text-sky-700/80 dark:text-sky-300/80">
+                    Puedes apuntar a otro perro tuyo usando el botón del lateral.
+                  </p>
+                )}
               </div>
             )}
 
@@ -198,14 +260,22 @@ export function ActivityDetailSheet({
             {canReserve && (
               <div className="mt-6 space-y-4 border-t border-border pt-6">
                 <p className="text-sm font-semibold">
-                  {isAdmin ? 'Reservar plaza (admin)' : 'Reservar plaza'}
+                  {isAdmin
+                    ? 'Reservar plaza (admin)'
+                    : hasAnyReservation
+                    ? 'Reservar otro perro en esta actividad'
+                    : 'Reservar plaza'}
                 </p>
 
-                {/* Dog selector */}
+                {/* Dog selector — excludes dogs already reserved for this activity */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium">Perro</label>
                   {dogsLoading ? (
                     <LoadingSpinner size="sm" />
+                  ) : bookableDogs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Todos tus perros están ya reservados para esta actividad.
+                    </p>
                   ) : (
                     <select
                       className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm"
@@ -215,7 +285,7 @@ export function ActivityDetailSheet({
                       }
                     >
                       <option value="">Selecciona un perro</option>
-                      {dogs.map((d) => (
+                      {bookableDogs.map((d) => (
                         <option key={d.id} value={d.id}>
                           {isAdmin
                             ? `${d.name} · ${ownerMap.get(d.user_id)?.name ?? 'Propietario #' + d.user_id}`

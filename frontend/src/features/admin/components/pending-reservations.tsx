@@ -4,6 +4,7 @@ import { Check, X, AlertCircle } from 'lucide-react';
 import { confirmReservation, rejectReservation } from '@/infrastructure/repositories/reservation-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/features/ui/hooks/toast-context';
 import type { ReservationView } from '@/domain/entities/reservation';
 
 function parseError(err: unknown, fallback: string): string {
@@ -27,17 +28,30 @@ interface PendingReservationsProps {
 }
 
 function PendingRow({ item, onInvalidate }: { item: PendingReservation; onInvalidate: () => void }) {
+  const toast = useToast();
   const [error, setError] = useState('');
 
   const confirmMutation = useMutation({
     mutationFn: () => confirmReservation(item.owner_id, item.id),
-    onSuccess: onInvalidate,
+    onSuccess: () => {
+      toast.success(
+        'Reserva confirmada',
+        `${item.dog_name} (${item.owner_name}) queda inscrito en ${item.activity_name}.`,
+      );
+      onInvalidate();
+    },
     onError: (err: unknown) => setError(parseError(err, 'Error al aprobar la reserva.')),
   });
 
   const rejectMutation = useMutation({
     mutationFn: () => rejectReservation(item.owner_id, item.id),
-    onSuccess: onInvalidate,
+    onSuccess: () => {
+      toast.warning(
+        'Reserva rechazada',
+        `${item.dog_name} (${item.owner_name}) ha sido rechazado para ${item.activity_name}.`,
+      );
+      onInvalidate();
+    },
     onError: (err: unknown) => setError(parseError(err, 'Error al rechazar la reserva.')),
   });
 

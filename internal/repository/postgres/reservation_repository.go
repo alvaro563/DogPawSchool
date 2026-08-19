@@ -591,6 +591,19 @@ func (repo *ReservationRepository) ListAllView(ctx context.Context, limit, offse
 	return queryReservationViews(ctx, runner(ctx, repo.db), query, limit, offset)
 }
 
+// ListPendingView returns the views of every reservation in
+// StatusPendingToConfirm, ordered by created_at ASC (oldest first
+// — the order in which the admin should triage them). Used by the
+// admin "pending to approve" page.
+func (repo *ReservationRepository) ListPendingView(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error) {
+	query := reservationViewSelectClause + `
+		JOIN passes p ON p.id = r.pass_id
+		WHERE r.status = 'PENDING_TO_CONFIRM'
+		ORDER BY r.created_at ASC
+		LIMIT $1 OFFSET $2`
+	return queryReservationViews(ctx, runner(ctx, repo.db), query, limit, offset)
+}
+
 // ListAllUpcomingView returns the views of every CONFIRMED reservation
 // whose activity date is at or after the current time, ordered by
 // activity date ASC.

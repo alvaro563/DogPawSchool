@@ -6,6 +6,7 @@ import { createPass } from '@/infrastructure/repositories/pass-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useToast } from '@/features/ui/hooks/toast-context';
 
 function parseError(err: unknown, fallback: string): string {
   const apiErr = err as { body?: { error?: string; field?: string; details?: string } };
@@ -24,9 +25,10 @@ interface AssignPassModalProps {
 
 export function AssignPassModal({ open, onOpenChange }: AssignPassModalProps) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [userId, setUserId] = useState<number | null>(null);
   const [numSessions, setNumSessions] = useState(10);
-  const [price, setPrice] = useState(12000);
+  const [price, setPrice] = useState(40);
   const [passType, setPassType] = useState('GENERICO');
   const [expiresAt, setExpiresAt] = useState('');
   const [error, setError] = useState('');
@@ -41,7 +43,7 @@ export function AssignPassModal({ open, onOpenChange }: AssignPassModalProps) {
     mutationFn: () =>
       createPass(userId!, {
         num_of_sessions: numSessions,
-        price,
+        price: price * 100,
         pass_type: passType,
         expires_at: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : undefined,
       }),
@@ -49,6 +51,15 @@ export function AssignPassModal({ open, onOpenChange }: AssignPassModalProps) {
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'], refetchType: 'all' });
       setUserId(null);
       setError('');
+
+      const owner = users.find((u) => u.id === userId);
+      const ownerName = owner?.name ?? 'el cliente';
+      const passTypeLabel = passType === 'GENERICO' ? 'genérico' : 'específico';
+      toast.success(
+        'Bono asignado',
+        `${numSessions} sesiones (${passTypeLabel}) para ${ownerName}.`,
+      );
+
       onOpenChange(false);
     },
     onError: (err: unknown) => {
@@ -91,8 +102,8 @@ export function AssignPassModal({ open, onOpenChange }: AssignPassModalProps) {
             <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="number" value={numSessions} min={1} onChange={(e) => setNumSessions(+e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium">Precio (céntimos)</label>
-            <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="number" value={price} min={0} onChange={(e) => setPrice(+e.target.value)} />
+            <label className="text-xs font-medium">Precio (€)</label>
+            <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="number" step={1} value={price} min={0} onChange={(e) => setPrice(+e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Tipo de bono</label>
