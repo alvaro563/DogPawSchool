@@ -3,6 +3,7 @@ import type { ReservationListResponse } from '@/domain/entities/reservation';
 import type { CreateReservationRequest, CreateReservationResponse } from '@/domain/entities/reservation';
 import type { ActivityRoster } from '@/domain/entities/reservation';
 import type { PendingReservationsResponse } from '@/domain/entities/reservation';
+import type { AttendanceReportEntry, AttendanceReportResponse } from '@/domain/entities/attendance-report';
 import apiClient from '@/infrastructure/api/http-client';
 
 export async function fetchUserReservations(
@@ -121,4 +122,57 @@ export async function fetchPendingReservations(
     limit: String(limit),
     offset: String(offset),
   });
+}
+
+// ----------------------------------------------------------------------------
+// Attendance report (admin)
+// ----------------------------------------------------------------------------
+//
+// fetchAttendanceReport returns the COMPLETED-only attendance rows
+// for the given date range. `from` / `to` are RFC3339 (already in
+// the canonical form, with `to` carrying 23:59:59.999 if the caller
+// selected a single-day range — see attendance-report-page.tsx).
+export async function fetchAttendanceReport(
+  from: string,
+  to: string,
+  limit = 100,
+  offset = 0,
+): Promise<AttendanceReportEntry[]> {
+  const params: Record<string, string> = { limit: String(limit), offset: String(offset) };
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const data = await apiClient.get<AttendanceReportResponse>('/reservations/attendance', params);
+  return data.entries;
+}
+
+// buildAttendanceFilename derives the suggested filename for the
+// downloaded CSV. Slugifies the date ranges and falls back to "all"
+// when no bound is present.
+function buildAttendanceFilename(from: string, to: string): string {
+  const fromSlug = from || 'all';
+  const toSlug = to || 'all';
+  return `asistencia_${fromSlug}_${toSlug}.csv`.replace(/[:.]/g, '-');
+}
+
+// downloadAttendanceReportCSV fetches the CSV via the auth-aware
+// `getBlob()` and triggers a browser download. Cannot use a plain
+// `<a href>` because the endpoint requires an Authorization header
+// that the browser would not attach to a navigation.
+export async function downloadAttendanceReportCSV(from: string, to: string): Promise<void> {
+  const params: Record<string, string> = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const blob = await apiClient.getBlob('/reservations/attendance.csv', params);
+
+  const url = URL.createObjectURL(blob);
+  const filename = buildAttendanceFilename(from, to);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  // Free the URL once the browser has had a chance to consume it.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

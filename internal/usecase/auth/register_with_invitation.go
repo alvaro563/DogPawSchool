@@ -64,9 +64,13 @@ func MustNewRegisterWithInvitationInput(token, name, password string, now func()
 }
 
 // RegisterWithInvitationOutput is the result of a successful
-// registration via invitation.
+// registration via invitation. Token carries a signed JWT so the
+// client can be logged in immediately after registering without a
+// second POST /auth/login round trip — Phase 1 of the invitation
+// flow.
 type RegisterWithInvitationOutput struct {
-	User *domain.User
+	User  *domain.User
+	Token string
 }
 
 // RegisterWithInvitationUseCase registers a new user from a pending
@@ -76,11 +80,13 @@ type RegisterWithInvitationOutput struct {
 //  3. Hash the password with bcrypt.
 //  4. Create the User entity with the invitation's email and role.
 //  5. In a single transaction: save the user, accept the invitation.
+//  6. Sign a JWT for the new user so the client is auto-logged-in.
 type RegisterWithInvitationUseCase struct {
 	transactor     Transactor
 	invitationRepo domain.InvitationRepository
 	userRepo       domain.UserRepository
 	hasher         PasswordHasher
+	tokenGen       TokenGenerator
 }
 
 func NewRegisterWithInvitationUseCase(
@@ -88,12 +94,14 @@ func NewRegisterWithInvitationUseCase(
 	invitationRepo domain.InvitationRepository,
 	userRepo domain.UserRepository,
 	hasher PasswordHasher,
+	tokenGen TokenGenerator,
 ) *RegisterWithInvitationUseCase {
 	return &RegisterWithInvitationUseCase{
 		transactor:     transactor,
 		invitationRepo: invitationRepo,
 		userRepo:       userRepo,
 		hasher:         hasher,
+		tokenGen:       tokenGen,
 	}
 }
 
@@ -157,7 +165,15 @@ func (uc *RegisterWithInvitationUseCase) Execute(ctx context.Context, input Regi
 		return RegisterWithInvitationOutput{}, err
 	}
 
-	return RegisterWithInvitationOutput{User: user}, nil
+	// 3. Issue a JWT so the client is auto-logged-in. Same generator
+	// the LoginUseCase uses, so the token's TTL and signing
+	// parameters are consistent across auth paths.
+	token, err := uc.tokenGen.Generate(user)
+	if err != nil {
+		return RegisterWithInvitationOutput{}, fmt.Errorf("generate token: %w", err)
+	}
+
+	return RegisterWithInvitationOutput{User: user, Token: token}, nil
 }
 
 // hashRegistrationToken returns the hex-encoded SHA-256 of the raw token.

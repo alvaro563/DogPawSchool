@@ -124,7 +124,8 @@ func (uc *MarkReservationNoShowUseCase) runInTx(ctx context.Context, input MarkR
 	}
 
 	// 2. Load activity (needed for the "activity started" check).
-	activity, err := uc.activityRepo.GetByID(ctx, reservation.ActivityID())
+	// Admin viewer: this endpoint is admin-only.
+	activity, err := uc.activityRepo.GetByID(ctx, reservation.ActivityID(), 0, true)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrInvalidActivity

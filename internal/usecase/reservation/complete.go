@@ -124,7 +124,8 @@ func (uc *CompleteReservationUseCase) runInTx(ctx context.Context, input Complet
 	}
 
 	// 2. Load activity (needed for the "activity finished" check).
-	activity, err := uc.activityRepo.GetByID(ctx, reservation.ActivityID())
+	// Admin viewer: this endpoint is admin-only.
+	activity, err := uc.activityRepo.GetByID(ctx, reservation.ActivityID(), 0, true)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrInvalidActivity

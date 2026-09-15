@@ -147,7 +147,7 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 	reservationRepo := postgres.NewReservationRepository(db)
 
 	dogUC := doguc.NewRegisterDogUseCase(dogRepo)
-	getDogUC := doguc.NewGetDogUseCase(dogRepo)
+	getDogUC := doguc.NewGetDogUseCase(dogRepo, userRepo)
 	listAllDogUC := doguc.NewListAllDogsUseCase(dogRepo)
 	listByOwnerDogUC := doguc.NewListByOwnerUseCase(dogRepo)
 	listActiveDogUC := doguc.NewListActiveDogsUseCase(dogRepo)
@@ -180,8 +180,9 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 	listUsersUC := useruc.NewListUsersUseCase(userRepo)
 	updateUserUC := useruc.NewUpdateUserUseCase(userRepo)
 	deactivateUserUC := useruc.NewDeactivateUserUseCase(userRepo)
+	activateUserUC := useruc.NewActivateUserUseCase(userRepo)
 	listUserEmailsUC := useruc.NewListUserEmailsUseCase(userRepo)
-	userH := NewUserHandler(getUserUC, listUsersUC, updateUserUC, deactivateUserUC, listUserEmailsUC)
+	userH := NewUserHandler(getUserUC, listUsersUC, updateUserUC, deactivateUserUC, activateUserUC, listUserEmailsUC)
 
 	registerIncompatUC := incompatuc.NewRegisterIncompatibilityUseCase(incompatRepo)
 	listIncompatUC := incompatuc.NewListIncompatibilitiesUseCase(incompatRepo)
@@ -192,7 +193,7 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 		registerIncompatUC, listIncompatUC, getIncompatUC, modifyIncompatUC, deleteIncompatUC,
 	)
 
-	registerActivityUC := activityuc.NewRegisterActivityUseCase(activityRepo)
+	registerActivityUC := activityuc.NewRegisterActivityUseCase(activityRepo, dogRepo)
 	getActivityUC := activityuc.NewGetActivityUseCase(activityRepo)
 	modifyActivityUC := activityuc.NewModifyActivityUseCase(activityRepo)
 	listAllActivityUC := activityuc.NewListAllActivitiesUseCase(activityRepo)
@@ -202,9 +203,14 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 		reservationuc.NewMarkReservationNoShowUseCase(transactor, activityRepo, dogRepo, reservationRepo),
 		reservationuc.NewCompleteReservationUseCase(transactor, activityRepo, dogRepo, reservationRepo),
 	)
+	bulkCompleteUC := activityuc.NewBulkCompleteReservationsUseCase(
+		transactor, activityRepo, dogRepo, reservationRepo,
+		reservationuc.NewCompleteReservationUseCase(transactor, activityRepo, dogRepo, reservationRepo),
+	)
 	activityH := NewActivityHandler(
 		registerActivityUC, getActivityUC, modifyActivityUC,
-		listAllActivityUC, listUpcomingActivityUC, closeActivityUC, reservationRepo,
+		listAllActivityUC, listUpcomingActivityUC,
+		closeActivityUC, bulkCompleteUC, reservationRepo,
 	)
 
 	registerPassUC := passuc.NewRegisterPassUseCase(passRepo)
@@ -212,7 +218,9 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 	getPassUC := passuc.NewGetPassUseCase(passRepo)
 	listAllPassUC := passuc.NewListAllPassesUseCase(passRepo)
 	listByUserPassUC := passuc.NewListByUserPassesUseCase(passRepo)
-	passH := NewPassHandler(registerPassUC, modifyPassUC, getPassUC, listAllPassUC, listByUserPassUC)
+	listByPaidPassUC := passuc.NewListByPaidPassesUseCase(passRepo)
+	setPaidPassUC := passuc.NewSetPassPaidUseCase(passRepo)
+	passH := NewPassHandler(registerPassUC, modifyPassUC, getPassUC, listAllPassUC, listByUserPassUC, listByPaidPassUC, setPaidPassUC)
 
 	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
 		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
@@ -891,7 +899,7 @@ func TestActivityRosterHTTP_Success(t *testing.T) {
 	reservationRepo := postgres.NewReservationRepository(integrationDB)
 
 	activity, err := domain.NewActivity(0, "Paseo Río", "", "Parking Central",
-		domain.TypeRoute, 5, 1, time.Now().Add(7*24*time.Hour))
+		domain.TypeRoute, 5, 1, time.Now().Add(7*24*time.Hour), nil)
 	require.NoError(t, err)
 	activityID, err := activityRepo.Create(context.Background(), activity)
 	require.NoError(t, err)
@@ -911,7 +919,7 @@ func TestActivityRosterHTTP_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	pass, err := domain.NewPass(0, 5, 5, 5000, domain.PassGeneric, owner.ID(),
-		time.Now().UTC(), time.Now().UTC(), nil)
+		time.Now().UTC(), time.Now().UTC(), nil, false)
 	require.NoError(t, err)
 	passID, err := passRepo.Create(context.Background(), pass)
 	require.NoError(t, err)
@@ -1010,7 +1018,7 @@ func TestPendingReservationsHTTP_Success(t *testing.T) {
 	reservationRepo := postgres.NewReservationRepository(integrationDB)
 
 	activity, err := domain.NewActivity(0, "Paseo Pendientes", "", "Central",
-		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour))
+		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour), nil)
 	require.NoError(t, err)
 	activityID, err := activityRepo.Create(context.Background(), activity)
 	require.NoError(t, err)
@@ -1043,13 +1051,13 @@ func TestPendingReservationsHTTP_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	passA, err := domain.NewPass(0, 5, 5, 5000, domain.PassGeneric, ownerA.ID(),
-		time.Now().UTC(), time.Now().UTC(), nil)
+		time.Now().UTC(), time.Now().UTC(), nil, false)
 	require.NoError(t, err)
 	passAID, err := passRepo.Create(context.Background(), passA)
 	require.NoError(t, err)
 
 	passB, err := domain.NewPass(0, 5, 5, 5000, domain.PassGeneric, ownerB.ID(),
-		time.Now().UTC(), time.Now().UTC(), nil)
+		time.Now().UTC(), time.Now().UTC(), nil, false)
 	require.NoError(t, err)
 	passBID, err := passRepo.Create(context.Background(), passB)
 	require.NoError(t, err)

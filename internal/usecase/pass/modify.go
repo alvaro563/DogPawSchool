@@ -92,5 +92,5 @@ func (uc *ModifyPassUseCase) Execute(ctx context.Context, input ModifyPassInput)
 }
 
 func isEmptyPassPatch(patch domain.PassPatch) bool {
-	return patch.Price == nil && patch.PassType == nil && patch.ExpiresAt == nil
+	return patch.Price == nil && patch.PassType == nil && patch.ExpiresAt == nil && patch.IsPaid == nil
 }

@@ -14,8 +14,8 @@ func TestListByUserPassesUseCase_Success(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	expected := []*domain.Pass{
-		domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil),
-		domain.MustNewPass(3, 5, 5, 50, domain.PassSpecial, 1, now, now, nil),
+		domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false),
+		domain.MustNewPass(3, 5, 5, 50, domain.PassSpecial, 1, now, now, nil, false),
 	}
 	repo := &mockPassRepository{
 		listByOwner: func(ctx context.Context, userID, limit, offset int) ([]*domain.Pass, error) {

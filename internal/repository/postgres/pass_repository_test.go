@@ -23,7 +23,7 @@ func TestPassRepository_RoundTrip(t *testing.T) {
 	repo := NewPassRepository(db)
 	now := time.Now().UTC()
 
-	pass, err := domain.NewPass(0, 10, 8, 5000, domain.PassGeneric, user.ID(), now, now, nil)
+	pass, err := domain.NewPass(0, 10, 8, 5000, domain.PassGeneric, user.ID(), now, now, nil, false)
 	require.NoError(t, err)
 
 	id, err := repo.Create(context.Background(), pass)
@@ -89,8 +89,8 @@ func TestPassRepository_ListAll(t *testing.T) {
 	repo := NewPassRepository(db)
 	now := time.Now().UTC()
 
-	p1, _ := domain.NewPass(0, 5, 5, 2500, domain.PassGeneric, user.ID(), now, now, nil)
-	p2, _ := domain.NewPass(0, 1, 1, 1200, domain.PassSpecial, user.ID(), now, now, nil)
+	p1, _ := domain.NewPass(0, 5, 5, 2500, domain.PassGeneric, user.ID(), now, now, nil, false)
+	p2, _ := domain.NewPass(0, 1, 1, 1200, domain.PassSpecial, user.ID(), now, now, nil, false)
 	_, _ = repo.Create(context.Background(), p1)
 	_, _ = repo.Create(context.Background(), p2)
 
@@ -114,7 +114,7 @@ func TestPassRepository_ErrInvalidUser(t *testing.T) {
 
 	repo := NewPassRepository(db)
 	now := time.Now().UTC()
-	p, _ := domain.NewPass(0, 5, 5, 1000, domain.PassGeneric, 99999, now, now, nil)
+	p, _ := domain.NewPass(0, 5, 5, 1000, domain.PassGeneric, 99999, now, now, nil, false)
 	_, err := repo.Create(context.Background(), p)
 	assert.ErrorIs(t, err, domain.ErrInvalidUserReference)
 }
@@ -128,7 +128,7 @@ func TestConcurrency_PassSession(t *testing.T) {
 
 	user := insertBaseUser(t, db)
 
-	pass, err := domain.NewPass(0, 1, 1, 2500, domain.PassGeneric, user.ID(), now, now, nil)
+	pass, err := domain.NewPass(0, 1, 1, 2500, domain.PassGeneric, user.ID(), now, now, nil, false)
 	require.NoError(t, err)
 	passRepo := NewPassRepository(db)
 	passID, err := passRepo.Create(ctx, pass)

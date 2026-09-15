@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Calendar, Check, Dog, MapPin, School, User, X, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, Check, CheckCheck, Dog, MapPin, School, User, X, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { fetchActivityRoster } from '@/infrastructure/repositories/reservation-repository.impl';
 import { confirmReservation, rejectReservation } from '@/infrastructure/repositories/reservation-repository.impl';
+import { bulkCompleteActivity } from '@/infrastructure/repositories/activity-repository.impl';
+import { isActivityPast } from '@/features/calendar/hooks/use-calendar';
 import { useToast } from '@/features/ui/hooks/toast-context';
 import { CancelReservationButton } from '@/features/admin/components/cancel-reservation-button';
 import type { ActivityRosterEntry } from '@/domain/entities/reservation';
@@ -123,11 +125,56 @@ function PendingRow({ entry, onInvalidate }: PendingRowProps) {
 // hardcoded route so the user lands back on whichever list they
 // came from (/admin/activities or /admin/today-classes).
 export function ActivityDetailPage({ id }: { id: number }) {
+  // ── All hooks must be called unconditionally BEFORE any early
+  // returns (Rules of Hooks). The pure derived data and JSX below
+  // this comment may use early returns freely.
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   const { data: roster, isLoading, isError } = useQuery({
     queryKey: ['activity-roster', id],
     queryFn: () => fetchActivityRoster(id),
+  });
+
+  const bulkCompleteMutation = useMutation({
+    mutationFn: () => bulkCompleteActivity(id),
+    onSuccess: ({ completed, closed }) => {
+      // ['activity-roster'] uses the generic prefix so the roster
+      // query is invalidated no matter how it was created (number
+      // vs string id). Same approach is used elsewhere in this file.
+      queryClient.invalidateQueries({ queryKey: ['activity-roster'] });
+      // ['activities'] is the root prefix: invalidates BOTH
+      // /admin/activities (open list) and /admin/activities/completed
+      // in one call, so the row disappears from the open list AND
+      // appears in the completed list without a second round trip.
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
+      if (completed === 0 && closed) {
+        toast.success(
+          'Actividad cerrada',
+          'No había reservas confirmadas pendientes en esta actividad.',
+        );
+      } else if (completed > 0 && closed) {
+        toast.success(
+          'Actividad completada y cerrada',
+          `${completed} ${completed === 1 ? 'reserva marcada' : 'reservas marcadas'} como COMPLETADAS.`,
+        );
+      }
+    },
+    onError: (err: unknown) => {
+      const body = (err as { body?: { error?: string; details?: string } }).body;
+      const code = body?.error;
+      const msg =
+        code === 'activity_not_finished'
+          ? 'La actividad aún no ha finalizado.'
+          : code === 'pending_to_confirm_exists'
+          ? 'Hay reservas pendientes de confirmar. Resuélvelas primero.'
+          : code === 'not_found'
+          ? 'Actividad no encontrada.'
+          : parseError(err, 'No se pudo completar el lote.');
+      toast.error('Error al completar', msg);
+    },
   });
 
   function handleInvalidate() {
@@ -170,6 +217,27 @@ export function ActivityDetailPage({ id }: { id: number }) {
   const { activity, confirmed, pending } = roster;
   const booked = confirmed.length + pending.length;
   const pct = Math.round((booked / activity.max_capacity) * 100);
+
+  // Gating for the bulk-complete button. The three policies:
+  //   1. The activity must have finished (date + duration < now).
+  //   2. There must be no PENDING_TO_CONFIRM reservation (the backend
+  //      rejects the call with 409, but blocking client-side gives a
+  //      better UX).
+  //   3. There must be at least one CONFIRMED reservation to mark.
+  // The button tooltip communicates the active reason to the admin.
+  const isFinished = isActivityPast(activity.date, activity.duration_in_hours);
+  const hasPending = pending.length > 0;
+  const hasConfirmed = confirmed.length > 0;
+  const canBulkComplete =
+    isFinished && !hasPending && hasConfirmed;
+
+  const bulkCompleteTooltip = !isFinished
+    ? 'Disponible cuando la actividad haya finalizado'
+    : hasPending
+    ? 'Hay reservas pendientes de confirmar. Resuélvelas primero.'
+    : !hasConfirmed
+    ? 'Todas las reservas confirmadas ya han sido completadas'
+    : `Completar ${confirmed.length} ${confirmed.length === 1 ? 'reserva' : 'reservas'}`;
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
@@ -224,11 +292,13 @@ export function ActivityDetailPage({ id }: { id: number }) {
       </div>
 
       <section className="mb-6">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">Asistentes confirmados</h2>
-          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
-            {confirmed.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+              {confirmed.length}
+            </span>
+          </div>
         </div>
         {confirmed.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-6 text-center">
@@ -290,6 +360,26 @@ export function ActivityDetailPage({ id }: { id: number }) {
           </div>
         )}
       </section>
+
+      <div className="mt-2 flex justify-center">
+        <button
+          type="button"
+          disabled={!canBulkComplete || bulkCompleteMutation.isPending}
+          title={bulkCompleteTooltip}
+          onClick={() => {
+            if (!window.confirm(`¿Marcar las ${confirmed.length} reservas confirmadas como COMPLETADAS y completar la actividad?`)) return;
+            bulkCompleteMutation.mutate();
+          }}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {bulkCompleteMutation.isPending ? (
+            <LoadingSpinner size="sm" />
+          ) : (
+            <CheckCheck className="h-4 w-4" />
+          )}
+          Completar Actividad
+        </button>
+      </div>
     </div>
   );
 }

@@ -15,7 +15,7 @@ var fixedNow = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 func newTestPass(t *testing.T, opts ...func(*domain.Pass)) *domain.Pass {
 	t.Helper()
 	now := fixedNow
-	p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
+	p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
 	if err != nil {
 		t.Fatalf("newTestPass: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestNewPass(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		now := fixedNow
 		exp := now.Add(30 * 24 * time.Hour)
-		p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, &exp)
+		p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, &exp, false)
 		assert.NoError(t, err)
 		assert.Equal(t, 10, p.RemainingSessions())
 		assert.Equal(t, &exp, p.ExpiresAt())
@@ -61,7 +61,7 @@ func TestNewPass(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := domain.NewPass(tt.id, tt.n, tt.remaining, tt.price, tt.pt, tt.userID, tt.now, tt.now, tt.expires)
+				_, err := domain.NewPass(tt.id, tt.n, tt.remaining, tt.price, tt.pt, tt.userID, tt.now, tt.now, tt.expires, false)
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantInErr)
 			})
@@ -87,7 +87,7 @@ func TestPass_IsExpired(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, creationTime, creationTime, tt.expiresAt)
+			p, err := domain.NewPass(1, 10, 10, 100, domain.PassGeneric, 1, creationTime, creationTime, tt.expiresAt, false)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, p.IsExpired(tt.now))
 		})
@@ -191,7 +191,7 @@ func TestPass_CanRefund_RefundSession(t *testing.T) {
 		creationTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 		expiry := time.Date(2020, 12, 31, 0, 0, 0, 0, time.UTC)
 		now := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC) // after expiry
-		p := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, creationTime, creationTime, &expiry)
+		p := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, creationTime, creationTime, &expiry, false)
 		assert.True(t, p.IsExpired(now), "pass should be expired at this point in time")
 		_, _ = p.ConsumeSession("consume", creationTime)
 		mov, err := p.RefundSession("Admin override: activity cancelled", now)
@@ -259,7 +259,7 @@ func TestPass_ApplyPatch(t *testing.T) {
 	originalExpiry := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 
 	t.Run("empty_patch_is_noop", func(t *testing.T) {
-		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, &originalExpiry)
+		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, &originalExpiry, false)
 		err := pass.ApplyPatch(domain.PassPatch{})
 		assert.NoError(t, err)
 		assert.Equal(t, 100, pass.Price())
@@ -268,7 +268,7 @@ func TestPass_ApplyPatch(t *testing.T) {
 	})
 
 	t.Run("applies_all_editable_fields", func(t *testing.T) {
-		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, &originalExpiry)
+		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, &originalExpiry, false)
 		newPrice := 15000
 		newType := domain.PassSpecial
 		patch := domain.PassPatch{
@@ -284,7 +284,7 @@ func TestPass_ApplyPatch(t *testing.T) {
 	})
 
 	t.Run("non_editable_fields_unchanged", func(t *testing.T) {
-		pass := domain.MustNewPass(42, 10, 10, 100, domain.PassGeneric, 7, now, now, nil)
+		pass := domain.MustNewPass(42, 10, 10, 100, domain.PassGeneric, 7, now, now, nil, false)
 		newPrice := 999
 		patch := domain.PassPatch{Price: &newPrice}
 		err := pass.ApplyPatch(patch)
@@ -300,7 +300,7 @@ func TestPass_ApplyPatch(t *testing.T) {
 	})
 
 	t.Run("validation_errors", func(t *testing.T) {
-		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
+		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
 		negativePrice := -1
 		invalidType := domain.PassType("INVALID")
 		zeroTime := time.Time{}
@@ -337,7 +337,7 @@ func TestPass_ApplyPatch(t *testing.T) {
 	})
 
 	t.Run("zero_price_is_allowed", func(t *testing.T) {
-		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
+		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
 		zeroPrice := 0
 		err := pass.ApplyPatch(domain.PassPatch{Price: &zeroPrice})
 		assert.NoError(t, err)
@@ -349,7 +349,7 @@ func TestMustNewPass(t *testing.T) {
 	t.Parallel()
 	t.Run("happy_path", func(t *testing.T) {
 		now := fixedNow
-		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
+		pass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
 		assert.NotNil(t, pass)
 		assert.Equal(t, 1, pass.ID())
 		assert.Equal(t, 10, pass.NumOfSessions())
@@ -362,7 +362,7 @@ func TestMustNewPass(t *testing.T) {
 	t.Run("panics_on_invalid_input", func(t *testing.T) {
 		now := fixedNow
 		assert.Panics(t, func() {
-			domain.MustNewPass(1, 0, 0, 100, domain.PassGeneric, 1, now, now, nil)
+			domain.MustNewPass(1, 0, 0, 100, domain.PassGeneric, 1, now, now, nil, false)
 		})
 	})
 }

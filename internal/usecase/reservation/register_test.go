@@ -21,7 +21,7 @@ func validRegisterInput() RegisterReservationInput {
 // for at least one more booking. Anchored to fixedNow so the test
 // is deterministic regardless of the wall clock.
 func validFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour), nil)
 }
 
 // validDog returns a dog owned by the given user.
@@ -38,7 +38,7 @@ func validDog(id, userID int) *domain.Dog {
 func validPass(id, userID, remaining int) *domain.Pass {
 	now := fixedNow
 	const initialSessions = 10
-	pass := domain.MustNewPass(id, initialSessions, initialSessions, 1000, domain.PassGeneric, userID, now, now, nil)
+	pass := domain.MustNewPass(id, initialSessions, initialSessions, 1000, domain.PassGeneric, userID, now, now, nil, false)
 	for i := 0; i < initialSessions-remaining; i++ {
 		_, _ = pass.ConsumeSession("seed", now)
 	}
@@ -162,7 +162,7 @@ func TestRegisterReservationUseCase_ActivityNotFound(t *testing.T) {
 func TestRegisterReservationUseCase_ActivityInPast(t *testing.T) {
 	t.Parallel()
 	pastActivity := domain.MustNewActivity(10, "Paseo", "", "Central", domain.TypeRoute, 5, 1,
-		fixedNow.Add(-24*time.Hour))
+		fixedNow.Add(-24*time.Hour), nil)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return pastActivity, nil
@@ -376,7 +376,7 @@ func TestRegisterReservationUseCase_PassExpired(t *testing.T) {
 	}
 	now := fixedNow
 	expiry := now.Add(-24 * time.Hour)
-	pass := domain.MustNewPass(30, 5, 5, 1000, domain.PassGeneric, 1, now.Add(-48*time.Hour), now.Add(-48*time.Hour), &expiry)
+	pass := domain.MustNewPass(30, 5, 5, 1000, domain.PassGeneric, 1, now.Add(-48*time.Hour), now.Add(-48*time.Hour), &expiry, false)
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) {
 			return pass, nil

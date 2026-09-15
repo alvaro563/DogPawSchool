@@ -8,6 +8,7 @@ export interface Pass {
   created_at: string;
   updated_at: string;
   expires_at: string | null;
+  is_paid: boolean;
 }
 
 export interface PassListResponse {

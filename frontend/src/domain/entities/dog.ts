@@ -20,6 +20,7 @@ export interface Dog {
   educator_notes: string;
   passport: string;
   user_id: number;
+  owner_name: string;
   is_active: boolean;
   traits: IncompatibilityDTO[];
   incompatibilities: IncompatibilityDTO[];

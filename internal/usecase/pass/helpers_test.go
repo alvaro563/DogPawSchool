@@ -20,6 +20,7 @@ type mockPassRepository struct {
 	update      func(ctx context.Context, pass *domain.Pass) error
 	listAll     func(ctx context.Context, limit, offset int) ([]*domain.Pass, error)
 	listByOwner func(ctx context.Context, userID, limit, offset int) ([]*domain.Pass, error)
+	listByPaid  func(ctx context.Context, isPaid bool, limit, offset int) ([]*domain.Pass, error)
 	addMovement func(ctx context.Context, movement *domain.PassMovement) error
 }
 
@@ -61,6 +62,13 @@ func (m *mockPassRepository) ListAll(ctx context.Context, limit, offset int) ([]
 func (m *mockPassRepository) ListByOwner(ctx context.Context, userID, limit, offset int) ([]*domain.Pass, error) {
 	if m.listByOwner != nil {
 		return m.listByOwner(ctx, userID, limit, offset)
+	}
+	return nil, nil
+}
+
+func (m *mockPassRepository) ListByPaid(ctx context.Context, isPaid bool, limit, offset int) ([]*domain.Pass, error) {
+	if m.listByPaid != nil {
+		return m.listByPaid(ctx, isPaid, limit, offset)
 	}
 	return nil, nil
 }

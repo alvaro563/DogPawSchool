@@ -24,3 +24,7 @@ export async function updateUser(id: number, patch: { name?: string; email?: str
 export async function deactivateUser(id: number): Promise<{ id: number; is_active: boolean }> {
   return apiClient.post<{ id: number; is_active: boolean }>(`/users/${id}/deactivate`);
 }
+
+export async function activateUser(id: number): Promise<{ id: number; is_active: boolean }> {
+  return apiClient.post<{ id: number; is_active: boolean }>(`/users/${id}/activate`);
+}

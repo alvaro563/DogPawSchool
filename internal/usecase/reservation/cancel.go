@@ -155,7 +155,10 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 
 	// 3. Activity: needed for cancellation window + the "no cancel
 	// after the fact" guard.
-	activity, err := uc.activityRepo.GetByID(ctx, reservation.ActivityID())
+	// Admin viewer: use case already gates ownership via input.UserID()
+	// below; the SQL visibility filter is admin so every reachable
+	// activity is observable here.
+	activity, err := uc.activityRepo.GetByID(ctx, reservation.ActivityID(), 0, true)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrInvalidActivity

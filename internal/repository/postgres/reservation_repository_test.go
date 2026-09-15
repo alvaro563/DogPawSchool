@@ -48,18 +48,18 @@ func TestReservationRepository_ListByActivity(t *testing.T) {
 	dog := insertBaseDog(t, db, user.ID())
 	act1 := insertBaseActivity(t, db)
 	act2, err := domain.NewActivity(0, "Segunda Actividad", "", "Otro Lugar",
-		domain.TypeIndividual, 5, 2, time.Now().Add(21*24*time.Hour))
+		domain.TypeRoute, 5, 2, time.Now().Add(21*24*time.Hour), nil)
 	require.NoError(t, err)
 	actRepo := NewActivityRepository(db)
 	id2, err := actRepo.Create(context.Background(), act2)
 	require.NoError(t, err)
-	act2got, err := actRepo.GetByID(context.Background(), id2)
+	act2Got, err := actRepo.GetByID(context.Background(), id2, 0, true)
 	require.NoError(t, err)
 	pass := insertBasePass(t, db, user.ID())
 
 	repo := NewReservationRepository(db)
 	r1, _ := domain.NewReservation(0, act1.ID(), dog.ID(), pass.ID(), time.Now().UTC())
-	r2, _ := domain.NewReservation(0, act2got.ID(), dog.ID(), pass.ID(), time.Now().UTC())
+	r2, _ := domain.NewReservation(0, act2Got.ID(), dog.ID(), pass.ID(), time.Now().UTC())
 	_, _ = repo.Create(context.Background(), r1)
 	_, _ = repo.Create(context.Background(), r2)
 
@@ -116,7 +116,7 @@ func TestConcurrency_ActivityCapacity(t *testing.T) {
 
 	actRepo := NewActivityRepository(db)
 	activity, err := domain.NewActivity(0, "Concurrency Capacity Test", "", "Test Location",
-		domain.TypeRoute, 1, 1, now.Add(7*24*time.Hour))
+		domain.TypeRoute, 1, 1, now.Add(7*24*time.Hour), nil)
 	require.NoError(t, err)
 	actID, err := actRepo.Create(ctx, activity)
 	require.NoError(t, err)
@@ -135,7 +135,7 @@ func TestConcurrency_ActivityCapacity(t *testing.T) {
 		require.NoError(t, err)
 		dogIDs[i] = did
 
-		pass, err := domain.NewPass(0, 5, 5, 2500, domain.PassGeneric, user.ID(), now, now, nil)
+		pass, err := domain.NewPass(0, 5, 5, 2500, domain.PassGeneric, user.ID(), now, now, nil, false)
 		require.NoError(t, err)
 		pid, err := passRepo.Create(ctx, pass)
 		require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestConcurrency_ActivityCapacity(t *testing.T) {
 		go func(dogID, passID int) {
 			defer wg.Done()
 			err := transactor.WithinTx(ctx, func(txCtx context.Context) error {
-				act, err := actRepo.GetByIDForUpdate(txCtx, actID)
+				act, err := actRepo.GetByIDForUpdate(txCtx, actID, 0, true)
 				if err != nil {
 					return fmt.Errorf("get activity: %w", err)
 				}

@@ -54,3 +54,20 @@ var ErrReservationNotInActivity = errors.New("reservation belongs to a different
 // reservation in the no_show list is not in CONFIRMED status.
 // Maps to 409 reservation_not_confirmed.
 var ErrReservationNotConfirmed = errors.New("reservation is not in CONFIRMED status")
+
+// ErrPendingToConfirmExists is returned by BulkCompleteReservations
+// when the activity has at least one PENDING_TO_CONFIRM reservation.
+// The admin must resolve each pending via confirm/reject before bulk
+// completion can run, because the no-show / complete policy cannot
+// decide for them. Maps to 409 pending_to_confirm_exists.
+var ErrPendingToConfirmExists = errors.New("activity has pending_to_confirm reservations")
+
+// ErrInvalidDog is returned by RegisterActivity when the target
+// dog_id does not resolve to an existing row. Maps to 400 invalid_dog_id.
+var ErrInvalidDog = errors.New("invalid dog_id")
+
+// ErrInactiveDogForActivity is returned by RegisterActivity when
+// the target dog_id resolves but the dog is currently inactive
+// (archived / deactivated). Maps to 400 inactive_dog.
+var ErrInactiveDogForActivity = errors.New("dog is inactive")
+

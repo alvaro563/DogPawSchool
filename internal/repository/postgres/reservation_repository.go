@@ -522,6 +522,7 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 	activity, err := domain.ReconstituteActivity(
 		activityID, activityName, activityDescription, activityLocation,
 		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate, activityClosed,
+		nil, // dog_id — reservations don't carry dog_id at this level; the denormalised dog belongs to the reservation.
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct activity: %w", err)
@@ -539,7 +540,7 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 	}
 	pass, err := domain.NewPass(
 		passID, numOfSessions, remainingSessions, price, domain.PassType(passType),
-		passUserID, passCreatedAt, passUpdatedAt, passExpiresAtPtr,
+		passUserID, passCreatedAt, passUpdatedAt, passExpiresAtPtr, false,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct pass: %w", err)
@@ -615,6 +616,62 @@ func (repo *ReservationRepository) ListAllUpcomingView(ctx context.Context, limi
 		ORDER BY a.date ASC
 		LIMIT $2 OFFSET $3`
 	return queryReservationViews(ctx, runner(ctx, repo.db), query, string(domain.StatusConfirmed), limit, offset)
+}
+
+// ListAttendanceReport returns the flat read-model projection of every
+// COMPLETED reservation whose activity date is in [from, to]. Both
+// bounds are optional (pass nil to skip that side). The "to" bound is
+// INCLUSIVE on purpose so that a single-day export with from == to
+// returns that day's rows. Status is hard-coded to COMPLETED; this is
+// the only status that the admin attendance report cares about.
+//
+// Performance rationale: range scan on idx_activities_date (already
+// present in migration 000001_initial_schema.up.sql), then PK lookups
+// on reservations (joined on activity_id) and dogs (joined on dog_id).
+// No new index is required.
+func (repo *ReservationRepository) ListAttendanceReport(
+	ctx context.Context,
+	from, to *time.Time,
+	limit, offset int,
+) ([]*domain.AttendanceReportEntry, error) {
+	const q = `
+		SELECT r.id, a.id, a.name, a.date, d.id, d.name, d.passport
+		FROM reservations r
+		JOIN activities a ON a.id = r.activity_id
+		JOIN dogs      d ON d.id = r.dog_id
+		WHERE r.status = 'COMPLETED'
+		  AND ($1::timestamptz IS NULL OR a.date >= $1)
+		  AND ($2::timestamptz IS NULL OR a.date <= $2)
+		ORDER BY a.date DESC, a.name, d.name
+		LIMIT $3 OFFSET $4`
+
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, q,
+		nullableTime(from), nullableTime(to), limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query attendance report: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]*domain.AttendanceReportEntry, 0, limit)
+	for rows.Next() {
+		var e domain.AttendanceReportEntry
+		if err := rows.Scan(
+			&e.ReservationID,
+			&e.ActivityID,
+			&e.ActivityName,
+			&e.ActivityDate,
+			&e.DogID,
+			&e.DogName,
+			&e.DogPassport,
+		); err != nil {
+			return nil, fmt.Errorf("scan attendance report: %w", err)
+		}
+		out = append(out, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	return out, nil
 }
 
 var _ domain.ReservationRepository = (*ReservationRepository)(nil)

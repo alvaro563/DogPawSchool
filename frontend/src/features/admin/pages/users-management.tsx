@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserCheck, UserX } from 'lucide-react';
-import { fetchAllUsers, deactivateUser } from '@/infrastructure/repositories/user-repository.impl';
+import { fetchAllUsers, deactivateUser, activateUser } from '@/infrastructure/repositories/user-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { useToast } from '@/features/ui/hooks/toast-context';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,16 @@ export function UsersManagementPage() {
       const target = users.find((u) => u.id === id);
       const name = target?.name ?? `Usuario #${id}`;
       toast.success('Usuario desactivado', `${name} ya no puede iniciar sesión.`);
+    },
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: (id: number) => activateUser(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['all-users'] });
+      const target = users.find((u) => u.id === id);
+      const name = target?.name ?? `Usuario #${id}`;
+      toast.success('Usuario activado', `${name} ahora puede iniciar sesión.`);
     },
   });
 
@@ -75,6 +85,15 @@ export function UsersManagementPage() {
                         className="rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-50"
                       >
                         Desactivar
+                      </button>
+                    )}
+                    {!u.is_active && u.role !== 'ADMIN' && (
+                      <button
+                        onClick={() => { if (confirm(`¿Activar a ${u.name}?`)) activateMutation.mutate(u.id); }}
+                        disabled={activateMutation.isPending}
+                        className="rounded-md px-2 py-1 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/20 disabled:opacity-50"
+                      >
+                        Activar
                       </button>
                     )}
                   </td>

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -25,9 +26,21 @@ func (activityType ActivityType) IsValid() bool {
 	return false
 }
 
+// ErrDogRequiredForIndividual is returned by NewActivity when the
+// caller asks for an INDIVIDUAL_CLASS but does not provide a target
+// dog. Group classes (SOCIALIZATION_GROUP, ROUTE) and EXTRA leave
+// dogID nil.
+var ErrDogRequiredForIndividual = errors.New("individual class requires a target dog")
+
 // Activity is a scheduled school session: a class, a route, an
 // individual session, or an extra event. Dogs are booked into Activities
 // via Reservation.
+//
+// dogID is *int (nullable pointer) because only INDIVIDUAL_CLASS
+// activities are targeted at a specific dog; group activities keep
+// dogID == nil so that the visibility filter can show them to every
+// user (the LEFT JOIN on dogs yields user_id NULL for those rows and
+// the WHERE short-circuits on a.dog_id IS NULL).
 type Activity struct {
 	id              int
 	name            string
@@ -38,10 +51,15 @@ type Activity struct {
 	durationInHours int
 	date            time.Time
 	closed          bool
+	dogID           *int
 }
 
 // NewActivity creates an Activity with validated fields.
-func NewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time) (*Activity, error) {
+//
+// dogID is the target dog id, nil for group classes. Required when
+// activityType == TypeIndividual (enforced by the domain and
+// redundantly by a CHECK constraint at the DB layer).
+func NewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, dogID *int) (*Activity, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("activity: id must not be negative")
 	}
@@ -63,6 +81,9 @@ func NewActivity(id int, name, description, location string, activityType Activi
 	if date.IsZero() {
 		return nil, fmt.Errorf("activity: date must be a valid time")
 	}
+	if activityType == TypeIndividual && dogID == nil {
+		return nil, ErrDogRequiredForIndividual
+	}
 	return &Activity{
 		id:              id,
 		name:            name,
@@ -72,13 +93,14 @@ func NewActivity(id int, name, description, location string, activityType Activi
 		location:        location,
 		durationInHours: durationInHours,
 		date:            date,
+		dogID:           dogID,
 	}, nil
 }
 
 // MustNewActivity is like NewActivity but panics on error. Intended for
 // tests and seed data where the inputs are known to be valid.
-func MustNewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time) *Activity {
-	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date)
+func MustNewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, dogID *int) *Activity {
+	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date, dogID)
 	if err != nil {
 		panic(err)
 	}
@@ -94,24 +116,40 @@ func (activity *Activity) Location() string     { return activity.location }
 func (activity *Activity) DurationInHours() int { return activity.durationInHours }
 func (activity *Activity) Date() time.Time      { return activity.date }
 
+// DogID returns the target dog id, or nil when the activity is a
+// group / extra that does not target a specific dog.
+func (activity *Activity) DogID() *int { return activity.dogID }
+
 // IsFull reports whether the activity has reached its max capacity given
 // the current number of bookings.
 func (activity *Activity) IsFull(currentBookings int) bool {
+	if activity == nil {
+		return false
+	}
 	return currentBookings >= activity.maxCapacity
 }
 
 // IsInThePast reports whether the activity date is strictly before now.
 func (activity *Activity) IsInThePast(now time.Time) bool {
+	if activity == nil {
+		return false
+	}
 	return activity.date.Before(now)
 }
 
 // IsUpcoming reports whether the activity date is at or after now.
 func (activity *Activity) IsUpcoming(now time.Time) bool {
+	if activity == nil {
+		return false
+	}
 	return !activity.date.Before(now)
 }
 
 // IsFinished reports whether the activity has ended: date + duration < now.
 func (activity *Activity) IsFinished(now time.Time) bool {
+	if activity == nil {
+		return false
+	}
 	return activity.date.Add(time.Duration(activity.durationInHours) * time.Hour).Before(now)
 }
 
@@ -126,8 +164,12 @@ func (activity *Activity) IsFinished(now time.Time) bool {
 // Reservation (NewReservationWithStatus) and Invitation (NewInvitation
 // vs NewPendingInvitation) already separate creation from
 // reconstitution.
-func ReconstituteActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, closed bool) (*Activity, error) {
-	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date)
+//
+// dogID may be nil for group classes. INDIVIDUAL_CLASS rows restored
+// here MUST have a non-nil dogID; the row-level CHECK constraint at
+// the DB layer enforces this invariant even against future bug paths.
+func ReconstituteActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, closed bool, dogID *int) (*Activity, error) {
+	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date, dogID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,11 +178,19 @@ func ReconstituteActivity(id int, name, description, location string, activityTy
 }
 
 // IsClosed reports whether the activity has been closed by an admin.
-func (activity *Activity) IsClosed() bool { return activity.closed }
+func (activity *Activity) IsClosed() bool {
+	if activity == nil {
+		return false
+	}
+	return activity.closed
+}
 
 // Close transitions the activity to the closed state. Returns an error
 // if the activity is already closed.
 func (activity *Activity) Close() error {
+	if activity == nil {
+		return fmt.Errorf("activity: nil receiver")
+	}
 	if activity.closed {
 		return fmt.Errorf("activity: already closed")
 	}
@@ -149,19 +199,37 @@ func (activity *Activity) Close() error {
 }
 
 // IsIndividualClass reports whether this activity is a 1-on-1 session.
-func (activity *Activity) IsIndividualClass() bool { return activity.activityType == TypeIndividual }
+func (activity *Activity) IsIndividualClass() bool {
+	if activity == nil {
+		return false
+	}
+	return activity.activityType == TypeIndividual
+}
 
 // IsSocializationGroup reports whether this activity is a group
 // socialization class.
 func (activity *Activity) IsSocializationGroup() bool {
+	if activity == nil {
+		return false
+	}
 	return activity.activityType == TypeSocialization
 }
 
 // IsRoute reports whether this activity is a walking route.
-func (activity *Activity) IsRoute() bool { return activity.activityType == TypeRoute }
+func (activity *Activity) IsRoute() bool {
+	if activity == nil {
+		return false
+	}
+	return activity.activityType == TypeRoute
+}
 
 // IsExtra reports whether this activity is an ad-hoc extra event.
-func (activity *Activity) IsExtra() bool { return activity.activityType == TypeExtra }
+func (activity *Activity) IsExtra() bool {
+	if activity == nil {
+		return false
+	}
+	return activity.activityType == TypeExtra
+}
 
 // ActivityPatch is a partial update: only the non-nil fields are
 // mutated. See ApplyPatch for per-field validation.
@@ -232,13 +300,29 @@ func (activity *Activity) ApplyPatch(patch ActivityPatch) error {
 
 // ActivityRepository is the persistence contract for Activity.
 // Implemented by internal/repository/postgres.
+//
+// Every read method takes a viewerID + isAdmin pair so the SQL can
+// apply the visibility filter at the database level. Admin viewers
+// skip the filter and see every row; non-admin viewers only see
+// group activities (dog_id IS NULL) and individual activities for
+// dogs they own (LEFT JOIN to dogs.user_id). See individual methods
+// for the exact semantic.
 type ActivityRepository interface {
 	Create(ctx context.Context, activity *Activity) (int, error)
-	GetByID(ctx context.Context, id int) (*Activity, error)
-	GetByIDForUpdate(ctx context.Context, id int) (*Activity, error)
+	GetByID(ctx context.Context, id int, viewerUserID int, viewerIsAdmin bool) (*Activity, error)
+	GetByIDForUpdate(ctx context.Context, id int, viewerUserID int, viewerIsAdmin bool) (*Activity, error)
 	Update(ctx context.Context, activity *Activity) error
 	Delete(ctx context.Context, id int) error
-	List(ctx context.Context, limit, offset int) ([]*Activity, error)
-	ListByDateRange(ctx context.Context, from, to time.Time, limit, offset int) ([]*Activity, error)
-	ListUpcoming(ctx context.Context, limit, offset int) ([]*Activity, error)
+	List(ctx context.Context, viewerUserID int, viewerIsAdmin bool, limit, offset int) ([]*Activity, error)
+	ListByDateRange(ctx context.Context, viewerUserID int, viewerIsAdmin bool, from, to time.Time, limit, offset int) ([]*Activity, error)
+	// ListByClosed returns activities whose closed flag equals
+	// `closed`, optionally scoped to a date range. from/to are
+	// POINTERS so the caller can pass nil for "no bound on that
+	// side"; the repo MUST translate nil to SQL NULL via
+	// `nullableTime` so the `$N::timestamptz IS NULL` predicate
+	// short-circuits the comparison (avoids filtering by the
+	// zero-value `time.Time` which serialises as
+	// `0001-01-01 00:00:00 UTC` and would match nothing).
+	ListByClosed(ctx context.Context, viewerUserID int, viewerIsAdmin bool, closed bool, from, to *time.Time, limit, offset int) ([]*Activity, error)
+	ListUpcoming(ctx context.Context, viewerUserID int, viewerIsAdmin bool, limit, offset int) ([]*Activity, error)
 }

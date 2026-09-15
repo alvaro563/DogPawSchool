@@ -262,7 +262,7 @@ func TestAdminRegister_PassExpired(t *testing.T) {
 	dog := validDog(20, 99)
 	now := fixedNow
 	expiry := now.Add(-24 * time.Hour)
-	pass := domain.MustNewPass(30, 5, 5, 1000, domain.PassGeneric, 99, now.Add(-48*time.Hour), now.Add(-48*time.Hour), &expiry)
+	pass := domain.MustNewPass(30, 5, 5, 1000, domain.PassGeneric, 99, now.Add(-48*time.Hour), now.Add(-48*time.Hour), &expiry, false)
 
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
@@ -449,7 +449,7 @@ func TestAdminRegister_ActivityNotFound(t *testing.T) {
 
 func TestAdminRegister_ActivityInPast(t *testing.T) {
 	t.Parallel()
-	past := domain.MustNewActivity(10, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour))
+	past := domain.MustNewActivity(10, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour), nil)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) { return past, nil },
 	}
@@ -648,7 +648,7 @@ func TestAdminRegister_PendingReservationAlsoHoldsSlot(t *testing.T) {
 	// capacity check on the admin path too (admin only bypasses
 	// ownership and compatibility, not capacity). One pending dog +
 	// one extra slot → admin book 2nd dog succeeds.
-	activity := domain.MustNewActivity(10, "Paseo", "", "Central", domain.TypeRoute, 2, 1, fixedNow.Add(7*24*time.Hour))
+	activity := domain.MustNewActivity(10, "Paseo", "", "Central", domain.TypeRoute, 2, 1, fixedNow.Add(7*24*time.Hour), nil)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
 	}

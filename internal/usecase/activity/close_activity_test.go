@@ -16,13 +16,13 @@ import (
 // closeFinishedActivity returns an activity that started at
 // fixedNow - 25h with duration 1h, so it ended at fixedNow - 24h.
 func closeFinishedActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour), nil)
 }
 
 // closeFinishedClosedActivity is closeFinishedActivity in the state a
 // repository would hand back for an already-closed row.
 func closeFinishedClosedActivity(id int) *domain.Activity {
-	activity, err := domain.ReconstituteActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour), true)
+	activity, err := domain.ReconstituteActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-25*time.Hour), true, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -32,7 +32,7 @@ func closeFinishedClosedActivity(id int) *domain.Activity {
 // closeOngoingActivity returns an activity that started at
 // fixedNow - 30min with duration 2h, so it ends at fixedNow + 1.5h.
 func closeOngoingActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 2, fixedNow.Add(-30*time.Minute))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 2, fixedNow.Add(-30*time.Minute), nil)
 }
 
 // stubTransactorActivity is a no-op transactor for activity tests.
@@ -192,6 +192,10 @@ func (s *stubResRepoForClose) ListPendingView(_ context.Context, _, _ int) ([]*d
 	return nil, nil
 }
 
+func (s *stubResRepoForClose) ListAttendanceReport(_ context.Context, _, _ *time.Time, _, _ int) ([]*domain.AttendanceReportEntry, error) {
+	return nil, nil
+}
+
 // fixedNow is a deterministic clock used by all close tests.
 var fixedNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
@@ -239,7 +243,7 @@ func TestCloseActivityUseCase_Success_AllComplete(t *testing.T) {
 	dog2 := closeValidDog(21, 1)
 
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, id int) (*domain.Activity, error) {
+		getByID: func(_ context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			assert.Equal(t, 10, id)
 			return activity, nil
 		},
@@ -280,7 +284,7 @@ func TestCloseActivityUseCase_Success_AllNoShow(t *testing.T) {
 	dog1 := closeValidDog(20, 1)
 
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return activity, nil },
 		update:  func(_ context.Context, _ *domain.Activity) error { return nil },
 	}
 	resRepo := &stubResRepoForClose{
@@ -314,7 +318,7 @@ func TestCloseActivityUseCase_Success_Mixed(t *testing.T) {
 
 	var noShowCalled, completeCalled bool
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return activity, nil },
 		update:  func(_ context.Context, _ *domain.Activity) error { return nil },
 	}
 	resRepo := &stubResRepoForClose{
@@ -359,7 +363,7 @@ func TestCloseActivityUseCase_Success_Mixed(t *testing.T) {
 func TestCloseActivityUseCase_ActivityNotFound(t *testing.T) {
 	t.Parallel()
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return nil, nil },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return nil, nil },
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, nil,
@@ -372,7 +376,7 @@ func TestCloseActivityUseCase_ActivityNotFound(t *testing.T) {
 func TestCloseActivityUseCase_ActivityNotFinished(t *testing.T) {
 	t.Parallel()
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) {
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) {
 			return closeOngoingActivity(10), nil
 		},
 	}
@@ -389,7 +393,7 @@ func TestCloseActivityUseCase_AlreadyClosed(t *testing.T) {
 	activity := closeFinishedClosedActivity(10)
 
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return activity, nil },
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, nil,
@@ -405,7 +409,7 @@ func TestCloseActivityUseCase_NoShowID_NotFound(t *testing.T) {
 	res1 := confirmedRes(1, 10, 20, 30)
 
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return activity, nil },
 	}
 	resRepo := &stubResRepoForClose{
 		listByActivity: func(_ context.Context, _ int) ([]*domain.Reservation, error) {
@@ -426,7 +430,7 @@ func TestCloseActivityUseCase_NoShowID_WrongActivity(t *testing.T) {
 	activity := closeFinishedActivity(10)
 	// No reservations at all for this activity.
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return activity, nil },
 	}
 	resRepo := &stubResRepoForClose{
 		listByActivity: func(_ context.Context, _ int) ([]*domain.Reservation, error) {
@@ -447,7 +451,7 @@ func TestCloseActivityUseCase_RepoError_Wrapped(t *testing.T) {
 	t.Parallel()
 	repoErr := errors.New("db connection lost")
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return nil, repoErr },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return nil, repoErr },
 	}
 	uc := NewCloseActivityUseCase(
 		&stubTransactorActivity{}, activityRepo, nil, nil,
@@ -464,7 +468,7 @@ func TestCloseActivityUseCase_EmptyConfirmedList(t *testing.T) {
 	activity := closeFinishedActivity(10)
 
 	activityRepo := &mockActivityRepository{
-		getByID: func(_ context.Context, _ int) (*domain.Activity, error) { return activity, nil },
+		getByID: func(_ context.Context, _ int, _ int, _ bool) (*domain.Activity, error) { return activity, nil },
 		update:  func(_ context.Context, _ *domain.Activity) error { return nil },
 	}
 	resRepo := &stubResRepoForClose{

@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback, type FormEvent } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import apiClient from '@/infrastructure/api/http-client';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useToast } from '@/features/ui/hooks/toast-context';
+import { fetchAllActiveDogs } from '@/infrastructure/repositories/dog-repository.impl';
 
 function parseError(err: unknown, fallback: string): string {
   const apiErr = err as { body?: { error?: string; field?: string; details?: string } };
@@ -15,6 +16,23 @@ function parseError(err: unknown, fallback: string): string {
   }
   if (b?.details) return b.details;
   return fallback;
+}
+
+function todayLocalDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function openDatePicker(e: React.MouseEvent<HTMLInputElement>) {
+  const el = e.currentTarget;
+  if (typeof el.showPicker === 'function') {
+    try {
+      el.showPicker();
+    } catch {
+      // showPicker can throw if the input is disabled or already open;
+      // fall back to the native focus+click behaviour.
+    }
+  }
 }
 
 const ACTIVITY_TYPES = [
@@ -107,9 +125,35 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
   const [activityType, setActivityType] = useState('SOCIALIZATION_GROUP');
   const [maxCapacity, setMaxCapacity] = useState(8);
   const [durationInHours, setDurationInHours] = useState(2);
-  const [datePart, setDatePart] = useState('');
+  const [datePart, setDatePart] = useState(() => todayLocalDate());
   const [timePart, setTimePart] = useState('10:00');
+  const [dogId, setDogId] = useState<number | null>(null);
   const [error, setError] = useState('');
+
+  // Fetch active dogs only when the modal is open AND the admin picked
+  // INDIVIDUAL_CLASS (other types don't need a target dog).
+  const { data: dogs = [], isLoading: dogsLoading } = useQuery({
+    queryKey: ['dogs', 'active'],
+    queryFn: fetchAllActiveDogs,
+    enabled: open && activityType === 'INDIVIDUAL_CLASS',
+  });
+
+  // Reset the target dog when the type switches away from individual so
+  // we never send a stale dog_id on the next submit.
+  useEffect(() => {
+    if (activityType !== 'INDIVIDUAL_CLASS') setDogId(null);
+  }, [activityType]);
+
+  // Individual classes always target one dog, so capacity is forced to 1.
+  // When the type switches back to a group/route/extra, restore the
+  // default of 8 so the field is usable again.
+  useEffect(() => {
+    if (activityType === 'INDIVIDUAL_CLASS') {
+      setMaxCapacity(1);
+    } else {
+      setMaxCapacity(8);
+    }
+  }, [activityType]);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -121,14 +165,16 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
         max_capacity: maxCapacity,
         duration_in_hours: durationInHours,
         date: new Date(`${datePart}T${timePart}:00`).toISOString(),
+        dog_id: activityType === 'INDIVIDUAL_CLASS' ? dogId : null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'], refetchType: 'all' });
       setName('');
       setDescription('');
       setLocation('');
-      setDatePart('');
+      setDatePart(todayLocalDate());
       setTimePart('10:00');
+      setDogId(null);
       setError('');
 
       const activityDate = new Date(`${datePart}T${timePart}:00`);
@@ -153,6 +199,10 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
     e.preventDefault();
     if (!name || !location || !datePart || !timePart) {
       setError('Completa todos los campos obligatorios');
+      return;
+    }
+    if (activityType === 'INDIVIDUAL_CLASS' && dogId === null) {
+      setError('Selecciona el perro para la clase individual.');
       return;
     }
     setError('');
@@ -184,10 +234,34 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
               {ACTIVITY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
+          {activityType === 'INDIVIDUAL_CLASS' && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Perro</label>
+              <select
+                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm"
+                value={dogId ?? ''}
+                onChange={(e) => setDogId(e.target.value ? +e.target.value : null)}
+                disabled={dogsLoading}
+                required
+              >
+                <option value="">
+                  {dogsLoading ? 'Cargando perros…' : 'Seleccionar perro…'}
+                </option>
+                {!dogsLoading && dogs.length === 0 && (
+                  <option value="" disabled>No hay perros activos</option>
+                )}
+                {dogs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} — {d.owner_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="w-1/2 space-y-1.5">
               <label className="text-xs font-medium">Plazas</label>
-              <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="number" value={maxCapacity} min={1} onChange={(e) => setMaxCapacity(+e.target.value)} />
+              <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm disabled:opacity-60" type="number" value={maxCapacity} min={1} disabled={activityType === 'INDIVIDUAL_CLASS'} onChange={(e) => setMaxCapacity(+e.target.value)} />
             </div>
             <div className="w-1/2 space-y-1.5">
               <label className="text-xs font-medium">Duración (horas)</label>
@@ -197,7 +271,7 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
           <div className="flex gap-2">
             <div className="w-1/2 space-y-1.5">
               <label className="text-xs font-medium">Fecha</label>
-              <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="date" value={datePart} onChange={(e) => setDatePart(e.target.value)} required />
+              <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="date" value={datePart} min={todayLocalDate()} onClick={openDatePicker} onChange={(e) => setDatePart(e.target.value)} required />
             </div>
             <div className="w-1/2 space-y-1.5">
               <label className="text-xs font-medium">Hora</label>

@@ -330,7 +330,7 @@ func TestDogGetByID_Success(t *testing.T) {
 	dog := newTestDog(7)
 	stub := &stubDogGetter{fn: func(_ context.Context, in doguc.GetDogInput) (doguc.GetDogOutput, error) {
 		assert.Equal(t, 7, in.ID())
-		return doguc.GetDogOutput{Dog: dog}, nil
+		return doguc.GetDogOutput{Dog: dog, OwnerName: "Ana"}, nil
 	}}
 	h := newTestHandlerGet(stub)
 	c, w := setupAuthCtx(http.MethodGet, "/api/v1/dogs/7", "", withUserID(1))
@@ -343,6 +343,7 @@ func TestDogGetByID_Success(t *testing.T) {
 	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	assert.Equal(t, 7, body.ID)
 	assert.Equal(t, "Luna", body.Name)
+	assert.Equal(t, "Ana", body.OwnerName)
 }
 
 func TestDogGetByID_InvalidID(t *testing.T) {

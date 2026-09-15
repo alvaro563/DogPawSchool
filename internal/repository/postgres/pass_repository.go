@@ -23,10 +23,10 @@ var (
 	ErrPassNotFound = domain.ErrNotFound
 )
 
-// passSelectClause is the 9-column projection reused by every read
+// passSelectClause is the 10-column projection reused by every read
 // method. Keep the column order in lockstep with scanPass.
 const passSelectClause = `SELECT id, num_of_sessions, remaining_sessions, price,
-	       pass_type, created_at, updated_at, expires_at, user_id
+	       pass_type, created_at, updated_at, expires_at, user_id, is_paid
 	FROM passes`
 
 type PassRepository struct {
@@ -42,17 +42,19 @@ func NewPassRepository(db *sql.DB) *PassRepository {
 // ErrInvalidPassUser so the handler can respond with 400. The
 // remaining_sessions column is persisted from the aggregate state
 // (pass.RemainingSessions()); the domain constructor guarantees the
-// CHECK constraint `passes_remaining_le_total` holds.
+// CHECK constraint `passes_remaining_le_total` holds. New passes
+// start with is_paid=false; the admin marks them paid through the
+// dedicated PATCH /passes/:id/paid endpoint after the user pays.
 func (repo *PassRepository) Create(ctx context.Context, pass *domain.Pass) (int, error) {
 	const query = `
-		INSERT INTO passes (num_of_sessions, remaining_sessions, price, pass_type, user_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO passes (num_of_sessions, remaining_sessions, price, pass_type, user_id, expires_at, is_paid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
 	`
 	var newPassID int64
 	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
 		pass.NumOfSessions(), pass.RemainingSessions(), pass.Price(), string(pass.Type()),
-		pass.UserID(), nullTimePtr(pass.ExpiresAt()),
+		pass.UserID(), nullTimePtr(pass.ExpiresAt()), pass.IsPaid(),
 	).Scan(&newPassID)
 	if err != nil {
 		return 0, mapPassCreateError(err)
@@ -109,12 +111,13 @@ func (repo *PassRepository) Update(ctx context.Context, pass *domain.Pass) error
 		const query = `
 			UPDATE passes
 			SET num_of_sessions = $1, remaining_sessions = $2, price = $3,
-			    pass_type = $4, expires_at = $5
-			WHERE id = $6
+			    pass_type = $4, expires_at = $5, is_paid = $6
+			WHERE id = $7
 		`
 		queryResult, err := runner(txCtx, repo.db).ExecContext(txCtx, query,
 			pass.NumOfSessions(), pass.RemainingSessions(), pass.Price(),
-			string(pass.Type()), nullTimePtr(pass.ExpiresAt()), pass.ID(),
+			string(pass.Type()), nullTimePtr(pass.ExpiresAt()), pass.IsPaid(),
+			pass.ID(),
 		)
 		if err != nil {
 			return fmt.Errorf("update pass: %w", err)
@@ -154,6 +157,17 @@ func (repo *PassRepository) ListByOwner(ctx context.Context, userID, limit, offs
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3`
 	return repo.queryPasses(ctx, query, userID, limit, offset)
+}
+
+// ListByPaid returns a paginated list of passes filtered by their
+// is_paid flag, most recent first. Backs the admin payment-status
+// filter tabs on the Bonos management page.
+func (repo *PassRepository) ListByPaid(ctx context.Context, isPaid bool, limit, offset int) ([]*domain.Pass, error) {
+	query := passSelectClause + `
+		WHERE is_paid = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
+	return repo.queryPasses(ctx, query, isPaid, limit, offset)
 }
 
 // queryPasses is the shared row-iteration loop for ListAll and
@@ -228,10 +242,11 @@ func scanPass(row passScanner) (*domain.Pass, error) {
 		updatedAt        time.Time
 		expiresAt        sql.NullTime
 		userID           int
+		isPaid           bool
 	)
 	if err := row.Scan(
 		&passID, &numOfSessions, &remainingSession, &price,
-		&passType, &createdAt, &updatedAt, &expiresAt, &userID,
+		&passType, &createdAt, &updatedAt, &expiresAt, &userID, &isPaid,
 	); err != nil {
 		return nil, err
 	}
@@ -241,7 +256,7 @@ func scanPass(row passScanner) (*domain.Pass, error) {
 	}
 	return domain.NewPass(
 		passID, numOfSessions, remainingSession, price, domain.PassType(passType),
-		userID, createdAt, updatedAt, expiresAtPtr,
+		userID, createdAt, updatedAt, expiresAtPtr, isPaid,
 	)
 }
 

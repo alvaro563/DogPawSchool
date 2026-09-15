@@ -36,18 +36,23 @@ type ActivityCloser interface {
 	Execute(ctx context.Context, input activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error)
 }
 
+type ActivityBulkCompleter interface {
+	Execute(ctx context.Context, input activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error)
+}
+
 type ActivitySlotCounter interface {
 	CountHeldSlotsBatch(ctx context.Context, activityIDs []int) (map[int]int, error)
 }
 
 type ActivityHandler struct {
-	register    ActivityRegisterer
-	get         ActivityGetter
-	modify      ActivityModifier
-	list        ActivityLister
-	upcoming    ActivityUpcomingLister
-	close       ActivityCloser
-	slotCounter ActivitySlotCounter
+	register     ActivityRegisterer
+	get          ActivityGetter
+	modify       ActivityModifier
+	list         ActivityLister
+	upcoming     ActivityUpcomingLister
+	close        ActivityCloser
+	bulkComplete ActivityBulkCompleter
+	slotCounter  ActivitySlotCounter
 }
 
 func NewActivityHandler(
@@ -57,16 +62,18 @@ func NewActivityHandler(
 	list ActivityLister,
 	upcoming ActivityUpcomingLister,
 	close ActivityCloser,
+	bulkComplete ActivityBulkCompleter,
 	slotCounter ActivitySlotCounter,
 ) *ActivityHandler {
 	return &ActivityHandler{
-		register:    register,
-		get:         get,
-		modify:      modify,
-		list:        list,
-		upcoming:    upcoming,
-		close:       close,
-		slotCounter: slotCounter,
+		register:     register,
+		get:          get,
+		modify:       modify,
+		list:         list,
+		upcoming:     upcoming,
+		close:        close,
+		bulkComplete: bulkComplete,
+		slotCounter:  slotCounter,
 	}
 }
 
@@ -95,6 +102,7 @@ func (h *ActivityHandler) Register(c *gin.Context) {
 		request.Name, request.Description, request.Location,
 		domain.ActivityType(request.ActivityType),
 		request.MaxCapacity, request.DurationInHours, request.Date,
+		request.DogID,
 	)
 	if err != nil {
 		writeError(c, err)
@@ -110,16 +118,17 @@ func (h *ActivityHandler) Register(c *gin.Context) {
 }
 
 // List godoc
-// @Summary      List all activities
-// @Description  Returns a paginated list of all activities in the system, most recent first. Optionally filter by date range with from and to query params (RFC3339). Limit defaults to 50 and is capped at 100. Offset defaults to 0.
+// @Summary      List activities (with filters)
+// @Description  Returns a paginated list of activities in the system. Optionally filter by date range (from/to, RFC3339, inclusive on both ends) and by closed state (?closed=true|false). Most recent first. Limit defaults to 50 and is capped at 100. Offset defaults to 0.
 // @Tags         activities
 // @Produce      json
 // @Param        limit   query  int    false  "Maximum number of activities to return (default 50, max 100)"
 // @Param        offset  query  int    false  "Number of activities to skip for pagination (default 0)"
-// @Param        from    query  string false  "Filter activities from this date (RFC3339)"
-// @Param        to      query  string false  "Filter activities before this date (RFC3339)"
+// @Param        from    query  string false  "Filter activities from this date (RFC3339, inclusive)"
+// @Param        to      query  string false  "Filter activities up to this date (RFC3339, inclusive)"
+// @Param        closed  query  bool   false  "true = only closed activities, false = only open activities. Omit for both."
 // @Success      200  {object}  listActivitiesResponse  "List of activities"
-// @Failure      400  {object}  errorResponse           "Invalid date range"
+// @Failure      400  {object}  errorResponse           "Invalid date range or closed value"
 // @Failure      500  {object}  errorResponse           "Internal server error"
 // @Security     BearerAuth
 // @Router       /api/v1/activities [get]
@@ -127,24 +136,49 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	var from, to time.Time
+	// from/to are pointers so the repo's nullableTime helper can
+	// convert nil into SQL NULL and the `$N::timestamptz IS NULL`
+	// predicate short-circuits the comparison. A zero time.Time
+	// would serialise to `0001-01-01 00:00:00 UTC` and silently
+	// exclude every row.
+	var from, to *time.Time
 	fromStr := c.Query("from")
 	toStr := c.Query("to")
-	if fromStr != "" || toStr != "" {
-		var err error
-		from, err = time.Parse(time.RFC3339, fromStr)
+	if fromStr != "" {
+		t, err := time.Parse(time.RFC3339, fromStr)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "from", Details: "invalid RFC3339 date"})
 			return
 		}
-		to, err = time.Parse(time.RFC3339, toStr)
+		from = &t
+	}
+	if toStr != "" {
+		t, err := time.Parse(time.RFC3339, toStr)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "to", Details: "invalid RFC3339 date"})
 			return
 		}
+		to = &t
 	}
 
-	in, err := activityuc.NewListAllActivitiesInput(limit, offset, from, to)
+	// closed: nil = both, *true = closed only, *false = open only.
+	var closedFilter *bool
+	if raw := c.Query("closed"); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "closed", Details: "must be true or false"})
+			return
+		}
+		closedFilter = &v
+	}
+
+	// Read the viewer's session so the SQL can apply the visibility
+	// filter at the database level (group + own individual for
+	// non-admin, everything for admin).
+	userID := CurrentUserID(c)
+	isAdmin := IsAdmin(c)
+
+	in, err := activityuc.NewListAllActivitiesInput(limit, offset, from, to, closedFilter, userID, isAdmin)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -178,7 +212,9 @@ func (h *ActivityHandler) List(c *gin.Context) {
 func (h *ActivityHandler) ListUpcoming(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	in, _ := activityuc.NewListUpcomingActivitiesInput(limit, offset)
+	userID := CurrentUserID(c)
+	isAdmin := IsAdmin(c)
+	in, _ := activityuc.NewListUpcomingActivitiesInput(limit, offset, userID, isAdmin)
 	output, err := h.upcoming.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
@@ -212,7 +248,9 @@ func (h *ActivityHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
 		return
 	}
-	in, err := activityuc.NewGetActivityInput(id)
+	userID := CurrentUserID(c)
+	isAdmin := IsAdmin(c)
+	in, err := activityuc.NewGetActivityInput(id, userID, isAdmin)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -293,6 +331,10 @@ type registerActivityRequest struct {
 	MaxCapacity     int       `json:"max_capacity" example:"8"`
 	DurationInHours int       `json:"duration_in_hours" example:"2"`
 	Date            time.Time `json:"date" example:"2026-08-01T10:00:00Z"`
+	// DogID is the target dog for INDIVIDUAL_CLASS; required when
+	// activity_type="INDIVIDUAL_CLASS", NULL for group classes and
+	// extra events. Omitted / null in the JSON for non-individual.
+	DogID *int `json:"dog_id,omitempty" example:"7"`
 }
 
 type registerActivityResponse struct {
@@ -372,6 +414,55 @@ func (h *ActivityHandler) Close(c *gin.Context) {
 	})
 }
 
+type bulkCompleteReservationsResponse struct {
+	ID        int  `json:"id"        example:"42"`
+	Completed int  `json:"completed" example:"5"`
+	Closed    bool `json:"closed"    example:"true"`
+}
+
+// BulkCompleteReservations godoc
+// @Summary      Complete activity and mark all reservations COMPLETED
+// @Description  Bulk-completes every CONFIRMED reservation of the
+// @Description  activity AND closes the activity in a single
+// @Description  transaction. The activity must have finished
+// @Description  (date + duration < now). Rejects with 409 if any
+// @Description  PENDING_TO_CONFIRM reservation is present (admin
+// @Description  must confirm/reject individually first). Idempotent
+// @Description  on already-closed activities (returns Closed=true,
+// @Description  Completed=0).
+// @Tags         activities
+// @Produce      json
+// @Param        id   path int true "Activity ID"
+// @Success      200 {object} bulkCompleteReservationsResponse
+// @Failure      400 {object} errorResponse
+// @Failure      404 {object} errorResponse
+// @Failure      409 {object} errorResponse
+// @Failure      500 {object} errorResponse
+// @Security     BearerAuth
+// @Router       /api/v1/activities/{id}/complete-all [post]
+func (h *ActivityHandler) BulkCompleteReservations(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
+		return
+	}
+	in, err := activityuc.NewBulkCompleteReservationsInput(id, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	out, err := h.bulkComplete.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, bulkCompleteReservationsResponse{
+		ID:        out.ActivityID,
+		Completed: out.CompletedCount,
+		Closed:    out.Closed,
+	})
+}
+
 type activityResponse struct {
 	ID              int       `json:"id" example:"42"`
 	Name            string    `json:"name" example:"Paseo Río"`
@@ -383,6 +474,9 @@ type activityResponse struct {
 	DurationInHours int       `json:"duration_in_hours" example:"2"`
 	Date            time.Time `json:"date" example:"2026-08-01T10:00:00Z"`
 	Closed          bool      `json:"closed" example:"false"`
+	// DogID is the target dog for INDIVIDUAL_CLASS; omitted from the
+	// response when the activity is group / extra (NULL in the DB).
+	DogID *int `json:"dog_id,omitempty" example:"7"`
 }
 
 // activityDTO is the wire format of an activity. It mirrors activityResponse
@@ -424,6 +518,7 @@ func toActivityDTO(activity *domain.Activity, heldSlots int) activityDTO {
 		DurationInHours: activity.DurationInHours(),
 		Date:            activity.Date(),
 		Closed:          activity.IsClosed(),
+		DogID:           activity.DogID(),
 	}
 }
 

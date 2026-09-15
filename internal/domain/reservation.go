@@ -277,4 +277,17 @@ type ReservationRepository interface {
 	// time, ordered by activity date ASC. Paginated via limit and
 	// offset. Intended for the admin global upcoming view.
 	ListAllUpcomingView(ctx context.Context, limit, offset int) ([]*ReservationView, error)
+
+	// ListAttendanceReport returns the flat read-model projection
+	// for every COMPLETED reservation whose activity date falls in
+	// [from, to] (both bounds optional; pass nil to skip that side;
+	// "to" is inclusive on purpose so that the day's last activity
+	// is included). limit / offset are normalized by the caller.
+	// Ordered by activity date DESC then activity name, dog name.
+	// Intended for the admin attendance report (JSON + CSV).
+	ListAttendanceReport(
+		ctx context.Context,
+		from, to *time.Time,
+		limit, offset int,
+	) ([]*AttendanceReportEntry, error)
 }

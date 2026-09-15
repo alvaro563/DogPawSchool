@@ -253,7 +253,7 @@ func (h *DogHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toDogDTO(output.Dog))
+	c.JSON(http.StatusOK, toDogDTO(output.Dog, output.OwnerName))
 }
 
 // List godoc
@@ -1012,7 +1012,7 @@ type pagination interface {
 func toListDogsResponse(dogs []*domain.Dog, in pagination) listDogsResponse {
 	dtos := make([]dogDTO, len(dogs))
 	for i, dog := range dogs {
-		dtos[i] = toDogDTO(dog)
+		dtos[i] = toDogDTO(dog, "")
 	}
 	return listDogsResponse{
 		Dogs:   dtos,
@@ -1129,6 +1129,10 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: mapActivityCloseError(err)})
 		return
 	}
+	if errors.Is(err, activityuc.ErrPendingToConfirmExists) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "pending_to_confirm_exists"})
+		return
+	}
 	if errors.Is(err, activityuc.ErrReservationNotFound) || errors.Is(err, activityuc.ErrReservationNotInActivity) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_reservation_id"})
 		return
@@ -1151,6 +1155,18 @@ func writeError(c *gin.Context, err error) {
 	}
 	if errors.Is(err, domain.ErrIncompatibilityInUse) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "incompatibility_in_use"})
+		return
+	}
+	if errors.Is(err, activityuc.ErrInvalidDog) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_dog_id"})
+		return
+	}
+	if errors.Is(err, activityuc.ErrInactiveDogForActivity) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "inactive_dog"})
+		return
+	}
+	if errors.Is(err, domain.ErrDogRequiredForIndividual) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "dog_required", Field: "dog_id"})
 		return
 	}
 	if errors.Is(err, authuc.ErrInvalidCredentials) || errors.Is(err, authuc.ErrUserInactive) {
@@ -1246,6 +1262,7 @@ type dogDTO struct {
 	EducatorNotes     string               `json:"educator_notes" example:""`
 	Passport          string               `json:"passport" example:"ES-12345"`
 	UserID            int                  `json:"user_id" example:"1"`
+	OwnerName         string               `json:"owner_name" example:"Ana"`
 	IsActive          bool                 `json:"is_active" example:"true"`
 	Traits            []incompatibilityDTO `json:"traits"`
 	Incompatibilities []incompatibilityDTO `json:"incompatibilities"`
@@ -1314,7 +1331,7 @@ type errorResponse struct {
 // toDogDTO converts a domain.Dog into the HTTP wire-format dogDTO. The
 // traits and incompatibilities slices are always emitted (never null) so
 // clients can iterate unconditionally.
-func toDogDTO(dog *domain.Dog) dogDTO {
+func toDogDTO(dog *domain.Dog, ownerName string) dogDTO {
 	dto := dogDTO{
 		ID:            dog.ID(),
 		Name:          dog.Name(),
@@ -1329,6 +1346,7 @@ func toDogDTO(dog *domain.Dog) dogDTO {
 		EducatorNotes: dog.EducatorNotes(),
 		Passport:      dog.Passport(),
 		UserID:        dog.UserID(),
+		OwnerName:     ownerName,
 		IsActive:      dog.IsActive(),
 	}
 	traits := dog.Traits()

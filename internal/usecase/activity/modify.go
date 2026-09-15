@@ -53,7 +53,7 @@ func NewModifyActivityUseCase(repo domain.ActivityRepository) *ModifyActivityUse
 }
 
 func (uc *ModifyActivityUseCase) Execute(ctx context.Context, input ModifyActivityInput) (ModifyActivityOutput, error) {
-	activity, err := uc.repo.GetByID(ctx, input.ID())
+	activity, err := uc.repo.GetByID(ctx, input.ID(), 0, true)
 	if err != nil {
 		return ModifyActivityOutput{}, fmt.Errorf("get activity %d: %w", input.ID(), err)
 	}

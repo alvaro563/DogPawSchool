@@ -29,20 +29,20 @@ func validConfirmedReservation(id, activityID, dogID, passID int) *domain.Reserv
 // room for at least one more booking. Anchored to fixedNow so the
 // test is deterministic regardless of the wall clock.
 func farFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour), nil)
 }
 
 // nearFutureActivity returns an activity 1 hour in the future. The
 // cancellation late window is 2h, so this counts as a LATE cancel
 // when the use case runs at fixedNow.
 func nearFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(1*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(1*time.Hour), nil)
 }
 
 // pastActivity returns an activity 24h in the past relative to
 // fixedNow. Used to verify the activity-in-past guard.
 func pastActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour))
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(-24*time.Hour), nil)
 }
 
 // newCancelUseCase wires the use case with default no-op mocks for
@@ -407,7 +407,7 @@ func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
 	activity := farFutureActivity(10)
 	dog := validDog(20, userID)
 	now := fixedNow
-	pass := domain.MustNewPass(30, 5, 5, 5, domain.PassGeneric, userID, now, now, nil)
+	pass := domain.MustNewPass(30, 5, 5, 5, domain.PassGeneric, userID, now, now, nil, false)
 	require.Equal(t, 5, pass.RemainingSessions())
 	require.False(t, pass.CanRefund(), "fresh pass should not be refundable")
 
@@ -488,7 +488,7 @@ func TestCancelAdmin_SuccessInTime(t *testing.T) {
 	activity := farFutureActivity(10)
 	dog := validDog(20, ownerID)
 	now := fixedNow
-	pass := domain.MustNewPass(30, 5, 3, 5, domain.PassGeneric, ownerID, now, now, nil)
+	pass := domain.MustNewPass(30, 5, 3, 5, domain.PassGeneric, ownerID, now, now, nil, false)
 	require.True(t, pass.CanRefund())
 
 	reservation := validConfirmedReservation(99, 10, 20, 30)
@@ -525,7 +525,7 @@ func TestCancelAdmin_SuccessLateDoesNotRefund(t *testing.T) {
 	activity := nearFutureActivity(10)
 	dog := validDog(20, ownerID)
 	now := fixedNow
-	pass := domain.MustNewPass(30, 5, 3, 5, domain.PassGeneric, ownerID, now, now, nil)
+	pass := domain.MustNewPass(30, 5, 3, 5, domain.PassGeneric, ownerID, now, now, nil, false)
 	require.True(t, pass.CanRefund())
 
 	reservation := validConfirmedReservation(99, 10, 20, 30)

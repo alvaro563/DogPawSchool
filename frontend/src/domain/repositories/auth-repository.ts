@@ -1,4 +1,4 @@
-import type { LoginInput } from '@/domain/schemas/auth-schema';
+import type { LoginInput, RegisterInput } from '@/domain/schemas/auth-schema';
 import type { User } from '@/domain/entities/user';
 
 export interface AuthResponse {
@@ -8,4 +8,5 @@ export interface AuthResponse {
 
 export interface AuthRepository {
   login(data: LoginInput): Promise<AuthResponse>;
+  registerWithInvitation(data: RegisterInput): Promise<AuthResponse>;
 }

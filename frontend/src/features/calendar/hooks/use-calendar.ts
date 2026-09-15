@@ -61,13 +61,25 @@ export function useCalendar() {
 
   const rangeEnd = useMemo(() => endOfRange(rangeStart, viewMode), [rangeStart, viewMode]);
 
+  // Non-admin viewers must only see future activities: when the
+  // visible window starts in the past (e.g. user navigates back to a
+  // previous month), pin `from` to today so the server excludes rows
+  // with date < today. Admins keep the full window so they can still
+  // navigate history. Individual-class visibility is enforced by the
+  // server via the dog-owner predicate (no frontend change needed).
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const effectiveFrom = useMemo(() => {
+    if (isAdmin) return rangeStart;
+    return rangeStart.getTime() < today.getTime() ? today : rangeStart;
+  }, [isAdmin, rangeStart, today]);
+
   const {
     data: activities = [],
     isLoading: activitiesLoading,
     error: activitiesError,
   } = useQuery({
-    queryKey: ['activities', toISO(rangeStart), toISO(rangeEnd)],
-    queryFn: () => fetchActivities(toISO(rangeStart), toISO(rangeEnd)),
+    queryKey: ['activities', toISO(effectiveFrom), toISO(rangeEnd)],
+    queryFn: () => fetchActivities(toISO(effectiveFrom), toISO(rangeEnd)),
     enabled: !!user,
   });
 
@@ -111,6 +123,7 @@ export function useCalendar() {
   return {
     currentDate,
     rangeStart,
+    effectiveFrom,
     rangeEnd,
     viewMode,
     setView,

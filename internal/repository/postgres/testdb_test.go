@@ -57,11 +57,11 @@ func insertBaseActivity(t *testing.T, db *sql.DB) *domain.Activity {
 	t.Helper()
 	repo := NewActivityRepository(db)
 	activity, err := domain.NewActivity(0, "Paseo Test", "", "Parque Central",
-		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour))
+		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour), nil)
 	require.NoError(t, err)
 	id, err := repo.Create(context.Background(), activity)
 	require.NoError(t, err)
-	got, err := repo.GetByID(context.Background(), id)
+	got, err := repo.GetByID(context.Background(), id, 0, true)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	require.Equal(t, id, got.ID())
@@ -85,7 +85,7 @@ func insertBaseDog(t *testing.T, db *sql.DB, userID int) *domain.Dog {
 func insertBasePass(t *testing.T, db *sql.DB, userID int) *domain.Pass {
 	t.Helper()
 	now := time.Now().UTC()
-	pass, err := domain.NewPass(0, 10, 10, 5000, domain.PassGeneric, userID, now, now, nil)
+	pass, err := domain.NewPass(0, 10, 10, 5000, domain.PassGeneric, userID, now, now, nil, false)
 	require.NoError(t, err)
 	repo := NewPassRepository(db)
 	id, err := repo.Create(context.Background(), pass)

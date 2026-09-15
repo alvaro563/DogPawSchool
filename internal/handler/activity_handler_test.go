@@ -64,6 +64,14 @@ func (s *stubActivityCloser) Execute(ctx context.Context, in activityuc.CloseAct
 	return s.fn(ctx, in)
 }
 
+type stubActivityBulkCompleter struct {
+	fn func(ctx context.Context, in activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error)
+}
+
+func (s *stubActivityBulkCompleter) Execute(ctx context.Context, in activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+	return s.fn(ctx, in)
+}
+
 func newActivityHandler(
 	reg ActivityRegisterer,
 	get ActivityGetter,
@@ -71,32 +79,37 @@ func newActivityHandler(
 	lst ActivityLister,
 	upcoming ActivityUpcomingLister,
 	close ActivityCloser,
+	bulkComplete ActivityBulkCompleter,
 ) *ActivityHandler {
-	return NewActivityHandler(reg, get, mod, lst, upcoming, close, nil)
+	return NewActivityHandler(reg, get, mod, lst, upcoming, close, bulkComplete, nil)
 }
 
 func newActivityHandlerReg(reg ActivityRegisterer) *ActivityHandler {
-	return newActivityHandler(reg, nil, nil, nil, nil, nil)
+	return newActivityHandler(reg, nil, nil, nil, nil, nil, nil)
 }
 
 func newActivityHandlerGet(get ActivityGetter) *ActivityHandler {
-	return newActivityHandler(nil, get, nil, nil, nil, nil)
+	return newActivityHandler(nil, get, nil, nil, nil, nil, nil)
 }
 
 func newActivityHandlerMod(mod ActivityModifier) *ActivityHandler {
-	return newActivityHandler(nil, nil, mod, nil, nil, nil)
+	return newActivityHandler(nil, nil, mod, nil, nil, nil, nil)
 }
 
 func newActivityHandlerLst(lst ActivityLister) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, lst, nil, nil)
+	return newActivityHandler(nil, nil, nil, lst, nil, nil, nil)
 }
 
 func newActivityHandlerUp(up ActivityUpcomingLister) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, nil, up, nil)
+	return newActivityHandler(nil, nil, nil, nil, up, nil, nil)
 }
 
 func newActivityHandlerClose(close ActivityCloser) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, nil, nil, close)
+	return newActivityHandler(nil, nil, nil, nil, nil, close, nil)
+}
+
+func newActivityHandlerBulkComplete(bulkComplete ActivityBulkCompleter) *ActivityHandler {
+	return newActivityHandler(nil, nil, nil, nil, nil, nil, bulkComplete)
 }
 
 func validRegisterActivityBody() string {
@@ -105,7 +118,7 @@ func validRegisterActivityBody() string {
 
 func newTestActivity(id int) *domain.Activity {
 	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1,
-		mustParseActivityTime("2026-08-01T10:00:00Z"))
+		mustParseActivityTime("2026-08-01T10:00:00Z"), nil)
 }
 
 func mustParseActivityTime(value string) time.Time {
@@ -257,8 +270,8 @@ func TestActivityGetByID_NotFound(t *testing.T) {
 func TestActivityList_Success(t *testing.T) {
 	t.Parallel()
 	activities := []*domain.Activity{
-		domain.MustNewActivity(1, "a", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-01T10:00:00Z")),
-		domain.MustNewActivity(2, "b", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-02T10:00:00Z")),
+		domain.MustNewActivity(1, "a", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-01T10:00:00Z"), nil),
+		domain.MustNewActivity(2, "b", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2026-08-02T10:00:00Z"), nil),
 	}
 	stub := &stubActivityLister{fn: func(ctx context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
 		// The factory normalizes the raw query values (0/0 here) to
@@ -323,11 +336,104 @@ func TestActivityList_InternalError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
+// TestActivityList_ClosedFilterTrue verifies that ?closed=true sets a
+// non-nil ClosedFilter pointing to true on the use case input.
+func TestActivityList_ClosedFilterTrue(t *testing.T) {
+	t.Parallel()
+	stub := &stubActivityLister{fn: func(_ context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
+		require.NotNil(t, in.ClosedFilter(), "handler must populate ClosedFilter when ?closed= is set")
+		assert.True(t, *in.ClosedFilter())
+		return activityuc.ListAllActivitiesOutput{}, nil
+	}}
+	h := newActivityHandlerLst(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/activities?closed=true", "")
+	h.List(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestActivityList_ClosedFilterFalse verifies that ?closed=false sets a
+// non-nil ClosedFilter pointing to false.
+func TestActivityList_ClosedFilterFalse(t *testing.T) {
+	t.Parallel()
+	stub := &stubActivityLister{fn: func(_ context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
+		require.NotNil(t, in.ClosedFilter())
+		assert.False(t, *in.ClosedFilter())
+		return activityuc.ListAllActivitiesOutput{}, nil
+	}}
+	h := newActivityHandlerLst(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/activities?closed=false", "")
+	h.List(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestActivityList_NoClosedFilter verifies that omitting the param
+// leaves ClosedFilter as nil (the use case dispatches to the
+// "both open and closed" path).
+func TestActivityList_NoClosedFilter(t *testing.T) {
+	t.Parallel()
+	stub := &stubActivityLister{fn: func(_ context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
+		assert.Nil(t, in.ClosedFilter(), "must remain nil when ?closed= is omitted")
+		return activityuc.ListAllActivitiesOutput{}, nil
+	}}
+	h := newActivityHandlerLst(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/activities", "")
+	h.List(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestActivityList_BadClosedValue verifies that an unparseable ?closed=
+// returns 400 with field=closed.
+func TestActivityList_BadClosedValue(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerLst(&stubActivityLister{fn: func(context.Context, activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
+		t.Fatal("use case must not be called for invalid closed value")
+		return activityuc.ListAllActivitiesOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/activities?closed=notbool", "")
+	h.List(c)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"closed"`)
+}
+
+// TestActivityList_PassesFromAndToPointers verifies that ?from / ?to
+// become *time.Time values on the input (NOT zero time.Time values).
+// This is the regression that nullableTime protects against.
+func TestActivityList_PassesFromAndToPointers(t *testing.T) {
+	t.Parallel()
+	stub := &stubActivityLister{fn: func(_ context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
+		require.NotNil(t, in.From())
+		require.NotNil(t, in.To())
+		assert.True(t, in.From().Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+		assert.True(t, in.To().Equal(time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)))
+		return activityuc.ListAllActivitiesOutput{}, nil
+	}}
+	h := newActivityHandlerLst(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/activities?from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z", "")
+	h.List(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestActivityList_NoFromNoTo verifies that absent date params produce
+// nil pointers (so the repo's $N::timestamptz IS NULL predicate wins),
+// not zero time.Time values that would serialise to 0001-01-01.
+func TestActivityList_NoFromNoTo(t *testing.T) {
+	t.Parallel()
+	stub := &stubActivityLister{fn: func(_ context.Context, in activityuc.ListAllActivitiesInput) (activityuc.ListAllActivitiesOutput, error) {
+		assert.Nil(t, in.From(), "absent ?from must produce nil pointer")
+		assert.Nil(t, in.To(), "absent ?to must produce nil pointer")
+		return activityuc.ListAllActivitiesOutput{}, nil
+	}}
+	h := newActivityHandlerLst(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/activities", "")
+	h.List(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 // TestActivityListUpcoming_Success verifies the upcoming endpoint
 // delegates to the dedicated use case.
 func TestActivityListUpcoming_Success(t *testing.T) {
 	t.Parallel()
-	future := domain.MustNewActivity(1, "a", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2030-01-01T10:00:00Z"))
+	future := domain.MustNewActivity(1, "a", "", "l", domain.TypeRoute, 5, 1, mustParseActivityTime("2030-01-01T10:00:00Z"), nil)
 	stub := &stubActivityUpcomingLister{fn: func(ctx context.Context, in activityuc.ListUpcomingActivitiesInput) (activityuc.ListUpcomingActivitiesOutput, error) {
 		return activityuc.ListUpcomingActivitiesOutput{Activities: []*domain.Activity{future}}, nil
 	}}
@@ -359,7 +465,7 @@ func TestActivityListUpcoming_Empty(t *testing.T) {
 func TestActivityModify_Success(t *testing.T) {
 	t.Parallel()
 	updated := domain.MustNewActivity(1, "Paseo Largo", "", "Central", domain.TypeRoute, 12, 2,
-		mustParseActivityTime("2026-08-01T10:00:00Z"))
+		mustParseActivityTime("2026-08-01T10:00:00Z"), nil)
 	stub := &stubActivityModifier{fn: func(ctx context.Context, in activityuc.ModifyActivityInput) (activityuc.ModifyActivityOutput, error) {
 		assert.Equal(t, 1, in.ID())
 		require.NotNil(t, in.Patch().Name)
@@ -440,7 +546,7 @@ func TestActivityModify_NotFound(t *testing.T) {
 
 func TestActivityClose_Success(t *testing.T) {
 	t.Parallel()
-	act := domain.MustNewActivity(42, "Paseo", "", "Río", domain.TypeRoute, 8, 2, time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC))
+	act := domain.MustNewActivity(42, "Paseo", "", "Río", domain.TypeRoute, 8, 2, time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC), nil)
 	act.Close()
 	h := newActivityHandlerClose(&stubActivityCloser{fn: func(_ context.Context, in activityuc.CloseActivityInput) (activityuc.CloseActivityOutput, error) {
 		return activityuc.CloseActivityOutput{Activity: act}, nil
@@ -500,4 +606,110 @@ func TestActivityClose_ReservationNotConfirmed(t *testing.T) {
 	h.Close(c)
 	assert.Equal(t, http.StatusConflict, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"reservation_not_confirmed"`)
+}
+
+// ============================================================================
+// BulkCompleteReservations tests
+// ============================================================================
+
+func TestActivityBulkComplete_Success(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerBulkComplete(&stubActivityBulkCompleter{fn: func(_ context.Context, in activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+		assert.Equal(t, 42, in.ActivityID())
+		return activityuc.BulkCompleteReservationsOutput{ActivityID: 42, CompletedCount: 5, Closed: true}, nil
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/42/complete-all", "")
+	c.Params = gin.Params{{Key: "id", Value: "42"}}
+	h.BulkCompleteReservations(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"id":42`)
+	assert.Contains(t, w.Body.String(), `"completed":5`)
+	assert.Contains(t, w.Body.String(), `"closed":true`)
+}
+
+func TestActivityBulkComplete_ZeroCompleted(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerBulkComplete(&stubActivityBulkCompleter{fn: func(_ context.Context, _ activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+		return activityuc.BulkCompleteReservationsOutput{ActivityID: 7, CompletedCount: 0, Closed: true}, nil
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/7/complete-all", "")
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	h.BulkCompleteReservations(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"completed":0`)
+	assert.Contains(t, w.Body.String(), `"closed":true`)
+}
+
+func TestActivityBulkComplete_InvalidID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{"non_integer", "abc"},
+		{"zero", "0"},
+		{"negative", "-5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newActivityHandlerBulkComplete(&stubActivityBulkCompleter{fn: func(_ context.Context, _ activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+				t.Fatal("use case must not be called for invalid id")
+				return activityuc.BulkCompleteReservationsOutput{}, nil
+			}})
+			c, w := setupCtx(http.MethodPost, "/api/v1/activities/"+tt.id+"/complete-all", "")
+			c.Params = gin.Params{{Key: "id", Value: tt.id}}
+			h.BulkCompleteReservations(c)
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), `"error":"validation"`)
+			assert.Contains(t, w.Body.String(), `"field":"id"`)
+		})
+	}
+}
+
+func TestActivityBulkComplete_NotFinished(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerBulkComplete(&stubActivityBulkCompleter{fn: func(_ context.Context, _ activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+		return activityuc.BulkCompleteReservationsOutput{}, activityuc.ErrNotFinished
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/5/complete-all", "")
+	c.Params = gin.Params{{Key: "id", Value: "5"}}
+	h.BulkCompleteReservations(c)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"activity_not_finished"`)
+}
+
+func TestActivityBulkComplete_PendingExists(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerBulkComplete(&stubActivityBulkCompleter{fn: func(_ context.Context, _ activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+		return activityuc.BulkCompleteReservationsOutput{}, activityuc.ErrPendingToConfirmExists
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/5/complete-all", "")
+	c.Params = gin.Params{{Key: "id", Value: "5"}}
+	h.BulkCompleteReservations(c)
+	require.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"pending_to_confirm_exists"`)
+}
+
+func TestActivityBulkComplete_NotFound(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerBulkComplete(&stubActivityBulkCompleter{fn: func(_ context.Context, _ activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+		return activityuc.BulkCompleteReservationsOutput{}, activityuc.ErrNotFound
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/999/complete-all", "")
+	c.Params = gin.Params{{Key: "id", Value: "999"}}
+	h.BulkCompleteReservations(c)
+	require.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
+}
+
+func TestActivityBulkComplete_InternalError(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerBulkComplete(&stubActivityBulkCompleter{fn: func(_ context.Context, _ activityuc.BulkCompleteReservationsInput) (activityuc.BulkCompleteReservationsOutput, error) {
+		return activityuc.BulkCompleteReservationsOutput{}, errors.New("db down")
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities/5/complete-all", "")
+	c.Params = gin.Params{{Key: "id", Value: "5"}}
+	h.BulkCompleteReservations(c)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

@@ -17,9 +17,11 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminPassesRouteImport } from './routes/_authenticated/admin/passes'
 import { Route as AuthenticatedAdminReservationsRouteImport } from './routes/_authenticated/admin/reservations'
+import { Route as AuthenticatedAdminReservationsAttendanceRouteImport } from './routes/_authenticated/admin/reservations-attendance'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminActivitiesIndexRouteImport } from './routes/_authenticated/admin/activities/index'
 import { Route as AuthenticatedAdminActivitiesIdRouteImport } from './routes/_authenticated/admin/activities/$id'
+import { Route as AuthenticatedAdminActivitiesCompletedRouteImport } from './routes/_authenticated/admin/activities/completed'
 import { Route as AuthenticatedAdminDogsIndexRouteImport } from './routes/_authenticated/admin/dogs/index'
 import { Route as AuthenticatedAdminDogsInactiveRouteImport } from './routes/_authenticated/admin/dogs/inactive'
 import { Route as AuthenticatedAdminPendingReservationsIndexRouteImport } from './routes/_authenticated/admin/pending-reservations/index'
@@ -48,6 +50,7 @@ const AuthenticatedReservationsLazyRouteImport = createFileRoute(
   '/_authenticated/reservations',
 )()
 const AuthLoginLazyRouteImport = createFileRoute('/auth/login')()
+const AuthRegisterLazyRouteImport = createFileRoute('/auth/register')()
 const AuthenticatedDogDetailIdLazyRouteImport = createFileRoute(
   '/_authenticated/dog-detail/$id',
 )()
@@ -127,6 +130,11 @@ const AuthLoginLazyRoute = AuthLoginLazyRouteImport.update({
   path: '/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/auth.login.lazy').then((d) => d.Route))
+const AuthRegisterLazyRoute = AuthRegisterLazyRouteImport.update({
+  id: '/auth/register',
+  path: '/auth/register',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/auth.register.lazy').then((d) => d.Route))
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -142,6 +150,12 @@ const AuthenticatedAdminReservationsRoute =
   AuthenticatedAdminReservationsRouteImport.update({
     id: '/reservations',
     path: '/reservations',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminReservationsAttendanceRoute =
+  AuthenticatedAdminReservationsAttendanceRouteImport.update({
+    id: '/reservations-attendance',
+    path: '/reservations-attendance',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
@@ -167,6 +181,12 @@ const AuthenticatedAdminActivitiesIdRoute =
   AuthenticatedAdminActivitiesIdRouteImport.update({
     id: '/activities/$id',
     path: '/activities/$id',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminActivitiesCompletedRoute =
+  AuthenticatedAdminActivitiesCompletedRouteImport.update({
+    id: '/activities/completed',
+    path: '/activities/completed',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminDogsIndexRoute =
@@ -211,12 +231,15 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileLazyRoute
   '/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
+  '/auth/register': typeof AuthRegisterLazyRoute
   '/admin/passes': typeof AuthenticatedAdminPassesRoute
   '/admin/reservations': typeof AuthenticatedAdminReservationsRoute
+  '/admin/reservations-attendance': typeof AuthenticatedAdminReservationsAttendanceRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
+  '/admin/activities/completed': typeof AuthenticatedAdminActivitiesCompletedRoute
   '/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
   '/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
   '/admin/activities/': typeof AuthenticatedAdminActivitiesIndexRoute
@@ -234,12 +257,15 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileLazyRoute
   '/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
+  '/auth/register': typeof AuthRegisterLazyRoute
   '/admin/passes': typeof AuthenticatedAdminPassesRoute
   '/admin/reservations': typeof AuthenticatedAdminReservationsRoute
+  '/admin/reservations-attendance': typeof AuthenticatedAdminReservationsAttendanceRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
+  '/admin/activities/completed': typeof AuthenticatedAdminActivitiesCompletedRoute
   '/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
   '/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
   '/admin/activities': typeof AuthenticatedAdminActivitiesIndexRoute
@@ -260,12 +286,15 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileLazyRoute
   '/_authenticated/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
+  '/auth/register': typeof AuthRegisterLazyRoute
   '/_authenticated/admin/passes': typeof AuthenticatedAdminPassesRoute
   '/_authenticated/admin/reservations': typeof AuthenticatedAdminReservationsRoute
+  '/_authenticated/admin/reservations-attendance': typeof AuthenticatedAdminReservationsAttendanceRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
+  '/_authenticated/admin/activities/completed': typeof AuthenticatedAdminActivitiesCompletedRoute
   '/_authenticated/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
   '/_authenticated/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
   '/_authenticated/admin/activities/': typeof AuthenticatedAdminActivitiesIndexRoute
@@ -286,12 +315,15 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reservations'
     | '/auth/login'
+    | '/auth/register'
     | '/admin/passes'
     | '/admin/reservations'
+    | '/admin/reservations-attendance'
     | '/admin/users'
     | '/dog-detail/$id'
     | '/admin/'
     | '/admin/activities/$id'
+    | '/admin/activities/completed'
     | '/admin/dogs/inactive'
     | '/admin/today-classes/$id'
     | '/admin/activities/'
@@ -309,12 +341,15 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reservations'
     | '/auth/login'
+    | '/auth/register'
     | '/admin/passes'
     | '/admin/reservations'
+    | '/admin/reservations-attendance'
     | '/admin/users'
     | '/dog-detail/$id'
     | '/admin'
     | '/admin/activities/$id'
+    | '/admin/activities/completed'
     | '/admin/dogs/inactive'
     | '/admin/today-classes/$id'
     | '/admin/activities'
@@ -334,12 +369,15 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/reservations'
     | '/auth/login'
+    | '/auth/register'
     | '/_authenticated/admin/passes'
     | '/_authenticated/admin/reservations'
+    | '/_authenticated/admin/reservations-attendance'
     | '/_authenticated/admin/users'
     | '/_authenticated/dog-detail/$id'
     | '/_authenticated/admin/'
     | '/_authenticated/admin/activities/$id'
+    | '/_authenticated/admin/activities/completed'
     | '/_authenticated/admin/dogs/inactive'
     | '/_authenticated/admin/today-classes/$id'
     | '/_authenticated/admin/activities/'
@@ -352,6 +390,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AuthLoginLazyRoute: typeof AuthLoginLazyRoute
+  AuthRegisterLazyRoute: typeof AuthRegisterLazyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -433,6 +472,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginLazyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/register': {
+      id: '/auth/register'
+      path: '/auth/register'
+      fullPath: '/auth/register'
+      preLoaderRoute: typeof AuthRegisterLazyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
       path: '/'
@@ -452,6 +498,13 @@ declare module '@tanstack/react-router' {
       path: '/reservations'
       fullPath: '/admin/reservations'
       preLoaderRoute: typeof AuthenticatedAdminReservationsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/reservations-attendance': {
+      id: '/_authenticated/admin/reservations-attendance'
+      path: '/reservations-attendance'
+      fullPath: '/admin/reservations-attendance'
+      preLoaderRoute: typeof AuthenticatedAdminReservationsAttendanceRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/users': {
@@ -480,6 +533,13 @@ declare module '@tanstack/react-router' {
       path: '/activities/$id'
       fullPath: '/admin/activities/$id'
       preLoaderRoute: typeof AuthenticatedAdminActivitiesIdRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/activities/completed': {
+      id: '/_authenticated/admin/activities/completed'
+      path: '/activities/completed'
+      fullPath: '/admin/activities/completed'
+      preLoaderRoute: typeof AuthenticatedAdminActivitiesCompletedRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/dogs/': {
@@ -523,9 +583,11 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminPassesRoute: typeof AuthenticatedAdminPassesRoute
   AuthenticatedAdminReservationsRoute: typeof AuthenticatedAdminReservationsRoute
+  AuthenticatedAdminReservationsAttendanceRoute: typeof AuthenticatedAdminReservationsAttendanceRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedAdminActivitiesIdRoute: typeof AuthenticatedAdminActivitiesIdRoute
+  AuthenticatedAdminActivitiesCompletedRoute: typeof AuthenticatedAdminActivitiesCompletedRoute
   AuthenticatedAdminDogsInactiveRoute: typeof AuthenticatedAdminDogsInactiveRoute
   AuthenticatedAdminTodayClassesIdRoute: typeof AuthenticatedAdminTodayClassesIdRoute
   AuthenticatedAdminActivitiesIndexRoute: typeof AuthenticatedAdminActivitiesIndexRoute
@@ -537,9 +599,13 @@ interface AuthenticatedAdminRouteChildren {
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminPassesRoute: AuthenticatedAdminPassesRoute,
   AuthenticatedAdminReservationsRoute: AuthenticatedAdminReservationsRoute,
+  AuthenticatedAdminReservationsAttendanceRoute:
+    AuthenticatedAdminReservationsAttendanceRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedAdminActivitiesIdRoute: AuthenticatedAdminActivitiesIdRoute,
+  AuthenticatedAdminActivitiesCompletedRoute:
+    AuthenticatedAdminActivitiesCompletedRoute,
   AuthenticatedAdminDogsInactiveRoute: AuthenticatedAdminDogsInactiveRoute,
   AuthenticatedAdminTodayClassesIdRoute: AuthenticatedAdminTodayClassesIdRoute,
   AuthenticatedAdminActivitiesIndexRoute:
@@ -587,6 +653,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AuthLoginLazyRoute: AuthLoginLazyRoute,
+  AuthRegisterLazyRoute: AuthRegisterLazyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

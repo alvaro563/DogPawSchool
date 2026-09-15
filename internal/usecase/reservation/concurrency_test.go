@@ -19,7 +19,7 @@ func TestRegisterReservation_ConcurrentExecuteIsRaceFree(t *testing.T) {
 	activityRepo := &stubActivityRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
 			return domain.MustNewActivity(id, "Ruta", "", "Parque", domain.TypeRoute, 100, 1,
-				base.Add(72*time.Hour)), nil
+				base.Add(72*time.Hour), nil), nil
 		},
 	}
 	dogRepo := &stubDogRepository{
@@ -29,7 +29,7 @@ func TestRegisterReservation_ConcurrentExecuteIsRaceFree(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
-			return domain.MustNewPass(id, 10, 10, 1000, domain.PassGeneric, 1, base, base, nil), nil
+			return domain.MustNewPass(id, 10, 10, 1000, domain.PassGeneric, 1, base, base, nil, false), nil
 		},
 	}
 	reservationRepo := &mockReservationRepository{

@@ -1,4 +1,13 @@
 definitions:
+  handler.activateUserResponse:
+    properties:
+      id:
+        example: 9
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+    type: object
   handler.activityDTO:
     properties:
       activity_type:
@@ -208,6 +217,9 @@ definitions:
       neutered:
         example: false
         type: boolean
+      owner_name:
+        example: Ana
+        type: string
       passport:
         example: ES-12345
         type: string
@@ -506,6 +518,9 @@ definitions:
       id:
         example: 42
         type: integer
+      is_paid:
+        example: false
+        type: boolean
       num_of_sessions:
         example: 10
         type: integer
@@ -536,6 +551,9 @@ definitions:
       id:
         example: 42
         type: integer
+      is_paid:
+        example: false
+        type: boolean
       num_of_sessions:
         example: 10
         type: integer
@@ -736,6 +754,8 @@ definitions:
     type: object
   handler.registerWithInvitationResponse:
     properties:
+      token:
+        type: string
       user:
         $ref: '#/definitions/handler.userDTO'
     type: object
@@ -841,6 +861,12 @@ definitions:
       sex:
         example: FEMALE
         type: string
+    type: object
+  handler.setPassPaidRequest:
+    properties:
+      is_paid:
+        example: true
+        type: boolean
     type: object
   handler.setPhotoRequest:
     properties:
@@ -2411,6 +2437,48 @@ paths:
       summary: Patch a pass
       tags:
       - passes
+  /api/v1/passes/{id}/paid:
+    patch:
+      consumes:
+      - application/json
+      description: 'Marks a pass as paid (is_paid=true) or unpaid (is_paid=false).
+        Body is {"is_paid": true|false}. Returns the updated pass.'
+      parameters:
+      - description: Pass ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: New payment state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.setPassPaidRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pass updated
+          schema:
+            $ref: '#/definitions/handler.passResponse'
+        "400":
+          description: Invalid id, body, or field value
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Pass not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set the is_paid flag of a pass (admin only)
+      tags:
+      - passes
   /api/v1/passes/{id}/reservations:
     get:
       description: |-
@@ -2451,6 +2519,45 @@ paths:
       summary: List a pass's reservations
       tags:
       - reservations
+  /api/v1/passes/is_paid/{value}:
+    get:
+      description: Returns a paginated list of passes whose is_paid flag matches the
+        :value path param. Use true for paid passes and false for unpaid (pending)
+        ones.
+      parameters:
+      - description: 'is_paid value: true or false'
+        in: path
+        name: value
+        required: true
+        type: string
+      - description: Maximum number of passes to return (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of passes to skip for pagination (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of passes
+          schema:
+            $ref: '#/definitions/handler.listPassesResponse'
+        "400":
+          description: Invalid value
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List passes filtered by payment status (admin only)
+      tags:
+      - passes
   /api/v1/reservations:
     get:
       description: |-
@@ -2739,6 +2846,40 @@ paths:
       security:
       - BearerAuth: []
       summary: Patch a user (name and/or email)
+      tags:
+      - users
+  /api/v1/users/{user_id}/activate:
+    post:
+      description: 'Flips the user''s is_active flag back to true. Idempotent: activating
+        an already-active user is a no-op and returns 200.'
+      parameters:
+      - description: User ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User activated (or already active)
+          schema:
+            $ref: '#/definitions/handler.activateUserResponse'
+        "400":
+          description: Invalid id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Activate a previously deactivated user
       tags:
       - users
   /api/v1/users/{user_id}/deactivate:

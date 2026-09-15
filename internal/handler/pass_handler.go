@@ -32,12 +32,22 @@ type PassByUserLister interface {
 	Execute(ctx context.Context, input passuc.ListByUserPassesInput) (passuc.ListByUserPassesOutput, error)
 }
 
+type PassByPaidLister interface {
+	Execute(ctx context.Context, input passuc.ListByPaidPassesInput) (passuc.ListByPaidPassesOutput, error)
+}
+
+type PassPaidSetter interface {
+	Execute(ctx context.Context, input passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error)
+}
+
 type PassHandler struct {
 	register     PassRegisterer
 	modify       PassModifier
 	getter       PassGetter
 	lister       PassLister
 	byUserLister PassByUserLister
+	byPaidLister PassByPaidLister
+	paidSetter   PassPaidSetter
 }
 
 func NewPassHandler(
@@ -46,6 +56,8 @@ func NewPassHandler(
 	getter PassGetter,
 	lister PassLister,
 	byUserLister PassByUserLister,
+	byPaidLister PassByPaidLister,
+	paidSetter PassPaidSetter,
 ) *PassHandler {
 	return &PassHandler{
 		register:     register,
@@ -53,6 +65,8 @@ func NewPassHandler(
 		getter:       getter,
 		lister:       lister,
 		byUserLister: byUserLister,
+		byPaidLister: byPaidLister,
+		paidSetter:   paidSetter,
 	}
 }
 
@@ -244,6 +258,79 @@ func (h *PassHandler) ListByUser(c *gin.Context) {
 	c.JSON(http.StatusOK, toListPassesResponse(output.Passes, in))
 }
 
+// ListByPaid godoc
+// @Summary      List passes filtered by payment status (admin only)
+// @Description  Returns a paginated list of passes whose is_paid flag matches the :value path param. Use true for paid passes and false for unpaid (pending) ones.
+// @Tags         passes
+// @Produce      json
+// @Param        value   path   string  true   "is_paid value: true or false"
+// @Param        limit   query  int     false  "Maximum number of passes to return (default 50, max 100)"
+// @Param        offset  query  int     false  "Number of passes to skip for pagination (default 0)"
+// @Success      200  {object}  listPassesResponse  "List of passes"
+// @Failure      400  {object}  errorResponse        "Invalid value"
+// @Failure      500  {object}  errorResponse        "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/passes/is_paid/{value} [get]
+func (h *PassHandler) ListByPaid(c *gin.Context) {
+	value, err := strconv.ParseBool(c.Param("value"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "value"})
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	in, err := passuc.NewListByPaidPassesInput(value, limit, offset)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.byPaidLister.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toListPassesResponse(output.Passes, in))
+}
+
+// SetPaid godoc
+// @Summary      Set the is_paid flag of a pass (admin only)
+// @Description  Marks a pass as paid (is_paid=true) or unpaid (is_paid=false). Body is {"is_paid": true|false}. Returns the updated pass.
+// @Tags         passes
+// @Accept       json
+// @Produce      json
+// @Param        id    path      int                    true   "Pass ID"
+// @Param        body  body      setPassPaidRequest     true   "New payment state"
+// @Success      200   {object}  passResponse           "Pass updated"
+// @Failure      400   {object}  errorResponse          "Invalid id, body, or field value"
+// @Failure      404   {object}  errorResponse          "Pass not found"
+// @Failure      500   {object}  errorResponse          "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/passes/{id}/paid [patch]
+func (h *PassHandler) SetPaid(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
+		return
+	}
+	var request setPassPaidRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request", Details: err.Error()})
+		return
+	}
+	in, err := passuc.NewSetPassPaidInput(id, request.IsPaid)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.paidSetter.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toPassDTO(output.Pass))
+}
+
 type registerPassRequest struct {
 	NumOfSessions int        `json:"num_of_sessions" example:"10"`
 	Price         int        `json:"price"           example:"12000"`
@@ -259,6 +346,13 @@ type modifyPassRequest struct {
 	Price     *int       `json:"price,omitempty"                binding:"omitempty,gte=0"      example:"15000"`
 	PassType  *string    `json:"pass_type,omitempty"            example:"ESPECIFICO"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"           example:"2027-06-30T23:59:59Z"`
+}
+
+// setPassPaidRequest is the body for PATCH /passes/:id/paid.
+// The is_paid flag is required (not *bool) because both values are
+// meaningful: true means "mark as paid", false means "unmark".
+type setPassPaidRequest struct {
+	IsPaid bool `json:"is_paid" example:"true"`
 }
 
 // listPassesResponse is the wire format shared by List and
@@ -283,6 +377,7 @@ type passDTO struct {
 	CreatedAt         time.Time  `json:"created_at"         example:"2026-07-01T10:00:00Z"`
 	UpdatedAt         time.Time  `json:"updated_at"         example:"2026-07-15T14:30:00Z"`
 	ExpiresAt         *time.Time `json:"expires_at,omitempty" example:"2026-12-31T23:59:59Z"`
+	IsPaid            bool       `json:"is_paid"            example:"false"`
 }
 
 // passResponse is the alias used in Swagger annotations.
@@ -321,5 +416,6 @@ func toPassDTO(pass *domain.Pass) passDTO {
 		CreatedAt:         pass.CreatedAt(),
 		UpdatedAt:         pass.UpdatedAt(),
 		ExpiresAt:         pass.ExpiresAt(),
+		IsPaid:            pass.IsPaid(),
 	}
 }

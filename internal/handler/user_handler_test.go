@@ -64,23 +64,27 @@ func (s *stubUserEmailLister) Execute(ctx context.Context) (useruc.ListUserEmail
 // ---------------------------------------------------------------------------
 
 func newTestUserHandlerGet(get UserGetter) *UserHandler {
-	return NewUserHandler(get, nil, nil, nil, nil)
+	return NewUserHandler(get, nil, nil, nil, nil, nil)
 }
 
 func newTestUserHandlerList(list UserLister) *UserHandler {
-	return NewUserHandler(nil, list, nil, nil, nil)
+	return NewUserHandler(nil, list, nil, nil, nil, nil)
 }
 
 func newTestUserHandlerUpdate(update UserUpdater) *UserHandler {
-	return NewUserHandler(nil, nil, update, nil, nil)
+	return NewUserHandler(nil, nil, update, nil, nil, nil)
 }
 
 func newTestUserHandlerDeactivate(deactivate UserDeactivator) *UserHandler {
-	return NewUserHandler(nil, nil, nil, deactivate, nil)
+	return NewUserHandler(nil, nil, nil, deactivate, nil, nil)
+}
+
+func newTestUserHandlerActivate(activate UserActivator) *UserHandler {
+	return NewUserHandler(nil, nil, nil, nil, activate, nil)
 }
 
 func newTestUserHandlerListEmails(emailList UserEmailLister) *UserHandler {
-	return NewUserHandler(nil, nil, nil, nil, emailList)
+	return NewUserHandler(nil, nil, nil, nil, nil, emailList)
 }
 
 // newTestUser builds a valid active user for stub responses.
@@ -511,6 +515,86 @@ func TestUserDeactivate_InternalError(t *testing.T) {
 	c, w := setupCtx(http.MethodPost, "/api/v1/users/9/deactivate", "")
 	c.Params = gin.Params{{Key: "user_id", Value: "9"}}
 	h.Deactivate(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// Activate
+// ---------------------------------------------------------------------------
+
+type stubUserActivator struct {
+	fn func(ctx context.Context, in useruc.ActivateUserInput) (useruc.ActivateUserOutput, error)
+}
+
+func (s *stubUserActivator) Execute(ctx context.Context, in useruc.ActivateUserInput) (useruc.ActivateUserOutput, error) {
+	return s.fn(ctx, in)
+}
+
+func TestUserActivate_Success(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerActivate(&stubUserActivator{fn: func(_ context.Context, in useruc.ActivateUserInput) (useruc.ActivateUserOutput, error) {
+		assert.Equal(t, 9, in.ID())
+		return useruc.ActivateUserOutput{ID: 9}, nil
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/9/activate", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "9"}}
+	h.Activate(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body activateUserResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 9, body.ID)
+	assert.True(t, body.IsActive, "activate must report is_active=true")
+}
+
+func TestUserActivate_InvalidID(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerActivate(&stubUserActivator{fn: func(context.Context, useruc.ActivateUserInput) (useruc.ActivateUserOutput, error) {
+		t.Fatal("use case should not be called")
+		return useruc.ActivateUserOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/abc/activate", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "abc"}}
+	h.Activate(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"id"`)
+}
+
+func TestUserActivate_NotFound(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerActivate(&stubUserActivator{fn: func(_ context.Context, in useruc.ActivateUserInput) (useruc.ActivateUserOutput, error) {
+		return useruc.ActivateUserOutput{}, useruc.ErrNotFound
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/999/activate", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "999"}}
+	h.Activate(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestUserActivate_AlreadyActive(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerActivate(&stubUserActivator{fn: func(_ context.Context, in useruc.ActivateUserInput) (useruc.ActivateUserOutput, error) {
+		return useruc.ActivateUserOutput{ID: 9}, nil
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/9/activate", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "9"}}
+	h.Activate(c)
+
+	assert.Equal(t, http.StatusOK, w.Code, "idempotent: activating an already-active user is 200")
+	assert.Contains(t, w.Body.String(), `"is_active":true`)
+}
+
+func TestUserActivate_InternalError(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerActivate(&stubUserActivator{fn: func(_ context.Context, in useruc.ActivateUserInput) (useruc.ActivateUserOutput, error) {
+		return useruc.ActivateUserOutput{}, errors.New("db down")
+	}})
+	c, w := setupCtx(http.MethodPost, "/api/v1/users/9/activate", "")
+	c.Params = gin.Params{{Key: "user_id", Value: "9"}}
+	h.Activate(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

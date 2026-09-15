@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/features/ui/hooks/toast-context';
 import { cn } from '@/lib/utils';
+import { getSizeBracket, sizeBracketLabel } from '@/features/dogs/utils/size';
 import type { Dog } from '@/domain/entities/dog';
 import type { ApiError } from '@/infrastructure/api/http-client';
 
@@ -163,6 +164,7 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
 
   const months = dog.age_in_months;
   const ageText = months < 12 ? `${months} meses` : `${Math.floor(months / 12)} años`;
+  const sizeBracket = getSizeBracket(dog.weight_kg);
 
   return (
     <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -251,6 +253,9 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
                 En celo
               </span>
             )}
+            <span className="inline-flex items-center gap-1 rounded-md bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+              {sizeBracketLabel[sizeBracket]}
+            </span>
             <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{ageText}</span>
             <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{dog.weight_kg} kg</span>
           </div>
@@ -262,6 +267,7 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
       <Section title="Información">
         <Field label="Nombre" value={dog.name} editing={isEditing} form={form} setForm={setForm} field="name" />
         <Field label="Raza" value={dog.breed} editing={isEditing} form={form} setForm={setForm} field="breed" />
+        <Field label="Dueño" value={dog.owner_name || '—'} editing={false} form={form} setForm={setForm} field="owner_name" />
         <Field label="Pasaporte" value={dog.passport} editing={isEditing} form={form} setForm={setForm} field="passport" />
         <Field label="Edad (meses)" value={String(ageText)} editing={isEditing} form={form} setForm={setForm} field="age_in_months" type="number" />
         <Field label="Peso (kg)" value={`${dog.weight_kg} kg`} editing={isEditing} form={form} setForm={setForm} field="weight_kg" type="number" />

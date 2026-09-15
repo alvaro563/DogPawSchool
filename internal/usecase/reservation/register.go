@@ -137,7 +137,7 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 	// 1. Activity must exist and be in the future. FOR UPDATE locks the
 	// activity row so two concurrent registrations serialize on the
 	// capacity check below (materialised conflict for B2).
-	activity, err := uc.activityRepo.GetByIDForUpdate(ctx, input.ActivityID())
+	activity, err := uc.activityRepo.GetByIDForUpdate(ctx, input.ActivityID(), 0, true)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return 0, domain.StatusConfirmed, ErrInvalidActivity

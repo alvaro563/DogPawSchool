@@ -86,6 +86,7 @@ type Pass struct {
 	updatedAt         time.Time
 	expiresAt         *time.Time
 	userID            int
+	isPaid            bool
 
 	// pendingMovements holds the audit entries produced by
 	// ConsumeSession / RefundSession during the current unit of work.
@@ -104,7 +105,7 @@ type Pass struct {
 // caller in the latter case). The invariant
 // remainingSessions <= numOfSessions is enforced here so a buggy
 // caller cannot put the aggregate into an inconsistent state.
-func NewPass(id, numOfSessions, remainingSessions, price int, passType PassType, userID int, createdAt, updatedAt time.Time, expiresAt *time.Time) (*Pass, error) {
+func NewPass(id, numOfSessions, remainingSessions, price int, passType PassType, userID int, createdAt, updatedAt time.Time, expiresAt *time.Time, isPaid bool) (*Pass, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("pass: id must not be negative")
 	}
@@ -142,13 +143,14 @@ func NewPass(id, numOfSessions, remainingSessions, price int, passType PassType,
 		updatedAt:         updatedAt,
 		expiresAt:         expiresAt,
 		userID:            userID,
+		isPaid:            isPaid,
 	}, nil
 }
 
 // MustNewPass is like NewPass but panics on error. Intended for
 // tests and seed data where the inputs are known to be valid.
-func MustNewPass(id, numOfSessions, remainingSessions, price int, passType PassType, userID int, createdAt, updatedAt time.Time, expiresAt *time.Time) *Pass {
-	pass, err := NewPass(id, numOfSessions, remainingSessions, price, passType, userID, createdAt, updatedAt, expiresAt)
+func MustNewPass(id, numOfSessions, remainingSessions, price int, passType PassType, userID int, createdAt, updatedAt time.Time, expiresAt *time.Time, isPaid bool) *Pass {
+	pass, err := NewPass(id, numOfSessions, remainingSessions, price, passType, userID, createdAt, updatedAt, expiresAt, isPaid)
 	if err != nil {
 		panic(err)
 	}
@@ -164,6 +166,7 @@ func (pass *Pass) CreatedAt() time.Time   { return pass.createdAt }
 func (pass *Pass) UpdatedAt() time.Time   { return pass.updatedAt }
 func (pass *Pass) ExpiresAt() *time.Time  { return pass.expiresAt }
 func (pass *Pass) UserID() int            { return pass.userID }
+func (pass *Pass) IsPaid() bool           { return pass.isPaid }
 
 // PendingMovements returns a defensive copy of the movements recorded
 // during the current unit of work and not yet persisted. The repository
@@ -192,6 +195,7 @@ type PassPatch struct {
 	Price     *int
 	PassType  *PassType
 	ExpiresAt *time.Time
+	IsPaid    *bool
 }
 
 // PassValidationError is returned by ApplyPatch when a supplied
@@ -206,7 +210,7 @@ func (validationError *PassValidationError) Error() string {
 
 // ApplyPatch mutates the pass in place with the fields present in
 // the patch. An empty patch is a no-op. Only the editable fields
-// (price, pass_type, expires_at) are accepted.
+// (price, pass_type, expires_at, is_paid) are accepted.
 func (pass *Pass) ApplyPatch(patch PassPatch) error {
 	if patch.Price != nil {
 		if *patch.Price < 0 {
@@ -225,6 +229,9 @@ func (pass *Pass) ApplyPatch(patch PassPatch) error {
 			return &PassValidationError{Field: "expires_at"}
 		}
 		pass.expiresAt = patch.ExpiresAt
+	}
+	if patch.IsPaid != nil {
+		pass.isPaid = *patch.IsPaid
 	}
 	return nil
 }
@@ -320,4 +327,5 @@ type PassRepository interface {
 	GetByIDForUpdate(ctx context.Context, id int) (*Pass, error)
 	ListAll(ctx context.Context, limit, offset int) ([]*Pass, error)
 	ListByOwner(ctx context.Context, userID, limit, offset int) ([]*Pass, error)
+	ListByPaid(ctx context.Context, isPaid bool, limit, offset int) ([]*Pass, error)
 }

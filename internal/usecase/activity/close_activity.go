@@ -131,7 +131,7 @@ func (uc *CloseActivityUseCase) Execute(ctx context.Context, input CloseActivity
 
 func (uc *CloseActivityUseCase) runInTx(ctx context.Context, input CloseActivityInput, now time.Time) (*domain.Activity, error) {
 	// 1. Load activity.
-	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID())
+	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID(), 0, true)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrNotFound
@@ -192,38 +192,12 @@ func (uc *CloseActivityUseCase) runInTx(ctx context.Context, input CloseActivity
 		noShowSet[id] = struct{}{}
 	}
 
-	// 6. Process each CONFIRMED reservation.
-	for _, r := range confirmed {
-		// Load the dog to get the owner's user ID for the
-		// child use case's ownership check.
-		dog, err := uc.dogRepo.GetByID(ctx, r.DogID())
-		if err != nil {
-			if errors.Is(err, domain.ErrNotFound) {
-				return nil, fmt.Errorf("dog %d not found: %w", r.DogID(), err)
-			}
-			return nil, fmt.Errorf("get dog %d: %w", r.DogID(), err)
-		}
-		if dog == nil {
-			return nil, fmt.Errorf("dog %d not found", r.DogID())
-		}
-
-		if _, ok := noShowSet[r.ID()]; ok {
-			in, err := reservationuc.NewMarkReservationNoShowInput(dog.UserID(), r.ID(), func() time.Time { return now })
-			if err != nil {
-				return nil, fmt.Errorf("build no-show input for reservation %d: %w", r.ID(), err)
-			}
-			if _, err := uc.noShower.Execute(ctx, in); err != nil {
-				return nil, fmt.Errorf("mark no-show reservation %d: %w", r.ID(), err)
-			}
-		} else {
-			in, err := reservationuc.NewCompleteReservationInput(dog.UserID(), r.ID(), func() time.Time { return now })
-			if err != nil {
-				return nil, fmt.Errorf("build complete input for reservation %d: %w", r.ID(), err)
-			}
-			if _, err := uc.completer.Execute(ctx, in); err != nil {
-				return nil, fmt.Errorf("complete reservation %d: %w", r.ID(), err)
-			}
-		}
+	// 6. Process each CONFIRMED reservation. The shared helper lives
+	// at package scope so the standalone bulk-complete use case can
+	// reuse it without duplicating the loop / sort / lock-order
+	// rationale.
+	if err := processConfirmedReservations(ctx, uc.dogRepo, confirmed, noShowSet, uc.noShower, uc.completer, now); err != nil {
+		return nil, err
 	}
 
 	// 7. Close the activity. The domain error is wrapped rather than
@@ -239,4 +213,59 @@ func (uc *CloseActivityUseCase) runInTx(ctx context.Context, input CloseActivity
 	}
 
 	return activity, nil
+}
+
+// processConfirmedReservations walks every CONFIRMED reservation
+// (already sorted id-ascending by the caller) and dispatches it to
+// either noShower or completer. The deterministic id-ascending order
+// avoids lock-order deadlocks across concurrent batch writers.
+//
+// noShowSet is the set of reservation IDs that must be marked
+// NO_SHOW; the rest are COMPLETED. nil noShower disables the no-show
+// branch (used by BulkCompleteReservations, which has no no-show
+// half).
+//
+// The caller owns the transaction: this function does not commit or
+// roll back. Errors are wrapped so the use case can attribute them to
+// the specific reservation id in logs.
+func processConfirmedReservations(
+	ctx context.Context,
+	dogRepo domain.DogRepository,
+	confirmed []*domain.Reservation,
+	noShowSet map[int]struct{},
+	noShower reservationNoShower,
+	completer reservationCompleter,
+	now time.Time,
+) error {
+	for _, r := range confirmed {
+		dog, err := dogRepo.GetByID(ctx, r.DogID())
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return fmt.Errorf("dog %d not found: %w", r.DogID(), err)
+			}
+			return fmt.Errorf("get dog %d: %w", r.DogID(), err)
+		}
+		if dog == nil {
+			return fmt.Errorf("dog %d not found", r.DogID())
+		}
+
+		if _, ok := noShowSet[r.ID()]; ok && noShower != nil {
+			in, err := reservationuc.NewMarkReservationNoShowInput(dog.UserID(), r.ID(), func() time.Time { return now })
+			if err != nil {
+				return fmt.Errorf("build no-show input for reservation %d: %w", r.ID(), err)
+			}
+			if _, err := noShower.Execute(ctx, in); err != nil {
+				return fmt.Errorf("mark no-show reservation %d: %w", r.ID(), err)
+			}
+		} else {
+			in, err := reservationuc.NewCompleteReservationInput(dog.UserID(), r.ID(), func() time.Time { return now })
+			if err != nil {
+				return fmt.Errorf("build complete input for reservation %d: %w", r.ID(), err)
+			}
+			if _, err := completer.Execute(ctx, in); err != nil {
+				return fmt.Errorf("complete reservation %d: %w", r.ID(), err)
+			}
+		}
+	}
+	return nil
 }

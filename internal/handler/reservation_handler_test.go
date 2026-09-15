@@ -673,14 +673,14 @@ func mustSampleReservationView(
 		panic(err)
 	}
 	activity := domain.MustNewActivity(activityID, activityName, "", activityLocation,
-		domain.TypeRoute, 5, 1, activityDate)
+		domain.TypeRoute, 5, 1, activityDate, nil)
 	dog, err := domain.NewDog(dogID, dogName, "TestBreed", "ES-TEST",
 		24, domain.SexMale, 10, dogUserID)
 	if err != nil {
 		panic(err)
 	}
 	pass := domain.MustNewPass(passID, 10, passRemaining, 1000, domain.PassGeneric,
-		passUserID, createdAt, createdAt, nil)
+		passUserID, createdAt, createdAt, nil, false)
 	view, err := domain.NewReservationView(reservation, activity, dog, pass)
 	if err != nil {
 		panic(err)
@@ -1505,7 +1505,7 @@ func (s *stubActivityRosterGetter) Execute(ctx context.Context, in reservationuc
 func TestReservationListActivityRoster_Success(t *testing.T) {
 	t.Parallel()
 	activity := domain.MustNewActivity(10, "Paseo Río", "desc", "Parking Central",
-		domain.TypeRoute, 5, 2, fixedNow.Add(7*24*time.Hour))
+		domain.TypeRoute, 5, 2, fixedNow.Add(7*24*time.Hour), nil)
 	stub := &stubActivityRosterGetter{
 		fn: func(_ context.Context, in reservationuc.ListActivityRosterInput) (reservationuc.ListActivityRosterOutput, error) {
 			assert.Equal(t, 10, in.ActivityID())

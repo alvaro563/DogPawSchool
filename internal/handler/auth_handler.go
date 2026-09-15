@@ -38,7 +38,8 @@ type registerWithInvitationRequest struct {
 }
 
 type registerWithInvitationResponse struct {
-	User userDTO `json:"user"`
+	Token string  `json:"token"`
+	User  userDTO `json:"user"`
 }
 
 type loginRequest struct {
@@ -87,7 +88,8 @@ func (h *AuthHandler) RegisterWithInvitation(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, registerWithInvitationResponse{
-		User: toUserDTO(output.User),
+		Token: output.Token,
+		User:  toUserDTO(output.User),
 	})
 }
 

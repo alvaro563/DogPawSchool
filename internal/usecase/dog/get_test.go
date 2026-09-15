@@ -30,16 +30,24 @@ func TestGetDogInput_InvalidID(t *testing.T) {
 func TestGetDogUseCase_Success(t *testing.T) {
 	t.Parallel()
 	dog := newTestDog(1)
+	owner := newTestOwner()
 	repo := &mockDogRepository{
 		getByID: func(_ context.Context, id int) (*domain.Dog, error) {
 			assert.Equal(t, 1, id)
 			return dog, nil
 		},
 	}
-	uc := NewGetDogUseCase(repo)
+	userRepo := &mockUserRepository{
+		getByID: func(_ context.Context, id int) (*domain.User, error) {
+			assert.Equal(t, dog.UserID(), id)
+			return owner, nil
+		},
+	}
+	uc := NewGetDogUseCase(repo, userRepo)
 	out, err := uc.Execute(context.Background(), MustNewGetDogInput(1))
 	require.NoError(t, err)
 	assert.Equal(t, dog, out.Dog)
+	assert.Equal(t, "Ana", out.OwnerName)
 }
 
 func TestGetDogUseCase_NotFound(t *testing.T) {
@@ -49,7 +57,7 @@ func TestGetDogUseCase_NotFound(t *testing.T) {
 			return nil, nil
 		},
 	}
-	uc := NewGetDogUseCase(repo)
+	uc := NewGetDogUseCase(repo, &mockUserRepository{})
 	_, err := uc.Execute(context.Background(), MustNewGetDogInput(99))
 	assert.Equal(t, ErrNotFound, err)
 }
@@ -61,7 +69,7 @@ func TestGetDogUseCase_RepoError(t *testing.T) {
 			return nil, errors.New("db down")
 		},
 	}
-	uc := NewGetDogUseCase(repo)
+	uc := NewGetDogUseCase(repo, &mockUserRepository{})
 	_, err := uc.Execute(context.Background(), MustNewGetDogInput(1))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "db down")
@@ -70,4 +78,9 @@ func TestGetDogUseCase_RepoError(t *testing.T) {
 func newTestDog(id int) *domain.Dog {
 	d, _ := domain.NewDog(id, "Luna", "Labrador", "ES-"+string(rune('0'+id)), 24, domain.SexFemale, 22.5, 1)
 	return d
+}
+
+func newTestOwner() *domain.User {
+	u, _ := domain.NewUser(1, "Ana", "ana@dogpaw.es", "hashed-password", domain.RoleRegular)
+	return u
 }

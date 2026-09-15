@@ -29,15 +29,17 @@ func MustNewGetDogInput(id int) GetDogInput {
 }
 
 type GetDogOutput struct {
-	Dog *domain.Dog
+	Dog       *domain.Dog
+	OwnerName string
 }
 
 type GetDogUseCase struct {
-	repo domain.DogRepository
+	repo     domain.DogRepository
+	userRepo domain.UserRepository
 }
 
-func NewGetDogUseCase(repo domain.DogRepository) *GetDogUseCase {
-	return &GetDogUseCase{repo: repo}
+func NewGetDogUseCase(repo domain.DogRepository, userRepo domain.UserRepository) *GetDogUseCase {
+	return &GetDogUseCase{repo: repo, userRepo: userRepo}
 }
 
 func (uc *GetDogUseCase) Execute(ctx context.Context, input GetDogInput) (GetDogOutput, error) {
@@ -48,5 +50,11 @@ func (uc *GetDogUseCase) Execute(ctx context.Context, input GetDogInput) (GetDog
 	if dog == nil {
 		return GetDogOutput{}, ErrNotFound
 	}
-	return GetDogOutput{Dog: dog}, nil
+
+	owner, err := uc.userRepo.GetByID(ctx, dog.UserID())
+	if err != nil {
+		return GetDogOutput{}, fmt.Errorf("get owner for dog %d: %w", input.ID(), err)
+	}
+
+	return GetDogOutput{Dog: dog, OwnerName: owner.Name()}, nil
 }

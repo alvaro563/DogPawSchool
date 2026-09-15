@@ -73,7 +73,7 @@ func TestRegisterWithInvitation_Success(t *testing.T) {
 		fn: func(_ context.Context, in authuc.RegisterWithInvitationInput) (authuc.RegisterWithInvitationOutput, error) {
 			assert.Equal(t, "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", in.Token())
 			assert.Equal(t, "Alice", in.Name())
-			return authuc.RegisterWithInvitationOutput{User: u}, nil
+			return authuc.RegisterWithInvitationOutput{User: u, Token: "jwt-token"}, nil
 		},
 	}, nil, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/auth/register", validRegisterWithInvitationBody())
@@ -83,6 +83,7 @@ func TestRegisterWithInvitation_Success(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 	var body registerWithInvitationResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "jwt-token", body.Token)
 	assert.Equal(t, 1, body.User.ID)
 	assert.Equal(t, "Alice", body.User.Name)
 	assert.Equal(t, "alice@example.com", body.User.Email)

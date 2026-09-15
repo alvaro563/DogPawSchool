@@ -21,7 +21,7 @@ func TestModifyActivityUseCase_Success(t *testing.T) {
 	original := newModifyActivity(1)
 	var saved *domain.Activity
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			return original, nil
 		},
 		update: func(ctx context.Context, activity *domain.Activity) error {
@@ -51,7 +51,7 @@ func TestModifyActivityUseCase_EmptyPatchIsNoOp(t *testing.T) {
 	t.Parallel()
 	original := newModifyActivity(1)
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			return original, nil
 		},
 		update: func(context.Context, *domain.Activity) error {
@@ -69,7 +69,7 @@ func TestModifyActivityUseCase_EmptyPatchIsNoOp(t *testing.T) {
 func TestModifyActivityUseCase_NotFound(t *testing.T) {
 	t.Parallel()
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			return nil, nil
 		},
 		update: func(context.Context, *domain.Activity) error {
@@ -95,7 +95,7 @@ func TestModifyActivityUseCase_PatchValidationErrors(t *testing.T) {
 	t.Parallel()
 	original := newModifyActivity(1)
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			return original, nil
 		},
 		update: func(context.Context, *domain.Activity) error {
@@ -141,7 +141,7 @@ func TestModifyActivityUseCase_PatchValidationErrors(t *testing.T) {
 func TestModifyActivityUseCase_RepoError(t *testing.T) {
 	t.Parallel()
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			return newModifyActivity(1), nil
 		},
 		update: func(ctx context.Context, activity *domain.Activity) error {

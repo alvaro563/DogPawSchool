@@ -1,6 +1,6 @@
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, MapPin, Users, School, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, Users, School, ChevronRight, ArrowRight } from 'lucide-react';
 import { fetchActivities } from '@/infrastructure/repositories/activity-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 
@@ -11,29 +11,40 @@ const TYPE_LABELS: Record<string, string> = {
   EXTRA: 'Extra',
 };
 
-// ActivitiesManagementPage: full list of every class scheduled in
-// the system. Each row is a button that navigates to the same
-// activity detail page used by the "Clases hoy" drill-down
-// (/admin/activities/$id → ActivityDetailPage). The "back" button
-// on the detail page uses history.back() so the user lands back
-// here regardless of which list they came from.
+// ActivitiesManagementPage: open activities only. Closed ones have
+// moved to /admin/activities/completed which follows the perros
+// (active/inactive) precedent. The "back" button on the detail page
+// uses history.back() so the user lands back here regardless of
+// which list they came from.
 export function ActivitiesManagementPage() {
   const navigate = useNavigate();
 
+  // Hierarchical query key: 'activities' is the root prefix; the
+  // mutation invalidates that root to refresh both this list and
+  // the completed one.
   const { data: activities = [], isLoading } = useQuery({
-    queryKey: ['all-activities'],
-    queryFn: () => fetchActivities('2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z'),
+    queryKey: ['activities', 'list', { closed: false }],
+    queryFn: () => fetchActivities('2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z', false),
   });
 
   if (isLoading) return <div className="flex items-center justify-center py-20"><LoadingSpinner size="lg" /></div>;
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Actividades</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {activities.length} actividades programadas · pulsa una para ver la hoja de clase
-        </p>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Actividades</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {activities.length} {activities.length === 1 ? 'actividad abierta' : 'actividades abiertas'} · pulsa una para ver la hoja de clase
+          </p>
+        </div>
+        <Link
+          to="/admin/activities/completed"
+          className="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted sm:self-auto"
+        >
+          Ver actividades completadas
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       {activities.length === 0 ? (
@@ -41,7 +52,14 @@ export function ActivitiesManagementPage() {
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
             <School className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
           </div>
-          <p className="text-lg font-semibold">No hay actividades programadas</p>
+          <p className="text-lg font-semibold">No hay actividades abiertas</p>
+          <p className="text-sm text-muted-foreground">
+            Las actividades completadas están en{' '}
+            <Link to="/admin/activities/completed" className="text-foreground underline">
+              este listado
+            </Link>
+            .
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -58,17 +76,10 @@ export function ActivitiesManagementPage() {
                     params: { id: String(a.id) },
                   })
                 }
-                className={`flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/30 ${a.closed ? 'opacity-50' : ''}`}
+                className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/30"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold">{a.name}</p>
-                    {a.closed && (
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        Cerrada
-                      </span>
-                    )}
-                  </div>
+                  <p className="truncate text-sm font-semibold">{a.name}</p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <School className="h-3 w-3" />

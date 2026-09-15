@@ -21,6 +21,15 @@ export async function fetchAllPasses(): Promise<Pass[]> {
   return data.passes;
 }
 
+export async function fetchPassesByPaid(isPaid: boolean): Promise<Pass[]> {
+  const data = await apiClient.get<PassListResponse>(`/passes/is_paid/${isPaid}`, { limit: '200' });
+  return data.passes;
+}
+
+export async function setPassPaid(id: number, isPaid: boolean): Promise<Pass> {
+  return apiClient.patch<Pass>(`/passes/${id}/paid`, { is_paid: isPaid });
+}
+
 export async function createPass(
   userId: number,
   body: CreatePassRequest,

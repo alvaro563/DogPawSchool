@@ -67,7 +67,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	incompatRepo := postgres.NewIncompatibilityRepository(db)
 	transactor := postgres.NewTransactor(db)
 	registerUC := doguc.NewRegisterDogUseCase(repo)
-	getDogUC := doguc.NewGetDogUseCase(repo)
+	getDogUC := doguc.NewGetDogUseCase(repo, postgres.NewUserRepository(db))
 	listAllUC := doguc.NewListAllDogsUseCase(repo)
 	listByOwnerUC := doguc.NewListByOwnerUseCase(repo)
 	listActiveUC := doguc.NewListActiveDogsUseCase(repo)
@@ -98,7 +98,6 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	)
 
 	activityRepo := postgres.NewActivityRepository(db)
-	registerActivityUC := activityuc.NewRegisterActivityUseCase(activityRepo)
 	getActivityUC := activityuc.NewGetActivityUseCase(activityRepo)
 	modifyActivityUC := activityuc.NewModifyActivityUseCase(activityRepo)
 	listAllActivityUC := activityuc.NewListAllActivitiesUseCase(activityRepo)
@@ -110,11 +109,14 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	getPassUC := passuc.NewGetPassUseCase(passRepo)
 	listAllPassUC := passuc.NewListAllPassesUseCase(passRepo)
 	listByUserPassUC := passuc.NewListByUserPassesUseCase(passRepo)
-	passH := handler.NewPassHandler(registerPassUC, modifyPassUC, getPassUC, listAllPassUC, listByUserPassUC)
+	listByPaidPassUC := passuc.NewListByPaidPassesUseCase(passRepo)
+	setPaidPassUC := passuc.NewSetPassPaidUseCase(passRepo)
+	passH := handler.NewPassHandler(registerPassUC, modifyPassUC, getPassUC, listAllPassUC, listByUserPassUC, listByPaidPassUC, setPaidPassUC)
 
 	reservationRepo := postgres.NewReservationRepository(db)
 	dogRepo := postgres.NewDogRepository(db)
 	userRepo := postgres.NewUserRepository(db)
+	registerActivityUC := activityuc.NewRegisterActivityUseCase(activityRepo, dogRepo)
 	registerReservationUC := reservationuc.NewRegisterReservationUseCase(
 		transactor, activityRepo, dogRepo, passRepo, reservationRepo,
 	)
@@ -142,6 +144,8 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	listUpcomingAllUC := reservationuc.NewListUpcomingAllUseCase(reservationRepo)
 	listActivityRosterUC := reservationuc.NewListActivityRosterUseCase(activityRepo, reservationRepo, userRepo)
 	listPendingUC := reservationuc.NewListPendingReservationsUseCase(reservationRepo, userRepo)
+	listAttendanceReportUC := reservationuc.NewListAttendanceReportUseCase(reservationRepo)
+	attendanceH := handler.NewAttendanceHandler(listAttendanceReportUC)
 	reservationH := handler.NewReservationHandler(
 		registerReservationUC, cancelReservationUC,
 		getReservationUC, listByUserReservationsUC, listUpcomingByUserReservationsUC,
@@ -159,10 +163,14 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		transactor, activityRepo, dogRepo, reservationRepo,
 		markNoShowReservationUC, completeReservationUC,
 	)
+	bulkCompleteUC := activityuc.NewBulkCompleteReservationsUseCase(
+		transactor, activityRepo, dogRepo, reservationRepo, completeReservationUC,
+	)
 
 	activityH := handler.NewActivityHandler(
 		registerActivityUC, getActivityUC, modifyActivityUC,
-		listAllActivityUC, listUpcomingActivityUC, closeActivityUC, reservationRepo,
+		listAllActivityUC, listUpcomingActivityUC,
+		closeActivityUC, bulkCompleteUC, reservationRepo,
 	)
 
 	dogH := handler.NewDogHandler(
@@ -193,19 +201,21 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	listUsersUC := useruc.NewListUsersUseCase(userRepo)
 	updateUserUC := useruc.NewUpdateUserUseCase(userRepo)
 	deactivateUserUC := useruc.NewDeactivateUserUseCase(userRepo)
+	activateUserUC := useruc.NewActivateUserUseCase(userRepo)
 	listUserEmailsUC := useruc.NewListUserEmailsUseCase(userRepo)
-	userH := handler.NewUserHandler(getUserUC, listUsersUC, updateUserUC, deactivateUserUC, listUserEmailsUC)
+	userH := handler.NewUserHandler(getUserUC, listUsersUC, updateUserUC, deactivateUserUC, activateUserUC, listUserEmailsUC)
 
 	invRepo := postgres.NewInvitationRepository(db)
 	createInvUC := invitationuc.NewCreateInvitationUseCase(invRepo)
-	registerAuthUC := authuc.NewRegisterWithInvitationUseCase(
-		transactor, invRepo, userRepo, crypto.NewDefaultBcryptHasher(),
-	)
 	jwtSecret := cfg.JWTSecret
+	jwtTokenGen := crypto.NewJWTTokenGenerator(jwtSecret, 24*time.Hour)
+	registerAuthUC := authuc.NewRegisterWithInvitationUseCase(
+		transactor, invRepo, userRepo, crypto.NewDefaultBcryptHasher(), jwtTokenGen,
+	)
 	loginAuthUC := authuc.NewLoginUseCase(
 		userRepo,
 		crypto.NewDefaultBcryptHasher(),
-		crypto.NewJWTTokenGenerator(jwtSecret, 24*time.Hour),
+		jwtTokenGen,
 	)
 	changePasswordUC := authuc.NewChangePasswordUseCase(
 		userRepo,
@@ -255,6 +265,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 			admin.GET("/users", userH.List)
 			admin.PATCH("/users/:user_id", userH.Update)
 			admin.POST("/users/:user_id/deactivate", userH.Deactivate)
+			admin.POST("/users/:user_id/activate", userH.Activate)
 			admin.GET("/users/emails", userH.ListEmails)
 
 			admin.POST("/invitations", invH.Create)
@@ -288,11 +299,14 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 			admin.POST("/activities", activityH.Register)
 			admin.PATCH("/activities/:id", activityH.Modify)
 			admin.POST("/activities/:id/close", activityH.Close)
+			admin.POST("/activities/:id/complete-all", activityH.BulkCompleteReservations)
 
 			admin.POST("/users/:user_id/passes", passH.Register)
 			admin.GET("/passes", passH.List)
+			admin.GET("/passes/is_paid/:value", passH.ListByPaid)
 			admin.GET("/passes/:id", passH.GetByID)
 			admin.PATCH("/passes/:id", passH.Modify)
+			admin.PATCH("/passes/:id/paid", passH.SetPaid)
 
 			admin.POST("/users/:user_id/reservations/:id/no-show", reservationH.MarkNoShow)
 			admin.POST("/users/:user_id/reservations/:id/complete", reservationH.CompleteReservation)
@@ -305,6 +319,8 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 			admin.GET("/reservations", reservationH.ListAll)
 			admin.GET("/reservations/upcoming", reservationH.ListUpcomingAll)
 			admin.GET("/reservations/pending", reservationH.ListPending)
+			admin.GET("/reservations/attendance", attendanceH.List)
+			admin.GET("/reservations/attendance.csv", attendanceH.DownloadCSV)
 		}
 	}
 

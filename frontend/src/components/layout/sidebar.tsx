@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Dog, Ticket, ClipboardList, User, LayoutDashboard, Users, School, CreditCard, PlusCircle, Shield, ChevronDown, AlertCircle } from 'lucide-react';
+import { CalendarDays, Dog, Ticket, ClipboardList, User, LayoutDashboard, Users, School, CreditCard, PlusCircle, Shield, ChevronDown, AlertCircle, ClipboardCheck } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useAdminModal } from '@/features/admin/hooks/admin-modal-context';
 import { useSelectedActivity } from '@/features/calendar/hooks/selected-activity-context';
@@ -37,6 +37,7 @@ const adminNavItems: NavItem[] = [
   { to: '/admin/activities', label: 'Actividades', icon: School },
   { to: '/admin/passes', label: 'Bonos', icon: CreditCard },
   { to: '/admin/reservations', label: 'Reservas', icon: ClipboardList },
+  { to: '/admin/reservations-attendance', label: 'Asistencia', icon: ClipboardCheck },
 ];
 
 interface SidebarProps {
@@ -281,7 +282,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
         const Icon = item.icon;
         const isActive = item.to === '/admin'
           ? location.pathname === '/admin' || location.pathname === '/admin/'
-          : location.pathname.startsWith(item.to);
+          : location.pathname === item.to || location.pathname.startsWith(item.to + '/');
         return (
           <Link
             key={item.to}

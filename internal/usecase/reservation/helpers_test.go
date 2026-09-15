@@ -34,6 +34,9 @@ type mockReservationRepository struct {
 	listAllView        func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
 	listAllUpcomingView func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
 	listPendingView    func(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error)
+
+	// Read-model for the admin attendance report (status = COMPLETED).
+	listAttendanceReport func(ctx context.Context, from, to *time.Time, limit, offset int) ([]*domain.AttendanceReportEntry, error)
 }
 
 func (m *mockReservationRepository) Create(ctx context.Context, reservation *domain.Reservation) (int, error) {
@@ -147,25 +150,56 @@ func (m *mockReservationRepository) ListPendingView(ctx context.Context, limit, 
 	return nil, nil
 }
 
-// stubActivityRepository is the local mock for the activity repo used
-// by the RegisterReservationUseCase. It mirrors the activity use
-// case mock interface but is defined here so the reservation tests
-// do not need to import the activity test package.
-type stubActivityRepository struct {
-	getByID func(ctx context.Context, id int) (*domain.Activity, error)
+func (m *mockReservationRepository) ListAttendanceReport(ctx context.Context, from, to *time.Time, limit, offset int) ([]*domain.AttendanceReportEntry, error) {
+	if m.listAttendanceReport != nil {
+		return m.listAttendanceReport(ctx, from, to, limit, offset)
+	}
+	return nil, nil
 }
 
-func (s *stubActivityRepository) GetByID(ctx context.Context, id int) (*domain.Activity, error) {
+// stubActivityRepository is the local mock for the activity repo used
+// by the reservation use cases. It mirrors the activity use
+// case mock interface but is defined here so the reservation tests
+// do not need to import the activity test package. Methods not
+// exercised here just satisfy the interface with no-ops.
+type stubActivityRepository struct {
+	getByID         func(ctx context.Context, id int) (*domain.Activity, error)
+	getByIDForUpdate func(ctx context.Context, id int) (*domain.Activity, error)
+}
+
+func (s *stubActivityRepository) GetByID(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 	if s.getByID != nil {
 		return s.getByID(ctx, id)
 	}
 	return nil, nil
 }
 
-func (s *stubActivityRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Activity, error) {
+func (s *stubActivityRepository) GetByIDForUpdate(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
+	if s.getByIDForUpdate != nil {
+		return s.getByIDForUpdate(ctx, id)
+	}
+	// Fallback: tests that stub only getByID still expect a returned
+	// activity when the use case calls GetByIDForUpdate (the production
+	// path uses GetByIDForUpdate to acquire the row lock).
 	if s.getByID != nil {
 		return s.getByID(ctx, id)
 	}
+	return nil, nil
+}
+
+func (s *stubActivityRepository) Create(_ context.Context, _ *domain.Activity) (int, error) { return 0, nil }
+func (s *stubActivityRepository) Update(_ context.Context, _ *domain.Activity) error       { return nil }
+func (s *stubActivityRepository) Delete(_ context.Context, _ int) error                   { return nil }
+func (s *stubActivityRepository) List(_ context.Context, _ int, _ bool, _, _ int) ([]*domain.Activity, error) {
+	return nil, nil
+}
+func (s *stubActivityRepository) ListByDateRange(_ context.Context, _ int, _ bool, _, _ time.Time, _, _ int) ([]*domain.Activity, error) {
+	return nil, nil
+}
+func (s *stubActivityRepository) ListByClosed(_ context.Context, _ int, _ bool, _ bool, _, _ *time.Time, _, _ int) ([]*domain.Activity, error) {
+	return nil, nil
+}
+func (s *stubActivityRepository) ListUpcoming(_ context.Context, _ int, _ bool, _, _ int) ([]*domain.Activity, error) {
 	return nil, nil
 }
 
@@ -204,23 +238,6 @@ func (s *stubUserRepository) ListAllEmails(ctx context.Context) ([]string, error
 	return nil, nil
 }
 func (s *stubUserRepository) Delete(ctx context.Context, _ int) error { return nil }
-
-func (s *stubActivityRepository) Create(ctx context.Context, activity *domain.Activity) (int, error) {
-	return 0, nil
-}
-func (s *stubActivityRepository) Update(ctx context.Context, activity *domain.Activity) error {
-	return nil
-}
-func (s *stubActivityRepository) Delete(ctx context.Context, id int) error { return nil }
-func (s *stubActivityRepository) List(ctx context.Context, _, _ int) ([]*domain.Activity, error) {
-	return nil, nil
-}
-func (s *stubActivityRepository) ListByDateRange(ctx context.Context, _, _ time.Time, _, _ int) ([]*domain.Activity, error) {
-	return nil, nil
-}
-func (s *stubActivityRepository) ListUpcoming(ctx context.Context, _, _ int) ([]*domain.Activity, error) {
-	return nil, nil
-}
 
 // stubDogRepository is the local mock for the dog repo. The use
 // case calls GetByID and GetByIDs, so other methods are zero-value
@@ -313,6 +330,9 @@ func (s *stubPassRepository) Update(ctx context.Context, pass *domain.Pass) erro
 func (s *stubPassRepository) Create(ctx context.Context, pass *domain.Pass) (int, error) {
 	return 0, nil
 }
+func (s *stubPassRepository) ListByPaid(ctx context.Context, isPaid bool, limit, offset int) ([]*domain.Pass, error) {
+	return nil, nil
+}
 func (s *stubPassRepository) ListAll(ctx context.Context, _, _ int) ([]*domain.Pass, error) {
 	return nil, nil
 }
@@ -360,14 +380,14 @@ func mustNewReservationView(
 ) *domain.ReservationView {
 	reservation := mustNewReservation(id, activityID, dogID, passID, status, createdAt)
 	activity := domain.MustNewActivity(activityID, activityName, "", activityLocation,
-		domain.TypeRoute, 5, 1, activityDate)
+		domain.TypeRoute, 5, 1, activityDate, nil)
 	dog, err := domain.NewDog(dogID, dogName, "TestBreed", "ES-TEST-"+strconv.Itoa(dogID),
 		24, domain.SexMale, 10, dogUserID)
 	if err != nil {
 		panic(err)
 	}
 	pass := domain.MustNewPass(passID, 10, passRemaining, 1000, domain.PassGeneric,
-		passUserID, createdAt, createdAt, nil)
+		passUserID, createdAt, createdAt, nil, false)
 	view, err := domain.NewReservationView(reservation, activity, dog, pass)
 	if err != nil {
 		panic(err)

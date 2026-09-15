@@ -89,7 +89,7 @@ func NewRegisterPassUseCase(repo domain.PassRepository) *RegisterPassUseCase {
 func (uc *RegisterPassUseCase) Execute(ctx context.Context, input RegisterPassInput) (RegisterPassOutput, error) {
 	now := time.Now()
 	pass, err := domain.NewPass(0, input.NumOfSessions(), input.NumOfSessions(),
-		input.Price(), input.PassType(), input.UserID(), now, now, input.ExpiresAt())
+		input.Price(), input.PassType(), input.UserID(), now, now, input.ExpiresAt(), false)
 	if err != nil {
 		return RegisterPassOutput{}, err
 	}

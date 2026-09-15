@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Ticket, Calendar } from 'lucide-react';
+import { Ticket, Calendar, Check } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { fetchPassesByUser } from '@/infrastructure/repositories/pass-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
@@ -58,6 +58,15 @@ export function PassListPage() {
                   </span>
                   {isExpired && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">Expirado</span>}
                   {isExhausted && !isExpired && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Agotado</span>}
+                  {pass.is_paid ? (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                      <Check className="h-3 w-3" /> Pagado
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                      Pendiente de pago
+                    </span>
+                  )}
                 </div>
 
                 <div className="space-y-2">

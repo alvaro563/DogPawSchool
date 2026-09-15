@@ -12,7 +12,7 @@ import (
 
 func newTestPass(id int) *domain.Pass {
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
-	return domain.MustNewPass(id, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
+	return domain.MustNewPass(id, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
 }
 
 func TestModifyPassUseCase_Success_AppliesAllFields(t *testing.T) {
@@ -137,7 +137,7 @@ func TestModifyPassUseCase_PatchValidationErrors(t *testing.T) {
 func TestModifyPassUseCase_NonEditableFieldsUnchanged(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	original := domain.MustNewPass(42, 10, 10, 100, domain.PassGeneric, 7, now, now, nil)
+	original := domain.MustNewPass(42, 10, 10, 100, domain.PassGeneric, 7, now, now, nil, false)
 	repo := &mockPassRepository{
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return original, nil

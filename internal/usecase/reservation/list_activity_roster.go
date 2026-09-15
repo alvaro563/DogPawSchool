@@ -117,7 +117,8 @@ func NewListActivityRosterUseCase(
 // dropped because it is irrelevant to a class-day roster and would
 // clutter the response. Order is created_at ASC for both slices.
 func (uc *ListActivityRosterUseCase) Execute(ctx context.Context, input ListActivityRosterInput) (ListActivityRosterOutput, error) {
-	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID())
+	// Admin viewer: this endpoint is served only by the admin route.
+	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID(), 0, true)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return ListActivityRosterOutput{}, ErrInvalidActivity

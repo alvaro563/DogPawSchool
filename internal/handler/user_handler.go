@@ -31,12 +31,17 @@ type UserDeactivator interface {
 	Execute(ctx context.Context, input useruc.DeactivateUserInput) (useruc.DeactivateUserOutput, error)
 }
 
+// UserActivator flips the is_active flag back to true (reactivate).
+type UserActivator interface {
+	Execute(ctx context.Context, input useruc.ActivateUserInput) (useruc.ActivateUserOutput, error)
+}
+
 // UserEmailLister lists every registered email (admin view).
 type UserEmailLister interface {
 	Execute(ctx context.Context) (useruc.ListUserEmailsOutput, error)
 }
 
-// UserHandler owns the 5 user endpoints. All use cases are injected
+// UserHandler owns the user endpoints. All use cases are injected
 // as interfaces so the handler can be unit-tested with stubs and so
 // the dependency direction stays correct (handler -> usecase interface,
 // never -> usecase concrete, never -> repository).
@@ -45,6 +50,7 @@ type UserHandler struct {
 	list       UserLister
 	update     UserUpdater
 	deactivate UserDeactivator
+	activate   UserActivator
 	emailList  UserEmailLister
 }
 
@@ -53,6 +59,7 @@ func NewUserHandler(
 	list UserLister,
 	update UserUpdater,
 	deactivate UserDeactivator,
+	activate UserActivator,
 	emailList UserEmailLister,
 ) *UserHandler {
 	return &UserHandler{
@@ -60,6 +67,7 @@ func NewUserHandler(
 		list:       list,
 		update:     update,
 		deactivate: deactivate,
+		activate:   activate,
 		emailList:  emailList,
 	}
 }
@@ -241,6 +249,43 @@ func (h *UserHandler) Deactivate(c *gin.Context) {
 	})
 }
 
+// Activate godoc
+// @Summary      Activate a previously deactivated user
+// @Description  Flips the user's is_active flag back to true. Idempotent: activating an already-active user is a no-op and returns 200.
+// @Tags         users
+// @Produce      json
+// @Param        user_id  path  int  true  "User ID"
+// @Success      200      {object}  activateUserResponse  "User activated (or already active)"
+// @Failure      400      {object}  errorResponse          "Invalid id"
+// @Failure      404      {object}  errorResponse          "User not found"
+// @Failure      500      {object}  errorResponse          "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/users/{user_id}/activate [post]
+func (h *UserHandler) Activate(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
+		return
+	}
+
+	in, err := useruc.NewActivateUserInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.activate.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, activateUserResponse{
+		ID:       output.ID,
+		IsActive: true,
+	})
+}
+
 // listUsersResponse is the wire format for the list endpoint. Built
 // once here so every list handler in the user package uses the same
 // envelope: data + pagination metadata + count.
@@ -308,4 +353,9 @@ type updateUserResponse struct {
 type deactivateUserResponse struct {
 	ID       int  `json:"id"        example:"9"`
 	IsActive bool `json:"is_active" example:"false"`
+}
+
+type activateUserResponse struct {
+	ID       int  `json:"id"        example:"9"`
+	IsActive bool `json:"is_active" example:"true"`
 }

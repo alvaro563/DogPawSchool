@@ -2,13 +2,14 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { PawPrint, Dog, VenetianMask, Search } from 'lucide-react';
-import { fetchAllActiveDogs, fetchDogsByNeutered, fetchDogsByHeat } from '@/infrastructure/repositories/dog-repository.impl';
+import { fetchAllActiveDogs } from '@/infrastructure/repositories/dog-repository.impl';
 import { fetchAllUsers } from '@/infrastructure/repositories/user-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { cn } from '@/lib/utils';
 import { SexChip } from '@/components/shared/sex-chip';
+import { getSizeBracket, sizeBracketLabel, type SizeBracket } from '@/features/dogs/utils/size';
 
-type FilterMode = 'all' | 'neutered' | 'heat';
+type FilterMode = 'all' | 'large' | 'medium' | 'mini';
 
 interface SearchBarProps {
   label: string;
@@ -61,12 +62,8 @@ export function DogsManagementPage() {
   const [searchOwner, setSearchOwner] = useState('');
 
   const { data: dogs = [], isLoading } = useQuery({
-    queryKey: ['admin-dogs', filter],
-    queryFn: () => {
-      if (filter === 'neutered') return fetchDogsByNeutered();
-      if (filter === 'heat') return fetchDogsByHeat();
-      return fetchAllActiveDogs();
-    },
+    queryKey: ['admin-dogs'],
+    queryFn: fetchAllActiveDogs,
   });
 
   const { data: users = [] } = useQuery({
@@ -84,14 +81,17 @@ export function DogsManagementPage() {
     const tDog = searchDog.trim().toLowerCase();
     const tBreed = searchBreed.trim().toLowerCase();
     const tOwner = searchOwner.trim().toLowerCase();
-    if (!tDog && !tBreed && !tOwner) return dogs;
+    const sizeKey: SizeBracket | null =
+      filter === 'large' ? 'LARGE' : filter === 'medium' ? 'MEDIUM' : filter === 'mini' ? 'MINI' : null;
+    if (!tDog && !tBreed && !tOwner && !sizeKey) return dogs;
     return dogs.filter((d) => {
       if (tDog && !d.name.toLowerCase().startsWith(tDog)) return false;
       if (tBreed && !d.breed.toLowerCase().startsWith(tBreed)) return false;
       if (tOwner && !(ownerMap.get(d.user_id) || '').toLowerCase().startsWith(tOwner)) return false;
+      if (sizeKey && getSizeBracket(d.weight_kg) !== sizeKey) return false;
       return true;
     });
-  }, [dogs, searchDog, searchBreed, searchOwner, ownerMap]);
+  }, [dogs, searchDog, searchBreed, searchOwner, ownerMap, filter]);
 
   const dogSuggestions = useMemo(() => {
     const t = searchDog.toLowerCase();
@@ -137,8 +137,9 @@ export function DogsManagementPage() {
         <div className="flex items-center rounded-lg border border-border p-0.5">
           {([
             { key: 'all' as const, label: 'Todos' },
-            { key: 'neutered' as const, label: 'Castrados' },
-            { key: 'heat' as const, label: 'En celo' },
+            { key: 'large' as const, label: 'Grandes' },
+            { key: 'medium' as const, label: 'Medianos' },
+            { key: 'mini' as const, label: 'Minis' },
           ]).map((f) => (
             <button
               key={f.key}
@@ -205,6 +206,7 @@ export function DogsManagementPage() {
             const months = dog.age_in_months;
             const ageText = months < 12 ? `${months} meses` : `${Math.floor(months / 12)} años`;
             const ownerName = ownerMap.get(dog.user_id) || `ID: ${dog.user_id}`;
+            const sizeBracket: SizeBracket = getSizeBracket(dog.weight_kg);
 
             return (
               <button
@@ -251,6 +253,10 @@ export function DogsManagementPage() {
                       En celo
                     </span>
                   )}
+
+                  <span className="inline-flex items-center gap-1 rounded-md bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                    {sizeBracketLabel[sizeBracket]}
+                  </span>
 
                   <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                     {ageText}

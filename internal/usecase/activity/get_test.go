@@ -16,14 +16,14 @@ func TestGetActivityUseCase_Success(t *testing.T) {
 	fixedDate := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	expected := mustNewActivity(7, "Paseo", "Central", domain.TypeRoute, 5, 1, fixedDate)
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			assert.Equal(t, 7, id)
 			return expected, nil
 		},
 	}
 	uc := NewGetActivityUseCase(repo)
 
-	in := MustNewGetActivityInput(7)
+	in := MustNewGetActivityInput(7, 0, true)
 	output, err := uc.Execute(context.Background(), in)
 
 	require.NoError(t, err)
@@ -33,12 +33,12 @@ func TestGetActivityUseCase_Success(t *testing.T) {
 func TestGetActivityUseCase_NotFound(t *testing.T) {
 	t.Parallel()
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			return nil, nil
 		},
 	}
 	uc := NewGetActivityUseCase(repo)
-	in := MustNewGetActivityInput(99)
+	in := MustNewGetActivityInput(99, 0, true)
 	_, err := uc.Execute(context.Background(), in)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
@@ -46,7 +46,7 @@ func TestGetActivityUseCase_NotFound(t *testing.T) {
 func TestNewGetActivityInput_InvalidID(t *testing.T) {
 	t.Parallel()
 	for _, id := range []int{0, -5} {
-		_, err := NewGetActivityInput(id)
+		_, err := NewGetActivityInput(id, 0, true)
 		assertValidationError(t, err, "id")
 	}
 }
@@ -54,12 +54,12 @@ func TestNewGetActivityInput_InvalidID(t *testing.T) {
 func TestGetActivityUseCase_RepoError(t *testing.T) {
 	t.Parallel()
 	repo := &mockActivityRepository{
-		getByID: func(ctx context.Context, id int) (*domain.Activity, error) {
+		getByID: func(ctx context.Context, id int, _ int, _ bool) (*domain.Activity, error) {
 			return nil, sentinelErr
 		},
 	}
 	uc := NewGetActivityUseCase(repo)
-	in := MustNewGetActivityInput(1)
+	in := MustNewGetActivityInput(1, 0, true)
 	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)

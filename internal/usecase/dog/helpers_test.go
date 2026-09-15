@@ -154,6 +154,38 @@ func (s *stubTransactor) WithinTx(ctx context.Context, fn func(ctx context.Conte
 	return fn(ctx)
 }
 
+type mockUserRepository struct {
+	getByID func(ctx context.Context, id int) (*domain.User, error)
+}
+
+func (m *mockUserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
+	if m.getByID != nil {
+		return m.getByID(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockUserRepository) GetByIDs(_ context.Context, _ []int) ([]*domain.User, error) {
+	return nil, nil
+}
+func (m *mockUserRepository) GetByEmail(_ context.Context, _ string) (*domain.User, error) {
+	return nil, nil
+}
+func (m *mockUserRepository) Create(_ context.Context, _ *domain.User) (int, error) {
+	return 0, nil
+}
+func (m *mockUserRepository) Update(_ context.Context, _ *domain.User) error { return nil }
+func (m *mockUserRepository) Delete(_ context.Context, _ int) error         { return nil }
+func (m *mockUserRepository) ListAll(_ context.Context) ([]*domain.User, error) {
+	return nil, nil
+}
+func (m *mockUserRepository) ListAllPaged(_ context.Context, _, _ int) ([]*domain.User, error) {
+	return nil, nil
+}
+func (m *mockUserRepository) ListAllEmails(_ context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func validIncompatibility() *domain.Incompatibility {
 	i, err := domain.NewTriggerIncompatibility(1, "Reactivo a machos enteros", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")
 	if err != nil {

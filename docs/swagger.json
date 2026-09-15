@@ -2154,6 +2154,64 @@
                 }
             }
         },
+        "/api/v1/passes/is_paid/{value}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of passes whose is_paid flag matches the :value path param. Use true for paid passes and false for unpaid (pending) ones.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passes"
+                ],
+                "summary": "List passes filtered by payment status (admin only)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "is_paid value: true or false",
+                        "name": "value",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of passes to return (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of passes to skip for pagination (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of passes",
+                        "schema": {
+                            "$ref": "#/definitions/handler.listPassesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid value",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/passes/{id}": {
             "get": {
                 "security": [
@@ -2243,6 +2301,70 @@
                 "responses": {
                     "200": {
                         "description": "Updated pass",
+                        "schema": {
+                            "$ref": "#/definitions/handler.passResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id, body, or field value",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Pass not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/passes/{id}/paid": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks a pass as paid (is_paid=true) or unpaid (is_paid=false). Body is {\"is_paid\": true|false}. Returns the updated pass.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "passes"
+                ],
+                "summary": "Set the is_paid flag of a pass (admin only)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Pass ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New payment state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.setPassPaidRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pass updated",
                         "schema": {
                             "$ref": "#/definitions/handler.passResponse"
                         }
@@ -2757,6 +2879,58 @@
                     },
                     "409": {
                         "description": "Email already in use",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users/{user_id}/activate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Flips the user's is_active flag back to true. Idempotent: activating an already-active user is a no-op and returns 200.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Activate a previously deactivated user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User activated (or already active)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.activateUserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -3524,6 +3698,19 @@
         }
     },
     "definitions": {
+        "handler.activateUserResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "handler.activityDTO": {
             "type": "object",
             "properties": {
@@ -3820,6 +4007,10 @@
                 "neutered": {
                     "type": "boolean",
                     "example": false
+                },
+                "owner_name": {
+                    "type": "string",
+                    "example": "Ana"
                 },
                 "passport": {
                     "type": "string",
@@ -4245,6 +4436,10 @@
                     "type": "integer",
                     "example": 42
                 },
+                "is_paid": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "num_of_sessions": {
                     "type": "integer",
                     "example": 10
@@ -4285,6 +4480,10 @@
                 "id": {
                     "type": "integer",
                     "example": 42
+                },
+                "is_paid": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "num_of_sessions": {
                     "type": "integer",
@@ -4569,6 +4768,9 @@
         "handler.registerWithInvitationResponse": {
             "type": "object",
             "properties": {
+                "token": {
+                    "type": "string"
+                },
                 "user": {
                     "$ref": "#/definitions/handler.userDTO"
                 }
@@ -4717,6 +4919,15 @@
                 "sex": {
                     "type": "string",
                     "example": "FEMALE"
+                }
+            }
+        },
+        "handler.setPassPaidRequest": {
+            "type": "object",
+            "properties": {
+                "is_paid": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

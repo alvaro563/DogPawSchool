@@ -14,8 +14,8 @@ func TestListAllPassesUseCase_Success(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	expected := []*domain.Pass{
-		domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil),
-		domain.MustNewPass(2, 5, 5, 50, domain.PassSpecial, 2, now, now, nil),
+		domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false),
+		domain.MustNewPass(2, 5, 5, 50, domain.PassSpecial, 2, now, now, nil, false),
 	}
 	repo := &mockPassRepository{
 		listAll: func(ctx context.Context, limit, offset int) ([]*domain.Pass, error) {

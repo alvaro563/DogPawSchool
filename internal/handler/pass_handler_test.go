@@ -62,28 +62,38 @@ func newPassHandler(
 	getter PassGetter,
 	lister PassLister,
 	byUserLister PassByUserLister,
+	byPaidLister PassByPaidLister,
+	paidSetter PassPaidSetter,
 ) *PassHandler {
-	return NewPassHandler(reg, mod, getter, lister, byUserLister)
+	return NewPassHandler(reg, mod, getter, lister, byUserLister, byPaidLister, paidSetter)
 }
 
 func newPassHandlerReg(reg PassRegisterer) *PassHandler {
-	return newPassHandler(reg, nil, nil, nil, nil)
+	return newPassHandler(reg, nil, nil, nil, nil, nil, nil)
 }
 
 func newPassHandlerMod(mod PassModifier) *PassHandler {
-	return newPassHandler(nil, mod, nil, nil, nil)
+	return newPassHandler(nil, mod, nil, nil, nil, nil, nil)
 }
 
 func newPassHandlerGet(getter PassGetter) *PassHandler {
-	return newPassHandler(nil, nil, getter, nil, nil)
+	return newPassHandler(nil, nil, getter, nil, nil, nil, nil)
 }
 
 func newPassHandlerLst(lister PassLister) *PassHandler {
-	return newPassHandler(nil, nil, nil, lister, nil)
+	return newPassHandler(nil, nil, nil, lister, nil, nil, nil)
 }
 
 func newPassHandlerByUser(byUserLister PassByUserLister) *PassHandler {
-	return newPassHandler(nil, nil, nil, nil, byUserLister)
+	return newPassHandler(nil, nil, nil, nil, byUserLister, nil, nil)
+}
+
+func newPassHandlerByPaid(byPaidLister PassByPaidLister) *PassHandler {
+	return newPassHandler(nil, nil, nil, nil, nil, byPaidLister, nil)
+}
+
+func newPassHandlerSetPaid(paidSetter PassPaidSetter) *PassHandler {
+	return newPassHandler(nil, nil, nil, nil, nil, nil, paidSetter)
 }
 
 func validRegisterPassBody() string {
@@ -216,7 +226,7 @@ func TestPassRegister_InternalError(t *testing.T) {
 // stubs. Helper to keep the test bodies focused.
 func newTestPassForHandler(id int) *domain.Pass {
 	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
-	return domain.MustNewPass(id, 10, 10, 100, domain.PassGeneric, 1, now, now, nil)
+	return domain.MustNewPass(id, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
 }
 
 func TestPassModify_Success_AllFields(t *testing.T) {
@@ -586,4 +596,194 @@ func TestPassListByUser_Forbidden(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"forbidden"`)
+}
+
+// ============================================================================
+// ListByPaid tests
+// ============================================================================
+
+type stubPassByPaidLister struct {
+	fn func(ctx context.Context, in passuc.ListByPaidPassesInput) (passuc.ListByPaidPassesOutput, error)
+}
+
+func (s *stubPassByPaidLister) Execute(ctx context.Context, in passuc.ListByPaidPassesInput) (passuc.ListByPaidPassesOutput, error) {
+	return s.fn(ctx, in)
+}
+
+func TestPassListByPaid_Success_True(t *testing.T) {
+	t.Parallel()
+	paid := newTestPassForHandler(1)
+	repo := paid // reuse: just need a non-nil pass
+	_ = repo
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	paidPass := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, true)
+	stub := &stubPassByPaidLister{fn: func(ctx context.Context, in passuc.ListByPaidPassesInput) (passuc.ListByPaidPassesOutput, error) {
+		assert.True(t, in.IsPaid())
+		assert.Equal(t, 50, in.Limit())
+		assert.Equal(t, 0, in.Offset())
+		return passuc.ListByPaidPassesOutput{Passes: []*domain.Pass{paidPass}}, nil
+	}}
+	h := newPassHandlerByPaid(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/passes/is_paid/true", "")
+	c.Params = gin.Params{{Key: "value", Value: "true"}}
+	h.ListByPaid(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body listPassesResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Len(t, body.Passes, 1)
+	assert.True(t, body.Passes[0].IsPaid)
+}
+
+func TestPassListByPaid_Success_False(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	unpaid := domain.MustNewPass(7, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
+	stub := &stubPassByPaidLister{fn: func(ctx context.Context, in passuc.ListByPaidPassesInput) (passuc.ListByPaidPassesOutput, error) {
+		assert.False(t, in.IsPaid())
+		return passuc.ListByPaidPassesOutput{Passes: []*domain.Pass{unpaid}}, nil
+	}}
+	h := newPassHandlerByPaid(stub)
+	c, w := setupCtx(http.MethodGet, "/api/v1/passes/is_paid/false", "")
+	c.Params = gin.Params{{Key: "value", Value: "false"}}
+	h.ListByPaid(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body listPassesResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Len(t, body.Passes, 1)
+	assert.False(t, body.Passes[0].IsPaid)
+}
+
+func TestPassListByPaid_InvalidValue(t *testing.T) {
+	t.Parallel()
+	h := newPassHandlerByPaid(&stubPassByPaidLister{fn: func(context.Context, passuc.ListByPaidPassesInput) (passuc.ListByPaidPassesOutput, error) {
+		t.Fatal("use case should not be invoked for invalid value")
+		return passuc.ListByPaidPassesOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/passes/is_paid/notabool", "")
+	c.Params = gin.Params{{Key: "value", Value: "notabool"}}
+	h.ListByPaid(c)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"value"`)
+}
+
+func TestPassListByPaid_UseCaseError(t *testing.T) {
+	t.Parallel()
+	h := newPassHandlerByPaid(&stubPassByPaidLister{fn: func(context.Context, passuc.ListByPaidPassesInput) (passuc.ListByPaidPassesOutput, error) {
+		return passuc.ListByPaidPassesOutput{}, errors.New("db down")
+	}})
+	c, w := setupCtx(http.MethodGet, "/api/v1/passes/is_paid/true", "")
+	c.Params = gin.Params{{Key: "value", Value: "true"}}
+	h.ListByPaid(c)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ============================================================================
+// SetPaid tests
+// ============================================================================
+
+type stubPassPaidSetter struct {
+	fn func(ctx context.Context, in passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error)
+}
+
+func (s *stubPassPaidSetter) Execute(ctx context.Context, in passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error) {
+	return s.fn(ctx, in)
+}
+
+func TestPassSetPaid_Success_MarkPaid(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	updated := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, true)
+	stub := &stubPassPaidSetter{fn: func(ctx context.Context, in passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error) {
+		assert.Equal(t, 1, in.ID())
+		assert.True(t, in.IsPaid())
+		return passuc.SetPassPaidOutput{Pass: updated}, nil
+	}}
+	h := newPassHandlerSetPaid(stub)
+	c, w := setupCtx(http.MethodPatch, "/api/v1/passes/1/paid", `{"is_paid":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	h.SetPaid(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body passResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 1, body.ID)
+	assert.True(t, body.IsPaid)
+}
+
+func TestPassSetPaid_Success_MarkUnpaid(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	updated := domain.MustNewPass(1, 10, 10, 100, domain.PassGeneric, 1, now, now, nil, false)
+	stub := &stubPassPaidSetter{fn: func(ctx context.Context, in passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error) {
+		assert.False(t, in.IsPaid())
+		return passuc.SetPassPaidOutput{Pass: updated}, nil
+	}}
+	h := newPassHandlerSetPaid(stub)
+	c, w := setupCtx(http.MethodPatch, "/api/v1/passes/1/paid", `{"is_paid":false}`)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	h.SetPaid(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body passResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.False(t, body.IsPaid)
+}
+
+func TestPassSetPaid_InvalidID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		pathID string
+	}{
+		{"non_integer", "abc"},
+		{"zero", "0"},
+		{"negative", "-5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newPassHandlerSetPaid(&stubPassPaidSetter{fn: func(context.Context, passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error) {
+				t.Fatal("use case should not be invoked for invalid id")
+				return passuc.SetPassPaidOutput{}, nil
+			}})
+			c, w := setupCtx(http.MethodPatch, "/api/v1/passes/"+tt.pathID+"/paid", `{"is_paid":true}`)
+			c.Params = gin.Params{{Key: "id", Value: tt.pathID}}
+			h.SetPaid(c)
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), `"field":"id"`)
+		})
+	}
+}
+
+func TestPassSetPaid_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	h := newPassHandlerSetPaid(&stubPassPaidSetter{fn: func(context.Context, passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error) {
+		t.Fatal("use case should not be invoked for invalid JSON")
+		return passuc.SetPassPaidOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodPatch, "/api/v1/passes/1/paid", "not json")
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	h.SetPaid(c)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid_request")
+}
+
+func TestPassSetPaid_NotFound(t *testing.T) {
+	t.Parallel()
+	h := newPassHandlerSetPaid(&stubPassPaidSetter{fn: func(context.Context, passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error) {
+		return passuc.SetPassPaidOutput{}, passuc.ErrNotFound
+	}})
+	c, w := setupCtx(http.MethodPatch, "/api/v1/passes/1/paid", `{"is_paid":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	h.SetPaid(c)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
+}
+
+func TestPassSetPaid_InternalError(t *testing.T) {
+	t.Parallel()
+	h := newPassHandlerSetPaid(&stubPassPaidSetter{fn: func(context.Context, passuc.SetPassPaidInput) (passuc.SetPassPaidOutput, error) {
+		return passuc.SetPassPaidOutput{}, errors.New("db down")
+	}})
+	c, w := setupCtx(http.MethodPatch, "/api/v1/passes/1/paid", `{"is_paid":true}`)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	h.SetPaid(c)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

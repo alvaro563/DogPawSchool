@@ -154,8 +154,9 @@ func TestRegisterWithInvitation_ConcurrentTokenUse(t *testing.T) {
 	userRepo := postgres.NewUserRepository(testDB)
 	transactor := postgres.NewTransactor(testDB)
 	hasher := crypto.NewDefaultBcryptHasher()
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret", 1*time.Hour)
 
-	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher)
+	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher, tokenGen)
 
 	const goroutines = 20
 	var (
@@ -232,8 +233,9 @@ func TestRegisterWithInvitation_Integration(t *testing.T) {
 	userRepo := postgres.NewUserRepository(testDB)
 	transactor := postgres.NewTransactor(testDB)
 	hasher := crypto.NewDefaultBcryptHasher()
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret", 1*time.Hour)
 
-	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher)
+	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher, tokenGen)
 	in := MustNewRegisterWithInvitationInput(token, "Client Name", password, func() time.Time { return now })
 
 	out, err := uc.Execute(context.Background(), in)

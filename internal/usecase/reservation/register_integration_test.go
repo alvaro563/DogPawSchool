@@ -165,12 +165,12 @@ func seedIntegrationUser(t *testing.T, email string) *domain.User {
 func seedIntegrationActivity(t *testing.T, capacity int, date time.Time) *domain.Activity {
 	t.Helper()
 	activity, err := domain.NewActivity(0, "Paseo Integración", "", "Parque Central",
-		domain.TypeRoute, capacity, 1, date)
+		domain.TypeRoute, capacity, 1, date, nil)
 	require.NoError(t, err)
 	repo := postgres.NewActivityRepository(testDB)
 	id, err := repo.Create(context.Background(), activity)
 	require.NoError(t, err)
-	got, err := repo.GetByID(context.Background(), id)
+	got, err := repo.GetByID(context.Background(), id, 0, true)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	return got
@@ -228,7 +228,7 @@ func seedIntegrationDog(t *testing.T, userID int, name string, traits, triggers 
 func seedIntegrationPass(t *testing.T, userID, sessions int) *domain.Pass {
 	t.Helper()
 	pass, err := domain.NewPass(0, sessions, sessions, 5000, domain.PassGeneric, userID,
-		integrationNow, integrationNow, nil)
+		integrationNow, integrationNow, nil, false)
 	require.NoError(t, err)
 	repo := postgres.NewPassRepository(testDB)
 	id, err := repo.Create(context.Background(), pass)
