@@ -679,6 +679,101 @@ func nullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
 
+// DogWithOwnerRow is the local projection used by
+// ListActiveWithOwnerRaw. It pairs a reconstructed domain.Dog with the
+// owner's display name in a single SQL row. Kept unexported so the
+// infrastructure package does not leak presentation shapes: an
+// adapter in cmd/api converts these rows into the use-case's read
+// model (doguc.DogWithOwner).
+type DogWithOwnerRow struct {
+	Dog       *domain.Dog
+	OwnerName string
+}
+
+// listActiveDogsWithOwnerSelectClause is the 16-column projection
+// reused only by ListActiveWithOwnerRaw. Kept separate from
+// dogSelectClause so the LEFT JOIN against users is opt-in and the
+// existing scanDog (14 columns) stays untouched.
+const listActiveDogsWithOwnerSelectClause = `
+	SELECT d.id, d.user_id, d.name, d.breed, d.age_in_months, d.sex,
+	       d.neutered, d.heat, d.weight_kg,
+	       d.photo_url, d.medical_notes, d.educator_notes,
+	       d.passport, d.is_active,
+	       u.name AS owner_name
+	FROM dogs d
+	LEFT JOIN users u ON u.id = d.user_id
+	WHERE d.is_active = true
+	ORDER BY d.id ASC`
+
+// ListActiveWithOwnerRaw returns active dogs together with their
+// owner's display name in a single query (LEFT JOIN on users). The
+// method lives on the concrete struct only — NOT on
+// domain.DogRepository — so existing tests/mocks of that interface
+// are not affected (Open/Closed). An adapter in cmd/api translates
+// these rows to the use case's DogWithOwner read model.
+func (repo *DogRepository) ListActiveWithOwnerRaw(ctx context.Context, limit, offset int) ([]*DogWithOwnerRow, error) {
+	const query = listActiveDogsWithOwnerSelectClause + `
+		LIMIT $1 OFFSET $2`
+	rows, err := runner(ctx, repo.db).QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("query active dogs with owner: %w", err)
+	}
+	defer rows.Close()
+	out := make([]*DogWithOwnerRow, 0, limit)
+	for rows.Next() {
+		item, err := scanDogWithOwner(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dog with owner: %w", err)
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	return out, nil
+}
+
+// scanDogWithOwner is the 16-column variant of scanDog: same 14 dog
+// columns plus u.name. Incompatibilities are not eagerly loaded here
+// because the active-dogs endpoint is consumed by selectors that
+// never display the trait graph.
+func scanDogWithOwner(scanner rowScanner) (*DogWithOwnerRow, error) {
+	var (
+		id                                    int64
+		userID                                int64
+		name, breed                           string
+		ageInMonths                           int
+		sex                                   string
+		neutered, heat, isActive              bool
+		weightKg                              float64
+		photoURL, medicalNotes, educatorNotes sql.NullString
+		passport                              string
+		ownerName                             sql.NullString
+	)
+	if err := scanner.Scan(&id, &userID, &name, &breed, &ageInMonths, &sex,
+		&neutered, &heat, &weightKg, &photoURL, &medicalNotes, &educatorNotes,
+		&passport, &isActive, &ownerName); err != nil {
+		return nil, err
+	}
+	dog, err := domain.NewDog(int(id), name, breed, passport, ageInMonths,
+		domain.Sex(sex), weightKg, int(userID))
+	if err != nil {
+		return nil, fmt.Errorf("reconstruct dog: %w", err)
+	}
+	if err := dog.ApplyPatch(domain.DogPatch{
+		Neutered:      &neutered,
+		Heat:          &heat,
+		WeightKg:      &weightKg,
+		PhotoURL:      &photoURL.String,
+		MedicalNotes:  &medicalNotes.String,
+		EducatorNotes: &educatorNotes.String,
+		IsActive:      &isActive,
+	}); err != nil {
+		return nil, fmt.Errorf("reconstruct dog profile: %w", err)
+	}
+	return &DogWithOwnerRow{Dog: dog, OwnerName: ownerName.String}, nil
+}
+
 // Compile-time assertion that *DogRepository satisfies the domain contract.
 // If a method signature drifts, the build fails here instead of at runtime.
 var _ domain.DogRepository = (*DogRepository)(nil)

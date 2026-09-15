@@ -252,7 +252,7 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
                 )}
                 {dogs.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.name} — {d.owner_name}
+                    {d.owner_name ? `${d.name} — ${d.owner_name}` : d.name}
                   </option>
                 ))}
               </select>

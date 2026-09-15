@@ -41,6 +41,14 @@ type DogActiveLister interface {
 	Execute(ctx context.Context, input doguc.ListActiveDogsInput) (doguc.ListActiveDogsOutput, error)
 }
 
+// DogActiveWithOwnerLister is the narrow port for the enriched
+// active-dogs-with-owner read. Defined alongside the other listers
+// for symmetry, but wired in via a setter (WithListActiveWithOwner)
+// so the existing NewDogHandler signature stays untouched.
+type DogActiveWithOwnerLister interface {
+	Execute(ctx context.Context, input doguc.ListActiveDogsWithOwnerInput) (doguc.ListActiveDogsWithOwnerOutput, error)
+}
+
 type DogByIsActiveLister interface {
 	Execute(ctx context.Context, input doguc.ListByIsActiveInput) (doguc.ListByIsActiveOutput, error)
 }
@@ -111,6 +119,7 @@ type DogHandler struct {
 	list                  DogLister
 	listByOwner           DogListerByOwner
 	listActive            DogActiveLister
+	listActiveWithOwner   DogActiveWithOwnerLister
 	listByIsActive        DogByIsActiveLister
 	listByIncompatibility DogByIncompatibilityLister
 	listByBreed           DogByBreedLister
@@ -127,6 +136,15 @@ type DogHandler struct {
 	setNeutered           DogNeuteredSetter
 	setHeat               DogHeatSetter
 	setPhoto              DogPhotoSetter
+}
+
+// WithListActiveWithOwner wires the enriched active-dogs listing
+// (with owner_name populated) without modifying the NewDogHandler
+// signature. The setter is the open/closed extension point: existing
+// handlers that do not need the enriched view stay unchanged.
+func (h *DogHandler) WithListActiveWithOwner(l DogActiveWithOwnerLister) *DogHandler {
+	h.listActiveWithOwner = l
+	return h
 }
 
 func NewDogHandler(
@@ -545,6 +563,42 @@ func (h *DogHandler) ListActive(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toListDogsResponse(output.Dogs, in))
+}
+
+// ListActiveWithOwner godoc
+// @Summary      List active dogs with their owner's display name
+// @Description  Enriched variant of /dogs/active that resolves the
+// owner's name via a JOIN at the repository layer. Used by admin
+// selectors that need to show "Perro — Dueño" labels. Pagination
+// and response shape mirror ListActive.
+// @Tags         dogs
+// @Produce      json
+// @Param        limit   query  int  false  "Maximum number of dogs to return (default 50, max 100)"
+// @Param        offset  query  int  false  "Number of dogs to skip for pagination (default 0)"
+// @Success      200  {object}  listDogsResponse
+// @Failure      500  {object}  errorResponse
+// @Security     BearerAuth
+// @Router       /api/v1/dogs/active [get]
+func (h *DogHandler) ListActiveWithOwner(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	in, _ := doguc.NewListActiveDogsWithOwnerInput(limit, offset)
+	output, err := h.listActiveWithOwner.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	dtos := make([]dogDTO, len(output.Items))
+	for i, item := range output.Items {
+		dtos[i] = toDogDTO(item.Dog, item.OwnerName)
+	}
+	c.JSON(http.StatusOK, listDogsResponse{
+		Dogs:   dtos,
+		Limit:  in.Limit(),
+		Offset: in.Offset(),
+		Count:  len(dtos),
+	})
 }
 
 // ListByIsActive godoc

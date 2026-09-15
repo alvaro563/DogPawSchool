@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -307,4 +309,62 @@ func TestConcurrency_DogIncompatibilities(t *testing.T) {
 	}
 	assert.True(t, ids[idA], "incompatibility A must be present")
 	assert.True(t, ids[idB], "incompatibility B must be present")
+}
+
+// insertDogWithPassport is a small variant of insertBaseDog that
+// accepts the passport so a single test can create more than one dog
+// without colliding on the unique passport constraint.
+func insertDogWithPassport(t *testing.T, db *sql.DB, userID int, passport string) *domain.Dog {
+	t.Helper()
+	repo := NewDogRepository(db)
+	dog, err := domain.NewDog(0, "Luna", "Labrador", passport, 24,
+		domain.SexFemale, 22.5, userID)
+	require.NoError(t, err)
+	id, err := repo.Create(context.Background(), dog)
+	require.NoError(t, err)
+	got, err := repo.GetByID(context.Background(), id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	return got
+}
+
+func TestDogRepository_ListActiveWithOwnerRaw(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewDogRepository(db)
+
+	ownerA := insertBaseUser(t, db)
+	ownerB, err := domain.NewUser(0, "Second Owner", "second-withowner@test.com",
+		strings.Repeat("s", 60), domain.RoleRegular)
+	require.NoError(t, err)
+	_, err = NewUserRepository(db).Create(context.Background(), ownerB)
+	require.NoError(t, err)
+	ownerBGot, err := NewUserRepository(db).GetByEmail(context.Background(), "second-withowner@test.com")
+	require.NoError(t, err)
+
+	activeA := insertDogWithPassport(t, db, ownerA.ID(), "ES-WITH-OWNER-A")
+	activeB := insertDogWithPassport(t, db, ownerBGot.ID(), "ES-WITH-OWNER-B")
+
+	inactive, err := domain.NewDog(0, "Inactive", "Breed", "ES-INACTIVE-WITH-OWNER", 12,
+		domain.SexMale, 5.0, ownerA.ID())
+	require.NoError(t, err)
+	inactiveID, err := repo.Create(context.Background(), inactive)
+	require.NoError(t, err)
+	_, err = db.ExecContext(context.Background(),
+		"UPDATE dogs SET is_active=false WHERE id=$1", inactiveID)
+	require.NoError(t, err)
+
+	rows, err := repo.ListActiveWithOwnerRaw(context.Background(), 100, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "only active dogs must be returned")
+
+	byID := make(map[int]string, len(rows))
+	for _, r := range rows {
+		byID[r.Dog.ID()] = r.OwnerName
+	}
+	assert.Equal(t, ownerA.Name(), byID[activeA.ID()], "owner name for activeA")
+	assert.Equal(t, ownerBGot.Name(), byID[activeB.ID()], "owner name for activeB")
+	_, present := byID[inactiveID]
+	assert.False(t, present, "inactive dog must not appear in the active list")
 }

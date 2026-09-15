@@ -32,6 +32,26 @@ import (
 
 const version = "0.1.0"
 
+// dogWithOwnerAdapter bridges *postgres.DogRepository (infra) to
+// doguc.DogWithOwnerLister (use case) without creating an import
+// cycle between the two packages. It maps each infra row to the use
+// case's read model.
+type dogWithOwnerAdapter struct {
+	repo *postgres.DogRepository
+}
+
+func (a dogWithOwnerAdapter) ListActiveWithOwner(ctx context.Context, limit, offset int) ([]*doguc.DogWithOwner, error) {
+	rows, err := a.repo.ListActiveWithOwnerRaw(ctx, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*doguc.DogWithOwner, len(rows))
+	for i, r := range rows {
+		out[i] = &doguc.DogWithOwner{Dog: r.Dog, OwnerName: r.OwnerName}
+	}
+	return out, nil
+}
+
 func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -197,6 +217,12 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		setPhotoUC,
 	)
 
+	// Enriched active-dogs listing: a JOIN-backed projection that
+	// fills owner_name. Wired through the setter (Open/Closed) so
+	// the constructor signature stays intact.
+	listActiveWithOwnerUC := doguc.NewListActiveDogsWithOwnerUseCase(dogWithOwnerAdapter{repo: dogRepo})
+	dogH.WithListActiveWithOwner(listActiveWithOwnerUC)
+
 	getUserUC := useruc.NewGetUserUseCase(userRepo)
 	listUsersUC := useruc.NewListUsersUseCase(userRepo)
 	updateUserUC := useruc.NewUpdateUserUseCase(userRepo)
@@ -272,7 +298,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 
 			admin.POST("/dogs", dogH.Register)
 			admin.GET("/dogs", dogH.List)
-			admin.GET("/dogs/active", dogH.ListActive)
+			admin.GET("/dogs/active", dogH.ListActiveWithOwner)
 			admin.GET("/dogs/is_active/:value", dogH.ListByIsActive)
 			admin.GET("/dogs/incompatibility/:incompat_id", dogH.ListByIncompatibility)
 			admin.GET("/dogs/breed/:breed", dogH.ListByBreed)
