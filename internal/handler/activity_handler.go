@@ -98,11 +98,16 @@ func (h *ActivityHandler) Register(c *gin.Context) {
 		})
 		return
 	}
+	var sizeTarget *domain.SizeBracket
+	if request.SizeTarget != nil {
+		st := domain.SizeBracket(*request.SizeTarget)
+		sizeTarget = &st
+	}
 	in, err := activityuc.NewRegisterActivityInput(
 		request.Name, request.Description, request.Location,
 		domain.ActivityType(request.ActivityType),
 		request.MaxCapacity, request.DurationInHours, request.Date,
-		request.DogID,
+		request.DogID, sizeTarget,
 	)
 	if err != nil {
 		writeError(c, err)
@@ -305,6 +310,10 @@ func (h *ActivityHandler) Modify(c *gin.Context) {
 		activityType := domain.ActivityType(*request.ActivityType)
 		patch.ActivityType = &activityType
 	}
+	if request.SizeTarget != nil {
+		st := domain.SizeBracket(*request.SizeTarget)
+		patch.SizeTarget = &st
+	}
 	in, err := activityuc.NewModifyActivityInput(id, patch)
 	if err != nil {
 		writeError(c, err)
@@ -335,6 +344,10 @@ type registerActivityRequest struct {
 	// activity_type="INDIVIDUAL_CLASS", NULL for group classes and
 	// extra events. Omitted / null in the JSON for non-individual.
 	DogID *int `json:"dog_id,omitempty" example:"7"`
+	// SizeTarget restricts the booking to a single size bracket
+	// (MINI / MEDIUM / LARGE). Only valid for SOCIALIZATION_GROUP and
+	// ROUTE. NULL / omitted means "all sizes welcome".
+	SizeTarget *string `json:"size_target,omitempty" example:"MINI" enum:"MINI,MEDIUM,LARGE"`
 }
 
 type registerActivityResponse struct {
@@ -356,6 +369,12 @@ type modifyActivityRequest struct {
 	MaxCapacity     *int       `json:"max_capacity,omitempty" example:"12"`
 	DurationInHours *int       `json:"duration_in_hours,omitempty" example:"3"`
 	Date            *time.Time `json:"date,omitempty" example:"2026-09-01T10:00:00Z"`
+	// SizeTarget uses a triple-state via *string:
+	//   nil       = no change
+	//   pointer to ""  = clear the target (back to all sizes)
+	//   pointer to "MINI"/"MEDIUM"/"LARGE" = set the target
+	// Only valid for SOCIALIZATION_GROUP / ROUTE.
+	SizeTarget *string `json:"size_target,omitempty" example:"MEDIUM" enum:"MINI,MEDIUM,LARGE,"`
 }
 
 type closeActivityRequest struct {
@@ -477,6 +496,9 @@ type activityResponse struct {
 	// DogID is the target dog for INDIVIDUAL_CLASS; omitted from the
 	// response when the activity is group / extra (NULL in the DB).
 	DogID *int `json:"dog_id,omitempty" example:"7"`
+	// SizeTarget is the optional size restriction for
+	// SOCIALIZATION_GROUP / ROUTE. NULL / omitted = all sizes.
+	SizeTarget *string `json:"size_target,omitempty" example:"MINI" enum:"MINI,MEDIUM,LARGE"`
 }
 
 // activityDTO is the wire format of an activity. It mirrors activityResponse
@@ -507,6 +529,11 @@ func toListActivitiesResponse(activities []*domain.Activity, in activityPaginati
 
 // toActivityDTO converts a domain.Activity into the HTTP wire format.
 func toActivityDTO(activity *domain.Activity, heldSlots int) activityDTO {
+	var sizePtr *string
+	if st := activity.SizeTarget(); st != nil {
+		v := string(*st)
+		sizePtr = &v
+	}
 	return activityDTO{
 		ID:              activity.ID(),
 		Name:            activity.Name(),
@@ -519,6 +546,7 @@ func toActivityDTO(activity *domain.Activity, heldSlots int) activityDTO {
 		Date:            activity.Date(),
 		Closed:          activity.IsClosed(),
 		DogID:           activity.DogID(),
+		SizeTarget:      sizePtr,
 	}
 }
 

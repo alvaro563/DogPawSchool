@@ -1139,6 +1139,10 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_dog_id"})
 		return
 	}
+	if errors.Is(err, reservationuc.ErrDogSizeMismatch) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "dog_size_mismatch"})
+		return
+	}
 	if errors.Is(err, reservationuc.ErrNotCancellable) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "not_cancellable"})
 		return

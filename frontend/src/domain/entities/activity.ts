@@ -1,5 +1,7 @@
 export type ActivityType = 'SOCIALIZATION_GROUP' | 'ROUTE' | 'INDIVIDUAL_CLASS' | 'EXTRA';
 
+export type SizeBracket = 'MINI' | 'MEDIUM' | 'LARGE' | 'UNKNOWN';
+
 export interface Activity {
   id: number;
   name: string;
@@ -11,6 +13,10 @@ export interface Activity {
   duration_in_hours: number;
   date: string;
   closed: boolean;
+  dog_id?: number | null;
+  // Optional size restriction for SOCIALIZATION_GROUP / ROUTE.
+  // null / undefined = all sizes welcome.
+  size_target?: SizeBracket | null;
 }
 
 export interface ActivityListResponse {

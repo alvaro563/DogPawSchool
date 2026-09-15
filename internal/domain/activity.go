@@ -32,6 +32,16 @@ func (activityType ActivityType) IsValid() bool {
 // dogID nil.
 var ErrDogRequiredForIndividual = errors.New("individual class requires a target dog")
 
+// ErrSizeTargetNotApplicable is returned by NewActivity when a size
+// target is supplied for a type that does not support it
+// (INDIVIDUAL_CLASS or EXTRA). Size targets only make sense for
+// group activities (SOCIALIZATION_GROUP, ROUTE).
+var ErrSizeTargetNotApplicable = errors.New("size target only applies to SOCIALIZATION_GROUP and ROUTE")
+
+// ErrInvalidSizeTarget is returned when sizeTarget is non-nil but
+// points to an unrecognised SizeBracket (e.g. UNKNOWN).
+var ErrInvalidSizeTarget = errors.New("invalid size target")
+
 // Activity is a scheduled school session: a class, a route, an
 // individual session, or an extra event. Dogs are booked into Activities
 // via Reservation.
@@ -41,6 +51,13 @@ var ErrDogRequiredForIndividual = errors.New("individual class requires a target
 // dogID == nil so that the visibility filter can show them to every
 // user (the LEFT JOIN on dogs yields user_id NULL for those rows and
 // the WHERE short-circuits on a.dog_id IS NULL).
+//
+// sizeTarget is *SizeBracket (nullable pointer) because only
+// SOCIALIZATION_GROUP and ROUTE may restrict the booking to a single
+// size bracket (MINI / MEDIUM / LARGE). A nil sizeTarget means "all
+// sizes welcome" — the reservation use case does not filter on dog
+// size when this field is nil. INDIVIDUAL_CLASS and EXTRA always
+// have nil sizeTarget.
 type Activity struct {
 	id              int
 	name            string
@@ -52,6 +69,7 @@ type Activity struct {
 	date            time.Time
 	closed          bool
 	dogID           *int
+	sizeTarget      *SizeBracket
 }
 
 // NewActivity creates an Activity with validated fields.
@@ -59,7 +77,13 @@ type Activity struct {
 // dogID is the target dog id, nil for group classes. Required when
 // activityType == TypeIndividual (enforced by the domain and
 // redundantly by a CHECK constraint at the DB layer).
-func NewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, dogID *int) (*Activity, error) {
+//
+// sizeTarget restricts bookings to a single size bracket for
+// SOCIALIZATION_GROUP and ROUTE activities. Pass nil for "all
+// sizes" (the default). Passing a non-nil sizeTarget for
+// INDIVIDUAL_CLASS or EXTRA returns ErrSizeTargetNotApplicable.
+// UNKNOWN is rejected because no real dog is meant to land there.
+func NewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, dogID *int, sizeTarget *SizeBracket) (*Activity, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("activity: id must not be negative")
 	}
@@ -84,6 +108,17 @@ func NewActivity(id int, name, description, location string, activityType Activi
 	if activityType == TypeIndividual && dogID == nil {
 		return nil, ErrDogRequiredForIndividual
 	}
+	if sizeTarget != nil {
+		switch activityType {
+		case TypeSocialization, TypeRoute:
+			// ok
+		default:
+			return nil, ErrSizeTargetNotApplicable
+		}
+		if !sizeTarget.IsValid() || *sizeTarget == SizeBracketUnknown {
+			return nil, ErrInvalidSizeTarget
+		}
+	}
 	return &Activity{
 		id:              id,
 		name:            name,
@@ -94,13 +129,14 @@ func NewActivity(id int, name, description, location string, activityType Activi
 		durationInHours: durationInHours,
 		date:            date,
 		dogID:           dogID,
+		sizeTarget:      sizeTarget,
 	}, nil
 }
 
 // MustNewActivity is like NewActivity but panics on error. Intended for
 // tests and seed data where the inputs are known to be valid.
-func MustNewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, dogID *int) *Activity {
-	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date, dogID)
+func MustNewActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, dogID *int, sizeTarget *SizeBracket) *Activity {
+	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date, dogID, sizeTarget)
 	if err != nil {
 		panic(err)
 	}
@@ -119,6 +155,20 @@ func (activity *Activity) Date() time.Time      { return activity.date }
 // DogID returns the target dog id, or nil when the activity is a
 // group / extra that does not target a specific dog.
 func (activity *Activity) DogID() *int { return activity.dogID }
+
+// SizeTarget returns the optional size bracket this activity is
+// restricted to. nil means "all sizes welcome".
+func (activity *Activity) SizeTarget() *SizeBracket { return activity.sizeTarget }
+
+// IsTargetedAtSize reports whether a dog of the given size bracket is
+// eligible to book this activity. True when no target is set (all
+// sizes) or when the target matches.
+func (activity *Activity) IsTargetedAtSize(target SizeBracket) bool {
+	if activity == nil || activity.sizeTarget == nil {
+		return true
+	}
+	return *activity.sizeTarget == target
+}
 
 // IsFull reports whether the activity has reached its max capacity given
 // the current number of bookings.
@@ -168,8 +218,8 @@ func (activity *Activity) IsFinished(now time.Time) bool {
 // dogID may be nil for group classes. INDIVIDUAL_CLASS rows restored
 // here MUST have a non-nil dogID; the row-level CHECK constraint at
 // the DB layer enforces this invariant even against future bug paths.
-func ReconstituteActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, closed bool, dogID *int) (*Activity, error) {
-	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date, dogID)
+func ReconstituteActivity(id int, name, description, location string, activityType ActivityType, maxCapacity, durationInHours int, date time.Time, closed bool, dogID *int, sizeTarget *SizeBracket) (*Activity, error) {
+	activity, err := NewActivity(id, name, description, location, activityType, maxCapacity, durationInHours, date, dogID, sizeTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +283,14 @@ func (activity *Activity) IsExtra() bool {
 
 // ActivityPatch is a partial update: only the non-nil fields are
 // mutated. See ApplyPatch for per-field validation.
+//
+// SizeTarget uses a triple-state: nil means "no change"; a non-nil
+// pointer (including a pointer to an empty SizeBracket value) means
+// "set the size target to this value". Because the use case layer
+// already validates, the patch simply assigns — type/size
+// consistency is re-checked by ReconstituteActivity when the row is
+// re-read. To CLEAR a previously set size target, callers pass a
+// pointer to an empty SizeBracket string.
 type ActivityPatch struct {
 	Name            *string
 	Description     *string
@@ -241,6 +299,7 @@ type ActivityPatch struct {
 	MaxCapacity     *int
 	DurationInHours *int
 	Date            *time.Time
+	SizeTarget      *SizeBracket
 }
 
 // ActivityValidationError is returned by ApplyPatch when a supplied
@@ -294,6 +353,29 @@ func (activity *Activity) ApplyPatch(patch ActivityPatch) error {
 			return &ActivityValidationError{Field: "date"}
 		}
 		activity.date = *patch.Date
+	}
+	if patch.SizeTarget != nil {
+		// Empty string means "clear the target" (back to all sizes).
+		if *patch.SizeTarget == "" {
+			activity.sizeTarget = nil
+		} else if !patch.SizeTarget.IsValid() || *patch.SizeTarget == SizeBracketUnknown {
+			return &ActivityValidationError{Field: "size_target"}
+		} else {
+			target := *patch.SizeTarget
+			activity.sizeTarget = &target
+		}
+	}
+	// Auto-clean when the activity type changes to one that does not
+	// accept a size target (defence-in-depth: callers can also clear
+	// it explicitly, but switching type without clearing would leave
+	// a dangling invariant).
+	if patch.ActivityType != nil && activity.sizeTarget != nil {
+		switch *patch.ActivityType {
+		case TypeSocialization, TypeRoute:
+			// ok, keep
+		default:
+			activity.sizeTarget = nil
+		}
 	}
 	return nil
 }

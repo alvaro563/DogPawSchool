@@ -57,7 +57,7 @@ func insertBaseActivity(t *testing.T, db *sql.DB) *domain.Activity {
 	t.Helper()
 	repo := NewActivityRepository(db)
 	activity, err := domain.NewActivity(0, "Paseo Test", "", "Parque Central",
-		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour), nil)
+		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour), nil, nil)
 	require.NoError(t, err)
 	id, err := repo.Create(context.Background(), activity)
 	require.NoError(t, err)

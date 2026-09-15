@@ -128,6 +128,7 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
   const [datePart, setDatePart] = useState(() => todayLocalDate());
   const [timePart, setTimePart] = useState('10:00');
   const [dogId, setDogId] = useState<number | null>(null);
+  const [sizeTarget, setSizeTarget] = useState<'' | 'MINI' | 'MEDIUM' | 'LARGE'>('');
   const [error, setError] = useState('');
 
   // Fetch active dogs only when the modal is open AND the admin picked
@@ -142,6 +143,15 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
   // we never send a stale dog_id on the next submit.
   useEffect(() => {
     if (activityType !== 'INDIVIDUAL_CLASS') setDogId(null);
+  }, [activityType]);
+
+  // Reset the size target when the type switches to one that does not
+  // accept it (INDIVIDUAL_CLASS / EXTRA). Mirrors the domain's
+  // ErrSizeTargetNotApplicable guard.
+  useEffect(() => {
+    if (activityType !== 'SOCIALIZATION_GROUP' && activityType !== 'ROUTE') {
+      setSizeTarget('');
+    }
   }, [activityType]);
 
   // Individual classes always target one dog, so capacity is forced to 1.
@@ -166,6 +176,10 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
         duration_in_hours: durationInHours,
         date: new Date(`${datePart}T${timePart}:00`).toISOString(),
         dog_id: activityType === 'INDIVIDUAL_CLASS' ? dogId : null,
+        size_target:
+          activityType === 'SOCIALIZATION_GROUP' || activityType === 'ROUTE'
+            ? sizeTarget || null
+            : null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'], refetchType: 'all' });
@@ -175,6 +189,7 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
       setDatePart(todayLocalDate());
       setTimePart('10:00');
       setDogId(null);
+      setSizeTarget('');
       setError('');
 
       const activityDate = new Date(`${datePart}T${timePart}:00`);
@@ -268,6 +283,21 @@ export function CreateActivityModal({ open, onOpenChange }: CreateActivityModalP
               <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="number" value={durationInHours} min={1} onChange={(e) => setDurationInHours(+e.target.value)} />
             </div>
           </div>
+          {(activityType === 'SOCIALIZATION_GROUP' || activityType === 'ROUTE') && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Tamaño objetivo</label>
+              <select
+                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm"
+                value={sizeTarget}
+                onChange={(e) => setSizeTarget(e.target.value as '' | 'MINI' | 'MEDIUM' | 'LARGE')}
+              >
+                <option value="">Todos los tamaños</option>
+                <option value="MINI">Mini (≤ 5 kg)</option>
+                <option value="MEDIUM">Mediano (5–20 kg)</option>
+                <option value="LARGE">Grande (&gt; 20 kg)</option>
+              </select>
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="w-1/2 space-y-1.5">
               <label className="text-xs font-medium">Fecha</label>

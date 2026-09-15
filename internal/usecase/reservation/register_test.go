@@ -21,7 +21,7 @@ func validRegisterInput() RegisterReservationInput {
 // for at least one more booking. Anchored to fixedNow so the test
 // is deterministic regardless of the wall clock.
 func validFutureActivity(id int) *domain.Activity {
-	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour), nil)
+	return domain.MustNewActivity(id, "Paseo", "", "Central", domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour), nil, nil)
 }
 
 // validDog returns a dog owned by the given user.
@@ -162,7 +162,7 @@ func TestRegisterReservationUseCase_ActivityNotFound(t *testing.T) {
 func TestRegisterReservationUseCase_ActivityInPast(t *testing.T) {
 	t.Parallel()
 	pastActivity := domain.MustNewActivity(10, "Paseo", "", "Central", domain.TypeRoute, 5, 1,
-		fixedNow.Add(-24*time.Hour), nil)
+		fixedNow.Add(-24*time.Hour), nil, nil)
 	activityRepo := &stubActivityRepository{
 		getByID: func(context.Context, int) (*domain.Activity, error) {
 			return pastActivity, nil
@@ -619,6 +619,91 @@ func TestRegisterReservationUseCase_NoConflictStaysConfirmed(t *testing.T) {
 	output, err := uc.Execute(context.Background(), validRegisterInput())
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusConfirmed, output.Status)
+}
+
+func TestRegisterReservationUseCase_SizeMismatchBlocks(t *testing.T) {
+	t.Parallel()
+	userID := 1 // matches validRegisterInput() (userID=1)
+	dogID := 20
+	activityID := 10
+
+	// Activity targets MINI bracket.
+	mini := domain.SizeBracketMini
+	activity, err := domain.NewActivity(activityID, "Paseo Minis", "", "Parque",
+		domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour), nil, &mini)
+	require.NoError(t, err)
+
+	// Dog is in the MEDIUM bracket — must be rejected with ErrDogSizeMismatch.
+	dog := validDog(15.0, userID) // 15 kg → MEDIUM
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(_ context.Context, id int) (*domain.Activity, error) {
+			assert.Equal(t, activityID, id)
+			return activity, nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(_ context.Context, id int) (*domain.Dog, error) {
+			assert.Equal(t, dogID, id)
+			return dog, nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(_ context.Context, _ int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, nil, reservationRepo, nil)
+	in := validRegisterInput()
+	// validRegisterInput uses default activityID=10, dogID=20.
+	_, err = uc.Execute(context.Background(), in)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDogSizeMismatch)
+}
+
+func TestRegisterReservationUseCase_AdminOverrideBypassesSizeMismatch(t *testing.T) {
+	t.Parallel()
+	userID := 7
+	dogID := 20
+	activityID := 10
+
+	mini := domain.SizeBracketMini
+	activity, err := domain.NewActivity(activityID, "Paseo Minis", "", "Parque",
+		domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour), nil, &mini)
+	require.NoError(t, err)
+
+	// MEDIUM dog — would normally be rejected; admin override should let it through.
+	dog := validDog(15.0, userID)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(_ context.Context, id int) (*domain.Activity, error) {
+			return activity, nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(_ context.Context, id int) (*domain.Dog, error) {
+			return dog, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(_ context.Context, id int) (*domain.Pass, error) {
+			return validPass(30, userID, 5), nil
+		},
+		update: func(_ context.Context, _ *domain.Pass) error { return nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(_ context.Context, _ int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+		create: func(_ context.Context, _ *domain.Reservation) (int, error) { return 99, nil },
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	in, err := NewRegisterReservationInput(userID, activityID, dogID, 30, func() time.Time { return fixedNow })
+	require.NoError(t, err)
+	in.adminOverride = true
+	output, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+	assert.Equal(t, 99, output.ID)
 }
 
 func TestRegisterReservationUseCase_BidirectionalConflict(t *testing.T) {

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MapPin, Clock, Users, AlertCircle, CheckCircle2, Shield } from 'lucide-react';
+import { MapPin, Clock, Users, AlertCircle, CheckCircle2, Shield, Ruler } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useToast } from '@/features/ui/hooks/toast-context';
 import { fetchDogsByOwner, fetchAllActiveDogs } from '@/infrastructure/repositories/dog-repository.impl';
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import type { Activity } from '@/domain/entities/activity';
 import type { User } from '@/domain/entities/user';
+import { getSizeBracket, sizeBracketLabel, type SizeBracket } from '@/features/dogs/utils/size';
 import type { ApiError } from '@/infrastructure/api/http-client';
 import type { CreateReservationResponse } from '@/domain/entities/reservation';
 
@@ -102,10 +103,28 @@ export function ActivityDetailSheet({
 
   // Dogs the user can STILL book for this activity: their own dogs
   // minus the ones already reserved. Admins see every active dog.
+  // Non-admin users also have non-matching size dogs filtered out so
+  // they cannot even pick a dog the activity would reject (admins keep
+  // them visible — admin override bypasses the size check on the
+  // backend).
+  const targetSize = activity?.size_target as SizeBracket | null | undefined;
   const bookableDogs = useMemo(() => {
-    if (isAdmin) return dogs;
-    return dogs.filter((d) => !reservedDogIds.has(d.id));
-  }, [dogs, reservedDogIds, isAdmin]);
+    const filtered = isAdmin ? dogs : dogs.filter((d) => !reservedDogIds.has(d.id));
+    if (!targetSize) return filtered;
+    return isAdmin
+      ? filtered
+      : filtered.filter((d) => getSizeBracket(d.weight_kg) === targetSize);
+  }, [dogs, reservedDogIds, isAdmin, targetSize]);
+
+  // For admins: when a non-matching dog is selected, surface a warning
+  // so the admin knows the booking will use the override path.
+  const selectedDog = useMemo(
+    () => dogs.find((d) => d.id === selectedDogId) ?? null,
+    [dogs, selectedDogId],
+  );
+  const selectedDogMismatch = !!(
+    selectedDog && targetSize && getSizeBracket(selectedDog.weight_kg) !== targetSize
+  );
 
   const hasAnyReservation = existingReservations.length > 0;
   const canReserve =
@@ -171,6 +190,10 @@ export function ActivityDetailSheet({
 
   function handleReserve() {
     if (!selectedDogId || !selectedPassId) return;
+    // Non-admin users cannot book a non-matching dog; the selector
+    // already filters them out but we re-check here so a stale
+    // selectedDogId (race during async refetch) cannot leak through.
+    if (!isAdmin && targetSize && selectedDogMismatch) return;
     reservationMutation.mutate();
   }
 
@@ -191,6 +214,12 @@ export function ActivityDetailSheet({
                 <p className="text-xs text-muted-foreground">
                   {TYPE_LABELS[activity.activity_type] || activity.activity_type}
                 </p>
+                {activity.size_target && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    <Ruler className="h-3 w-3" />
+                    Solo {sizeBracketLabel[activity.size_target]}
+                  </span>
+                )}
                 {isAdmin && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
                     <Shield className="h-3 w-3" />
@@ -285,13 +314,21 @@ export function ActivityDetailSheet({
                       }
                     >
                       <option value="">Selecciona un perro</option>
-                      {bookableDogs.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {isAdmin
-                            ? `${d.name} · ${ownerMap.get(d.user_id)?.name ?? 'Propietario #' + d.user_id}`
-                            : d.name}
-                        </option>
-                      ))}
+                      {bookableDogs.map((d) => {
+                        const dSize = getSizeBracket(d.weight_kg);
+                        const mismatch = !!targetSize && dSize !== targetSize;
+                        const label = isAdmin
+                          ? `${d.name} · ${ownerMap.get(d.user_id)?.name ?? 'Propietario #' + d.user_id}`
+                          : d.name;
+                        return (
+                          <option key={d.id} value={d.id}>
+                            {label}
+                            {mismatch && targetSize
+                              ? ` (${sizeBracketLabel[dSize]} — no encaja)`
+                              : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                   )}
                 </div>
@@ -320,6 +357,20 @@ export function ActivityDetailSheet({
                     </select>
                   )}
                 </div>
+
+                {selectedDogMismatch && targetSize && selectedDog && (
+                  <div className="flex items-start gap-2 rounded-md bg-amber-100 p-3 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <span>
+                      {selectedDog.name} es <b>{sizeBracketLabel[getSizeBracket(selectedDog.weight_kg)]}</b>{' '}
+                      y esta actividad es solo para{' '}
+                      <b>{sizeBracketLabel[targetSize]}</b>.{' '}
+                      {isAdmin
+                        ? 'Como admin, tu reserva se registrará igualmente (override).'
+                        : 'Selecciona otro perro para poder reservar.'}
+                    </span>
+                  </div>
+                )}
 
                 {mutationError && (
                   <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">

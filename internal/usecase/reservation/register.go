@@ -182,6 +182,15 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 	if !input.adminOverride && dog.UserID() != input.UserID() {
 		return 0, domain.StatusConfirmed, ErrInvalidDog
 	}
+	// 3a. Size match: when the activity targets a single size bracket
+	// (SOCIALIZATION_GROUP / ROUTE with sizeTarget != nil), the dog
+	// must be of that bracket. Admin override bypasses this check
+	// for emergency bookings. Placed BEFORE the compatibility check
+	// because size mismatch is a deterministic "you cannot book" —
+	// not a "hold pending review".
+	if !input.adminOverride && !activity.IsTargetedAtSize(dog.SizeBracket()) {
+		return 0, domain.StatusConfirmed, ErrDogSizeMismatch
+	}
 
 	// 3b. Compatibility check. Load the dogs already holding a slot in
 	// this activity and evaluate the trigger->trait collisions in both

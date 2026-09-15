@@ -165,7 +165,7 @@ func seedIntegrationUser(t *testing.T, email string) *domain.User {
 func seedIntegrationActivity(t *testing.T, capacity int, date time.Time) *domain.Activity {
 	t.Helper()
 	activity, err := domain.NewActivity(0, "Paseo Integración", "", "Parque Central",
-		domain.TypeRoute, capacity, 1, date, nil)
+		domain.TypeRoute, capacity, 1, date, nil, nil)
 	require.NoError(t, err)
 	repo := postgres.NewActivityRepository(testDB)
 	id, err := repo.Create(context.Background(), activity)

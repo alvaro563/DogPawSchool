@@ -15,6 +15,11 @@ import (
 //
 // dogID is the target dog id, required when activityType is
 // INDIVIDUAL_CLASS. It is optional (nil) for group classes and EXTRA.
+//
+// sizeTarget restricts the booking to a single size bracket
+// (MINI / MEDIUM / LARGE). nil means "all sizes welcome". Only
+// valid for SOCIALIZATION_GROUP and ROUTE — the domain layer
+// enforces this.
 type RegisterActivityInput struct {
 	name            string
 	description     string
@@ -24,6 +29,7 @@ type RegisterActivityInput struct {
 	durationInHours int
 	date            time.Time
 	dogID           *int
+	sizeTarget      *domain.SizeBracket
 }
 
 func (in RegisterActivityInput) Name() string                      { return in.name }
@@ -34,6 +40,7 @@ func (in RegisterActivityInput) MaxCapacity() int                  { return in.m
 func (in RegisterActivityInput) DurationInHours() int              { return in.durationInHours }
 func (in RegisterActivityInput) Date() time.Time                   { return in.date }
 func (in RegisterActivityInput) DogID() *int                       { return in.dogID }
+func (in RegisterActivityInput) SizeTarget() *domain.SizeBracket   { return in.sizeTarget }
 
 // NewRegisterActivityInput is the validating factory. The dogID
 // pass-through validation: if the caller passes dogID nil and
@@ -45,6 +52,7 @@ func NewRegisterActivityInput(
 	maxCapacity, durationInHours int,
 	date time.Time,
 	dogID *int,
+	sizeTarget *domain.SizeBracket,
 ) (RegisterActivityInput, error) {
 	if name == "" {
 		return RegisterActivityInput{}, &ValidationError{Field: "name"}
@@ -67,10 +75,21 @@ func NewRegisterActivityInput(
 	if dogID != nil && *dogID <= 0 {
 		return RegisterActivityInput{}, &ValidationError{Field: "dog_id"}
 	}
+	if sizeTarget != nil {
+		switch activityType {
+		case domain.TypeSocialization, domain.TypeRoute:
+			// ok
+		default:
+			return RegisterActivityInput{}, &ValidationError{Field: "size_target"}
+		}
+		if !sizeTarget.IsValid() || *sizeTarget == domain.SizeBracketUnknown {
+			return RegisterActivityInput{}, &ValidationError{Field: "size_target"}
+		}
+	}
 	return RegisterActivityInput{
 		name: name, description: description, location: location, activityType: activityType,
 		maxCapacity: maxCapacity, durationInHours: durationInHours, date: date,
-		dogID: dogID,
+		dogID: dogID, sizeTarget: sizeTarget,
 	}, nil
 }
 
@@ -81,8 +100,9 @@ func MustNewRegisterActivityInput(
 	maxCapacity, durationInHours int,
 	date time.Time,
 	dogID *int,
+	sizeTarget *domain.SizeBracket,
 ) RegisterActivityInput {
-	in, err := NewRegisterActivityInput(name, description, location, activityType, maxCapacity, durationInHours, date, dogID)
+	in, err := NewRegisterActivityInput(name, description, location, activityType, maxCapacity, durationInHours, date, dogID, sizeTarget)
 	if err != nil {
 		panic(err)
 	}
@@ -126,7 +146,7 @@ func (uc *RegisterActivityUseCase) Execute(ctx context.Context, input RegisterAc
 
 	activity, err := domain.NewActivity(
 		0, input.Name(), input.Description(), input.Location(), input.ActivityType(),
-		input.MaxCapacity(), input.DurationInHours(), input.Date(), input.DogID())
+		input.MaxCapacity(), input.DurationInHours(), input.Date(), input.DogID(), input.SizeTarget())
 	if err != nil {
 		return RegisterActivityOutput{}, err
 	}

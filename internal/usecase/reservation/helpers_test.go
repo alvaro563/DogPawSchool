@@ -380,7 +380,7 @@ func mustNewReservationView(
 ) *domain.ReservationView {
 	reservation := mustNewReservation(id, activityID, dogID, passID, status, createdAt)
 	activity := domain.MustNewActivity(activityID, activityName, "", activityLocation,
-		domain.TypeRoute, 5, 1, activityDate, nil)
+		domain.TypeRoute, 5, 1, activityDate, nil, nil)
 	dog, err := domain.NewDog(dogID, dogName, "TestBreed", "ES-TEST-"+strconv.Itoa(dogID),
 		24, domain.SexMale, 10, dogUserID)
 	if err != nil {

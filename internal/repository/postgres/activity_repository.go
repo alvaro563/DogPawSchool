@@ -30,7 +30,7 @@ var (
 // visibility predicate (a.dog_id IS NULL OR d.user_id = $N) and any
 // downstream predicates can refer unambiguously to both tables.
 const activitySelectClause = `SELECT a.id, a.name, a.description, a.activity_type, a.max_capacity,
-           a.location, a.duration_in_hours, a.date, a.closed, a.dog_id
+           a.location, a.duration_in_hours, a.date, a.closed, a.dog_id, a.size_target
     FROM activities a
     LEFT JOIN dogs d ON a.dog_id = d.id`
 
@@ -69,8 +69,8 @@ func (repo *ActivityRepository) Create(ctx context.Context, activity *domain.Act
 	const query = `
 		INSERT INTO activities (
 			name, description, activity_type, max_capacity,
-			location, duration_in_hours, date, dog_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			location, duration_in_hours, date, dog_id, size_target
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
 	`
 	var newActivityID int64
@@ -78,10 +78,14 @@ func (repo *ActivityRepository) Create(ctx context.Context, activity *domain.Act
 	if d := activity.DogID(); d != nil {
 		dogIDArg = *d
 	}
+	var sizeTargetArg any
+	if s := activity.SizeTarget(); s != nil {
+		sizeTargetArg = string(*s)
+	}
 	err := runner(ctx, repo.db).QueryRowContext(ctx, query,
 		activity.Name(), activity.Description(), string(activity.Type()), activity.MaxCapacity(),
 		activity.Location(), activity.DurationInHours(), activity.Date(),
-		dogIDArg,
+		dogIDArg, sizeTargetArg,
 	).Scan(&newActivityID)
 	if err != nil {
 		return 0, mapActivityCreateError(err)
@@ -138,18 +142,24 @@ func (repo *ActivityRepository) Update(ctx context.Context, activity *domain.Act
 	const query = `
 		UPDATE activities
 		SET name = $1, description = $2, activity_type = $3, max_capacity = $4,
-		    location = $5, duration_in_hours = $6, date = $7, closed = $8, dog_id = $9
-		WHERE id = $10
+		    location = $5, duration_in_hours = $6, date = $7, closed = $8, dog_id = $9,
+		    size_target = $10
+		WHERE id = $11
 	`
 	var dogIDArg any
 	if d := activity.DogID(); d != nil {
 		dogIDArg = *d
+	}
+	var sizeTargetArg any
+	if s := activity.SizeTarget(); s != nil {
+		sizeTargetArg = string(*s)
 	}
 	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
 		activity.Name(), activity.Description(), string(activity.Type()), activity.MaxCapacity(),
 		activity.Location(), activity.DurationInHours(), activity.Date(),
 		activity.IsClosed(),
 		dogIDArg,
+		sizeTargetArg,
 		activity.ID(),
 	)
 	if err != nil {
@@ -271,9 +281,9 @@ type scanner interface {
 }
 
 // scanActivity reads one activity row. The column order MUST match
-// activitySelectClause (10 activity columns; the d.user_id is NOT
-// read from this scanner because the visibility filter has already
-// narrowed the row set by the time we get here).
+// activitySelectClause (10 activity columns plus size_target; the
+// d.user_id is NOT read from this scanner because the visibility
+// filter has already narrowed the row set by the time we get here).
 func scanActivity(row scanner) (*domain.Activity, error) {
 	var (
 		activityID      int
@@ -286,10 +296,11 @@ func scanActivity(row scanner) (*domain.Activity, error) {
 		activityDate    time.Time
 		closed          bool
 		dogID           sql.NullInt64
+		sizeTarget      sql.NullString
 	)
 	if err := row.Scan(
 		&activityID, &activityName, &description, &activityType, &maxCapacity,
-		&location, &durationInHours, &activityDate, &closed, &dogID,
+		&location, &durationInHours, &activityDate, &closed, &dogID, &sizeTarget,
 	); err != nil {
 		return nil, err
 	}
@@ -298,10 +309,15 @@ func scanActivity(row scanner) (*domain.Activity, error) {
 		dogPtr = new(int)
 		*dogPtr = int(dogID.Int64)
 	}
+	var sizePtr *domain.SizeBracket
+	if sizeTarget.Valid {
+		v := domain.SizeBracket(sizeTarget.String)
+		sizePtr = &v
+	}
 	return domain.ReconstituteActivity(
 		activityID, activityName, description, location,
 		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate, closed,
-		dogPtr)
+		dogPtr, sizePtr)
 }
 
 func mapActivityCreateError(err error) error {

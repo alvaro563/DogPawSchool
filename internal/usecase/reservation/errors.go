@@ -38,6 +38,12 @@ var ErrNotFound = errors.New("not found")
 // 400 invalid_activity_id.
 var ErrInvalidActivity = errors.New("invalid activity_id")
 
+// ErrDogSizeMismatch is returned when the activity has a size
+// restriction (MINI / MEDIUM / LARGE) and the candidate dog's
+// SizeBracket does not match. Bypassed by admin override. The
+// handler maps it to 400 with field="size_mismatch".
+var ErrDogSizeMismatch = errors.New("dog size does not match activity target")
+
 // ErrActivityInPast is returned when the booking targets an activity
 // whose date is already in the past. The handler maps it to 400
 // activity_in_past.

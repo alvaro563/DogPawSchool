@@ -523,7 +523,7 @@ func scanReservationView(row reservationScanner) (*domain.ReservationView, error
 		activityID, activityName, activityDescription, activityLocation,
 		domain.ActivityType(activityType), maxCapacity, durationInHours, activityDate, activityClosed,
 		nil, // dog_id — reservations don't carry dog_id at this level; the denormalised dog belongs to the reservation.
-	)
+		nil) // size_target — not denormalised in reservations; the activity view reconstructs it if needed.
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct activity: %w", err)
 	}

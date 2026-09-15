@@ -92,7 +92,7 @@ func (m *mockActivityRepository) ListUpcoming(ctx context.Context, viewerUserID 
 // mustNewActivity is a test helper that panics on construction error.
 // Use it inside tests where the input is known to be valid.
 func mustNewActivity(id int, name, location string, activityType domain.ActivityType, maxCapacity, durationInHours int, date time.Time) *domain.Activity {
-	return domain.MustNewActivity(id, name, "", location, activityType, maxCapacity, durationInHours, date, nil)
+	return domain.MustNewActivity(id, name, "", location, activityType, maxCapacity, durationInHours, date, nil, nil)
 }
 
 // sentinelErr is a small, import-free error used in tests to verify

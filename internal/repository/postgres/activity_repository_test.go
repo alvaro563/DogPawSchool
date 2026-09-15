@@ -20,7 +20,7 @@ func TestActivityRepository_RoundTrip(t *testing.T) {
 	repo := NewActivityRepository(db)
 	date := time.Now().Add(14 * 24 * time.Hour)
 	activity, err := domain.NewActivity(0, "Ruta por la montaña", "", "Parque Natural",
-		domain.TypeRoute, 8, 3, date, nil)
+		domain.TypeRoute, 8, 3, date, nil, nil)
 	require.NoError(t, err)
 
 	id, err := repo.Create(context.Background(), activity)
@@ -39,7 +39,7 @@ func TestActivityRepository_RoundTrip(t *testing.T) {
 	assert.False(t, got.IsClosed())
 
 	activity2, err := domain.NewActivity(0, "Socialización grupal", "", "Centro",
-		domain.TypeSocialization, 10, 2, date.Add(1*24*time.Hour), nil)
+		domain.TypeSocialization, 10, 2, date.Add(1*24*time.Hour), nil, nil)
 	require.NoError(t, err)
 	_, err = repo.Create(context.Background(), activity2)
 	require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestActivityRepository_Update(t *testing.T) {
 
 	individualTargetDogID := 1 // first dog id after cleanTables (RESTART IDENTITY)
 	patched, err := domain.NewActivity(activity.ID(), "Paseo Actualizado", "", "Nuevo Lugar",
-		domain.TypeIndividual, 5, 2, activity.Date().Add(1*time.Hour), &individualTargetDogID)
+		domain.TypeIndividual, 5, 2, activity.Date().Add(1*time.Hour), &individualTargetDogID, nil)
 	require.NoError(t, err)
 
 	err = repo.Update(context.Background(), patched)
@@ -105,7 +105,7 @@ func TestActivityRepository_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 
 	nonexistent, err := domain.NewActivity(9999, "Ghost", "", "Nowhere",
-		domain.TypeRoute, 5, 1, time.Now().Add(30*24*time.Hour), nil)
+		domain.TypeRoute, 5, 1, time.Now().Add(30*24*time.Hour), nil, nil)
 	require.NoError(t, err)
 	err = repo.Update(context.Background(), nonexistent)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
@@ -127,16 +127,16 @@ func TestActivityRepository_ListByClosed(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	// Three open in range + one closed in range + one closed outside.
-	open1, err := domain.NewActivity(0, "Open 1", "", "L", domain.TypeRoute, 5, 1, now.Add(-48*time.Hour), nil)
+	open1, err := domain.NewActivity(0, "Open 1", "", "L", domain.TypeRoute, 5, 1, now.Add(-48*time.Hour), nil, nil)
 	require.NoError(t, err)
-	open2, err := domain.NewActivity(0, "Open 2", "", "L", domain.TypeRoute, 5, 1, now.Add(-24*time.Hour), nil)
+	open2, err := domain.NewActivity(0, "Open 2", "", "L", domain.TypeRoute, 5, 1, now.Add(-24*time.Hour), nil, nil)
 	require.NoError(t, err)
-	open3, err := domain.NewActivity(0, "Open 3", "", "L", domain.TypeRoute, 5, 1, now.Add(-72*time.Hour), nil)
+	open3, err := domain.NewActivity(0, "Open 3", "", "L", domain.TypeRoute, 5, 1, now.Add(-72*time.Hour), nil, nil)
 	require.NoError(t, err)
-	closedIn, err := domain.NewActivity(0, "Closed In", "", "L", domain.TypeRoute, 5, 1, now.Add(-12*time.Hour), nil)
+	closedIn, err := domain.NewActivity(0, "Closed In", "", "L", domain.TypeRoute, 5, 1, now.Add(-12*time.Hour), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, closedIn.Close())
-	closedOut, err := domain.NewActivity(0, "Closed Out", "", "L", domain.TypeRoute, 5, 1, now.Add(48*time.Hour), nil)
+	closedOut, err := domain.NewActivity(0, "Closed Out", "", "L", domain.TypeRoute, 5, 1, now.Add(48*time.Hour), nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, closedOut.Close())
 
@@ -268,4 +268,35 @@ func insertDogForIndividualClassTest(t *testing.T, db *sql.DB) {
 	dogRepo := NewDogRepository(db)
 	_, err = dogRepo.Create(context.Background(), dog)
 	require.NoError(t, err)
+}
+
+func TestActivityRepository_RoundTripWithSizeTarget(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewActivityRepository(db)
+	date := time.Now().Add(14 * 24 * time.Hour)
+
+	mini := domain.SizeBracketMini
+	activity, err := domain.NewActivity(0, "Paseo Minis", "", "Parque",
+		domain.TypeRoute, 6, 1, date, nil, &mini)
+	require.NoError(t, err)
+
+	id, err := repo.Create(context.Background(), activity)
+	require.NoError(t, err)
+
+	got, err := repo.GetByID(context.Background(), id, 0, true)
+	require.NoError(t, err)
+	require.NotNil(t, got.SizeTarget(), "size_target must be persisted")
+	assert.Equal(t, domain.SizeBracketMini, *got.SizeTarget())
+
+	// Clearing via Update.
+	cleared, err := domain.NewActivity(id, "Paseo Minis", "", "Parque",
+		domain.TypeRoute, 6, 1, date, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, repo.Update(context.Background(), cleared))
+
+	got2, err := repo.GetByID(context.Background(), id, 0, true)
+	require.NoError(t, err)
+	assert.Nil(t, got2.SizeTarget(), "size_target must be cleared on Update")
 }

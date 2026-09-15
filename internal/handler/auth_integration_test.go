@@ -899,7 +899,7 @@ func TestActivityRosterHTTP_Success(t *testing.T) {
 	reservationRepo := postgres.NewReservationRepository(integrationDB)
 
 	activity, err := domain.NewActivity(0, "Paseo Río", "", "Parking Central",
-		domain.TypeRoute, 5, 1, time.Now().Add(7*24*time.Hour), nil)
+		domain.TypeRoute, 5, 1, time.Now().Add(7*24*time.Hour), nil, nil)
 	require.NoError(t, err)
 	activityID, err := activityRepo.Create(context.Background(), activity)
 	require.NoError(t, err)
@@ -1018,7 +1018,7 @@ func TestPendingReservationsHTTP_Success(t *testing.T) {
 	reservationRepo := postgres.NewReservationRepository(integrationDB)
 
 	activity, err := domain.NewActivity(0, "Paseo Pendientes", "", "Central",
-		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour), nil)
+		domain.TypeRoute, 10, 1, time.Now().Add(7*24*time.Hour), nil, nil)
 	require.NoError(t, err)
 	activityID, err := activityRepo.Create(context.Background(), activity)
 	require.NoError(t, err)
