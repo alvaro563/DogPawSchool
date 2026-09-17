@@ -137,6 +137,98 @@ func TestDog_IsIntactMale(t *testing.T) {
 	}
 }
 
+func TestDog_SexNeuteredConflictsWith(t *testing.T) {
+	t.Parallel()
+
+	mkDog := func(t *testing.T, id int, sex domain.Sex, neutered bool, name string) *domain.Dog {
+		t.Helper()
+		d, err := domain.NewDog(id, name, "Mixed", "ES-"+name, 24, sex, 10.0, 1)
+		assert.NoError(t, err)
+		if err == nil && neutered {
+			d.SetNeutered(true)
+		}
+		return d
+	}
+
+	t.Run("male_intact_vs_male_intact_blocks", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, false, "Toby")
+		b := mkDog(t, 2, domain.SexMale, false, "Max")
+		conflicts := a.SexNeuteredConflictsWith(b)
+		assert.Len(t, conflicts, 1)
+		assert.Equal(t, domain.ReasonIntactVsIntact, conflicts[0].Reason())
+		assert.True(t, conflicts[0].IsBlocker())
+	})
+
+	t.Run("male_intact_vs_male_castrated_pending", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, false, "Toby")
+		b := mkDog(t, 2, domain.SexMale, true, "Max")
+		conflicts := a.SexNeuteredConflictsWith(b)
+		assert.Len(t, conflicts, 1)
+		assert.Equal(t, domain.ReasonIntactVsCastrated, conflicts[0].Reason())
+		assert.False(t, conflicts[0].IsBlocker())
+	})
+
+	t.Run("male_castrated_vs_male_intact_pending", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, true, "Toby")
+		b := mkDog(t, 2, domain.SexMale, false, "Max")
+		conflicts := a.SexNeuteredConflictsWith(b)
+		assert.Len(t, conflicts, 1)
+		assert.Equal(t, domain.ReasonCastratedVsIntact, conflicts[0].Reason())
+		assert.False(t, conflicts[0].IsBlocker())
+	})
+
+	t.Run("male_castrated_vs_male_castrated_pending", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, true, "Toby")
+		b := mkDog(t, 2, domain.SexMale, true, "Max")
+		conflicts := a.SexNeuteredConflictsWith(b)
+		assert.Len(t, conflicts, 1)
+		assert.Equal(t, domain.ReasonCastratedVsCastrated, conflicts[0].Reason())
+		assert.False(t, conflicts[0].IsBlocker())
+	})
+
+	t.Run("male_intact_vs_female_no_conflict", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, false, "Toby")
+		b := mkDog(t, 2, domain.SexFemale, false, "Luna")
+		conflicts := a.SexNeuteredConflictsWith(b)
+		assert.Empty(t, conflicts)
+	})
+
+	t.Run("female_vs_female_no_conflict", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexFemale, true, "Luna")
+		b := mkDog(t, 2, domain.SexFemale, false, "Maya")
+		conflicts := a.SexNeuteredConflictsWith(b)
+		assert.Empty(t, conflicts)
+	})
+
+	t.Run("symmetric_same_pair_produces_equivalent_conflict", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, false, "Toby")
+		b := mkDog(t, 2, domain.SexMale, false, "Max")
+		ab := a.SexNeuteredConflictsWith(b)
+		ba := b.SexNeuteredConflictsWith(a)
+		assert.Len(t, ab, 1)
+		assert.Len(t, ba, 1)
+		assert.Equal(t, ab[0].Reason(), ba[0].Reason())
+		assert.Equal(t, ab[0].IsBlocker(), ba[0].IsBlocker())
+	})
+
+	t.Run("nil_other_returns_empty", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, false, "Toby")
+		assert.Empty(t, a.SexNeuteredConflictsWith(nil))
+	})
+
+	t.Run("same_dog_returns_empty", func(t *testing.T) {
+		a := mkDog(t, 1, domain.SexMale, false, "Toby")
+		assert.Empty(t, a.SexNeuteredConflictsWith(a))
+	})
+}
+
+func TestSexNeuteredConflict_ZeroValueHasNoReason(t *testing.T) {
+	t.Parallel()
+	var c domain.SexNeuteredConflict
+	assert.Equal(t, "", c.Reason())
+	assert.False(t, c.IsBlocker())
+}
+
 func TestDog_AddIncompatibility(t *testing.T) {
 	t.Parallel()
 	incompat, _ := domain.NewTriggerIncompatibility(1, "Reactivo a machos", domain.IncompatibilityLevelAbsoluta, "MACHO_ENTERO")

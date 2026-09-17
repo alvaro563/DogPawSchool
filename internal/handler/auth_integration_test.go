@@ -255,6 +255,7 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
 		markNoShowUC, completeUC,
 		confirmPendingUC, rejectPendingUC,
+		nil, // forgiver not exercised by auth integration tests
 		listAllReservationsUC,
 		listUpcomingAllUC,
 		registerAdminReservationUC,

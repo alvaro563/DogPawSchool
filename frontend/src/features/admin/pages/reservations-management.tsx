@@ -1,6 +1,7 @@
+import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardList, Dog } from 'lucide-react';
-import { fetchUpcomingReservations } from '@/infrastructure/repositories/reservation-repository.impl';
+import { ClipboardList, Dog, ArrowRight } from 'lucide-react';
+import { fetchUpcomingReservations, fetchAllReservations } from '@/infrastructure/repositories/reservation-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { CancelReservationButton } from '@/features/admin/components/cancel-reservation-button';
 import { RejectReservationButton } from '@/features/admin/components/reject-reservation-button';
@@ -31,6 +32,13 @@ export function ReservationsManagementPage() {
     queryFn: fetchUpcomingReservations,
   });
 
+  const { data: cancelledLate = [] } = useQuery({
+    queryKey: ['admin-reservations', 'cancelled-late', 'count'],
+    queryFn: () => fetchAllReservations('CANCELLED_LATE'),
+    refetchInterval: 60_000,
+  });
+  const cancelledLateCount = cancelledLate.length;
+
   if (isLoading) return <div className="flex items-center justify-center py-20"><LoadingSpinner size="lg" /></div>;
 
   if (error) {
@@ -44,9 +52,18 @@ export function ReservationsManagementPage() {
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Reservas</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{reservations.length} reservas en total</p>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Reservas</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{reservations.length} reservas en total</p>
+        </div>
+        <Link
+          to="/admin/cancelled-late-reservations"
+          className="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted sm:self-auto"
+        >
+          Ver canceladas tarde ({cancelledLateCount})
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       {reservations.length === 0 ? (

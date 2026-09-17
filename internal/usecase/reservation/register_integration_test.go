@@ -608,3 +608,454 @@ func TestListActivityRosterUseCase_Integration(t *testing.T) {
 	_, err = uc.Execute(context.Background(), MustNewListActivityRosterInput(99999))
 	assert.ErrorIs(t, err, ErrInvalidActivity)
 }
+
+// ── Sex/neutered and special-condition integration tests ──────────
+
+// seedIntegrationMaleDog creates a male dog owned by userID with the
+// given neutered state and (optionally) has_special_condition=true.
+// Uses the real Postgres repository so the column round-trip
+// (including has_special_condition) is exercised end-to-end.
+func seedIntegrationMaleDog(t *testing.T, userID int, name string, neutered, hasSpecialCondition bool) *domain.Dog {
+	t.Helper()
+	dog, err := domain.NewDog(0, name, "Labrador", "ES-INTM-"+strings.ToUpper(name), 24,
+		domain.SexMale, 12.0, userID)
+	require.NoError(t, err)
+	if neutered {
+		dog.SetNeutered(true)
+	}
+	repo := postgres.NewDogRepository(testDB)
+	id, err := repo.Create(context.Background(), dog)
+	require.NoError(t, err)
+	got, err := repo.GetByID(context.Background(), id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	if hasSpecialCondition {
+		require.NoError(t, got.ApplyPatch(domain.DogPatch{HasSpecialCondition: boolPtr(true)}))
+		require.NoError(t, repo.Update(context.Background(), got))
+	}
+	// Re-fetch to verify the patch round-trip.
+	got, err = repo.GetByID(context.Background(), id)
+	require.NoError(t, err)
+	return got
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+// TestSexNeutered_IntactVsIntactBlocksAndDoesNotConsumePass validates
+// end-to-end that two intact males in the same activity block the
+// registration, leave the DB without a new reservation row, and do not
+// consume one session from the candidate's pass.
+func TestSexNeutered_IntactVsIntactBlocksAndDoesNotConsumePass(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "sn-block-owner@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	// Existing slot holder: intact male (Rex). Candidate: intact male (Luna).
+	existing := seedIntegrationMaleDog(t, user.ID(), "Rex", false, false)
+	candidate := seedIntegrationMaleDog(t, user.ID(), "Luna", false, false)
+	classPass := seedIntegrationPass(t, user.ID(), 10)
+	candidatePass := seedIntegrationPass(t, user.ID(), 10)
+
+	seedIntegrationReservation(t, activity.ID(), existing.ID(), classPass.ID(), domain.StatusConfirmed, now)
+
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(user.ID(), activity.ID(), candidate.ID(), candidatePass.ID(), func() time.Time { return now })
+	_, err := uc.Execute(context.Background(), in)
+	require.Error(t, err)
+	var sexErr *SexNeuteredConflictError
+	require.True(t, errors.As(err, &sexErr))
+	require.NotNil(t, sexErr.IncomingDog)
+	assert.Equal(t, candidate.ID(), sexErr.IncomingDog.ID())
+	require.Len(t, sexErr.BlockingDogs, 1)
+	assert.Equal(t, existing.ID(), sexErr.BlockingDogs[0].ID())
+
+	// No second reservation was created.
+	reservations, err := postgres.NewReservationRepository(testDB).ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	assert.Len(t, reservations, 1, "no reservation may be created when two intact males conflict")
+
+	// Pass session must NOT have been consumed.
+	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), candidatePass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 10, gotPass.RemainingSessions())
+}
+
+// TestSexNeutered_IntactVsCastratedCreatesPending validates that a
+// male+intact candidate with a castrated male already in the class
+// lands at StatusPendingToConfirm with the sex/neutered reason
+// surfaced in the output, persists the reservation, and consumes one
+// session (the slot is held).
+func TestSexNeutered_IntactVsCastratedCreatesPending(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "sn-pending-owner@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	existing := seedIntegrationMaleDog(t, user.ID(), "Max", true, false)   // castrated male
+	candidate := seedIntegrationMaleDog(t, user.ID(), "Toby", false, false) // intact male
+	classPass := seedIntegrationPass(t, user.ID(), 10)
+	candidatePass := seedIntegrationPass(t, user.ID(), 10)
+
+	seedIntegrationReservation(t, activity.ID(), existing.ID(), classPass.ID(), domain.StatusConfirmed, now)
+
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(user.ID(), activity.ID(), candidate.ID(), candidatePass.ID(), func() time.Time { return now })
+	out, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusPendingToConfirm, out.Status)
+	require.Len(t, out.PendingReasons, 1)
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonIntactVsCastrated, out.PendingReasons[0].Code)
+	assert.Equal(t, []int{candidate.ID(), existing.ID()}, out.PendingReasons[0].DogIDs)
+
+	// Reservation persisted in the DB with PENDING_TO_CONFIRM.
+	reservations, err := postgres.NewReservationRepository(testDB).ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	assert.Len(t, reservations, 2)
+	var pending *domain.Reservation
+	for _, r := range reservations {
+		if r.DogID() == candidate.ID() {
+			pending = r
+		}
+	}
+	require.NotNil(t, pending)
+	assert.Equal(t, domain.StatusPendingToConfirm, pending.Status())
+
+	// One session consumed (slot held).
+	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), candidatePass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 9, gotPass.RemainingSessions())
+}
+
+// TestHasSpecialConditionIntegration_CreatesPendingWithReason
+// validates that a dog carrying has_special_condition=true lands at
+// StatusPendingToConfirm with the special-condition reason, even
+// when there are no other conflicts.
+func TestHasSpecialConditionIntegration_CreatesPendingWithReason(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "hsc-owner@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	candidate := seedIntegrationMaleDog(t, user.ID(), "Luna", true, true)
+	// No existing slot holder — empty class. Sanity check: the only
+	// reason the candidate becomes pending is the special-condition
+	// flag itself.
+	pass := seedIntegrationPass(t, user.ID(), 10)
+
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(user.ID(), activity.ID(), candidate.ID(), pass.ID(), func() time.Time { return now })
+	out, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusPendingToConfirm, out.Status)
+	require.Len(t, out.PendingReasons, 1)
+	assert.Equal(t, domain.ReasonHasSpecialCondition, out.PendingReasons[0].Code)
+	assert.Equal(t, []int{candidate.ID()}, out.PendingReasons[0].DogIDs)
+
+	// Reservation persisted in the DB with PENDING_TO_CONFIRM.
+	reservations, err := postgres.NewReservationRepository(testDB).ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	require.Len(t, reservations, 1)
+	assert.Equal(t, domain.StatusPendingToConfirm, reservations[0].Status())
+
+	// One session consumed (slot held).
+	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 9, gotPass.RemainingSessions())
+}
+
+// ── Re-registration after cancel/reject (regression for partial
+//    unique index 000016) ───────────────────────────────────────────
+
+// newIntegrationCancelUC wires CancelReservationUseCase with the real
+// Postgres repositories and transactor.
+func newIntegrationCancelUC() *CancelReservationUseCase {
+	return NewCancelReservationUseCase(
+		postgres.NewTransactor(testDB),
+		postgres.NewActivityRepository(testDB),
+		postgres.NewDogRepository(testDB),
+		postgres.NewPassRepository(testDB),
+		postgres.NewReservationRepository(testDB),
+	)
+}
+
+// TestCancelInTimeAllowsReregistration verifies that after a CONFIRMED
+// reservation is cancelled in time, the same dog can be registered to
+// the same activity again. The partial unique index
+// uniq_reservation_dog_active excludes CANCELLED_IN_TIME, so the new
+// INSERT succeeds. The pass session is refunded on cancel (10 → 9 →
+// 8) and re-consumed on the new booking (8 → 7).
+func TestCancelInTimeAllowsReregistration(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "reregcancel-intime@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+	dog := seedIntegrationDog(t, user.ID(), "Luna", nil, nil)
+	pass := seedIntegrationPass(t, user.ID(), 10)
+
+	registerUC := newIntegrationRegisterUC()
+	cancelUC := newIntegrationCancelUC()
+
+	// First booking — CONFIRMED.
+	in1 := MustNewRegisterReservationInput(user.ID(), activity.ID(), dog.ID(), pass.ID(), func() time.Time { return now })
+	out1, err := registerUC.Execute(context.Background(), in1)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusConfirmed, out1.Status)
+
+	// Cancel in time (admin path so we don't need ownership wiring).
+	cancelIn := MustNewCancelReservationAdminInput(out1.ID, func() time.Time { return now })
+	_, err = cancelUC.Execute(context.Background(), cancelIn)
+	require.NoError(t, err)
+
+	// Pass refunded to 10.
+	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	require.Equal(t, 10, gotPass.RemainingSessions(), "cancel in time must refund the session")
+
+	// The bug case: re-register the same dog. Pre-fix this would fail
+	// with ErrDuplicateReservationForDog; post-fix it succeeds.
+	in2 := MustNewRegisterReservationInput(user.ID(), activity.ID(), dog.ID(), pass.ID(), func() time.Time { return now })
+	out2, err := registerUC.Execute(context.Background(), in2)
+	require.NoError(t, err, "re-registration after cancel-in-time must succeed")
+	require.Equal(t, domain.StatusConfirmed, out2.Status)
+	require.NotEqual(t, out1.ID, out2.ID, "the new reservation must have a fresh id")
+
+	// DB: 2 rows for (activity, dog) — 1 CANCELLED_IN_TIME + 1 CONFIRMED.
+	reservations, err := postgres.NewReservationRepository(testDB).ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	require.Len(t, reservations, 2)
+	statuses := []domain.ReservationStatus{reservations[0].Status(), reservations[1].Status()}
+	assert.Contains(t, statuses, domain.StatusCancelledInTime)
+	assert.Contains(t, statuses, domain.StatusConfirmed)
+
+	// Only the active one holds the slot (capacity semantics unchanged).
+	assert.True(t, reservations[0].HoldsSlot() != reservations[1].HoldsSlot(),
+		"exactly one of the two rows must hold the slot")
+
+	// Pass session re-consumed by the new booking: 10 → 9.
+	gotPass, err = postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 9, gotPass.RemainingSessions())
+}
+
+// TestCancelLateAllowsReregistration verifies that a CANCELLED_LATE
+// reservation — the terminal status produced when admin cancels a
+// past booking without refunding the pass — still frees the slot for
+// re-registration. The partial unique index excludes CANCELLED_LATE,
+// so a fresh INSERT for the same (activity_id, dog_id) succeeds.
+// We bypass the cancel use case (which also blocks past activities)
+// and insert CANCELLED_LATE directly via the repository: the test is
+// about the DB invariant, not the cancel policy.
+func TestCancelLateAllowsReregistration(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "reregcancel-late@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+	dog := seedIntegrationDog(t, user.ID(), "Toby", nil, nil)
+	pass := seedIntegrationPass(t, user.ID(), 10)
+
+	repo := postgres.NewReservationRepository(testDB)
+	// Plant a CANCELLED_LATE row directly: the use case would refuse
+	// it (no past activity), but the partial-index regression test is
+	// specifically about that status not blocking re-registration.
+	cancelled, err := domain.NewReservationWithStatus(0, activity.ID(), dog.ID(), pass.ID(), domain.StatusCancelledLate, now)
+	require.NoError(t, err)
+	_, err = repo.Create(context.Background(), cancelled)
+	require.NoError(t, err)
+
+	// Re-registering is allowed: the partial index doesn't see CANCELLED_LATE.
+	registerUC := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(user.ID(), activity.ID(), dog.ID(), pass.ID(), func() time.Time { return now })
+	out, err := registerUC.Execute(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusConfirmed, out.Status)
+
+	// DB now has 2 rows for (activity, dog) — 1 CANCELLED_LATE + 1 CONFIRMED.
+	reservations, err := repo.ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	require.Len(t, reservations, 2)
+	statuses := []domain.ReservationStatus{reservations[0].Status(), reservations[1].Status()}
+	assert.Contains(t, statuses, domain.StatusCancelledLate)
+	assert.Contains(t, statuses, domain.StatusConfirmed)
+}
+
+// TestRejectPendingAllowsReregistration validates the full reject +
+// re-register loop. After admin rejects a PENDING_TO_CONFIRM
+// reservation (refunding the session), the same dog can be registered
+// to the same activity again.
+func TestRejectPendingAllowsReregistration(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "reregreject@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	trait := seedIntegrationTrait(t, "MACHO_ENTERO", "Macho entero (no castrado)")
+	trigger := seedIntegrationTrigger(t, "Reactivo a machos enteros", domain.IncompatibilityLevelMedia, "MACHO_ENTERO")
+
+	classDog := seedIntegrationDog(t, user.ID(), "Rex", []*domain.Incompatibility{trait}, nil)
+	candidate := seedIntegrationDog(t, user.ID(), "Luna", nil, []*domain.Incompatibility{trigger})
+	classPass := seedIntegrationPass(t, user.ID(), 10)
+	candidatePass := seedIntegrationPass(t, user.ID(), 10)
+
+	seedIntegrationReservation(t, activity.ID(), classDog.ID(), classPass.ID(), domain.StatusConfirmed, now)
+
+	registerUC := newIntegrationRegisterUC()
+	rejectUC := newIntegrationRejectUC()
+
+	// First attempt: MEDIA conflict → PENDING_TO_CONFIRM.
+	in1 := MustNewRegisterReservationInput(user.ID(), activity.ID(), candidate.ID(), candidatePass.ID(), func() time.Time { return now })
+	out1, err := registerUC.Execute(context.Background(), in1)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusPendingToConfirm, out1.Status)
+
+	// Admin rejects → CANCELLED_IN_TIME, session refunded.
+	_, err = rejectUC.Execute(context.Background(), MustNewRejectPendingReservationInput(out1.ID, func() time.Time { return now }))
+	require.NoError(t, err)
+	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), candidatePass.ID())
+	require.NoError(t, err)
+	require.Equal(t, 10, gotPass.RemainingSessions())
+
+	// Remove the trigger so the next register succeeds CONFIRMED.
+	candidate2, err := postgres.NewDogRepository(testDB).GetByID(context.Background(), candidate.ID())
+	require.NoError(t, err)
+	for _, incomp := range candidate2.Incompatibilities() {
+		_, _ = candidate2.RemoveIncompatibility(incomp.ID())
+	}
+	require.NoError(t, postgres.NewDogRepository(testDB).Update(context.Background(), candidate2))
+
+	// Re-register — succeeds because the partial index excludes
+	// CANCELLED_IN_TIME.
+	in2 := MustNewRegisterReservationInput(user.ID(), activity.ID(), candidate.ID(), candidatePass.ID(), func() time.Time { return now })
+	out2, err := registerUC.Execute(context.Background(), in2)
+	require.NoError(t, err, "re-register after admin reject must succeed")
+	require.Equal(t, domain.StatusConfirmed, out2.Status)
+	require.NotEqual(t, out1.ID, out2.ID)
+}
+
+// TestPartialUniqueIndexBlocksTrueDuplicate confirms that the
+// partial unique index still does its job: two CONFIRMED reservations
+// for the same (activity_id, dog_id) cannot coexist. We bypass the use
+// case (which pre-checks via ListByActivity) and insert a duplicate
+// directly via the repository to simulate a concurrent race that
+// slipped through the pre-check.
+func TestPartialUniqueIndexBlocksTrueDuplicate(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "reregblock-true-dup@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+	dog := seedIntegrationDog(t, user.ID(), "Luna", nil, nil)
+	pass := seedIntegrationPass(t, user.ID(), 10)
+
+	repo := postgres.NewReservationRepository(testDB)
+	first, err := domain.NewReservationWithStatus(0, activity.ID(), dog.ID(), pass.ID(), domain.StatusConfirmed, now)
+	require.NoError(t, err)
+	id, err := repo.Create(context.Background(), first)
+	require.NoError(t, err)
+	require.Positive(t, id)
+
+	// Attempt a second CONFIRMED for the same (activity, dog): the
+	// partial unique index must reject it.
+	second, err := domain.NewReservationWithStatus(0, activity.ID(), dog.ID(), pass.ID(), domain.StatusConfirmed, now)
+	require.NoError(t, err)
+	_, err = repo.Create(context.Background(), second)
+	require.Error(t, err)
+	require.ErrorIs(t, err, domain.ErrDuplicateReservation)
+}
+
+// ── Forgive end-to-end (regression for the admin "Canceladas tarde"
+//    section) ─────────────────────────────────────────────────────
+
+func newIntegrationForgiveUC() *ForgiveReservationUseCase {
+	return NewForgiveReservationUseCase(
+		postgres.NewTransactor(testDB),
+		postgres.NewPassRepository(testDB),
+		postgres.NewReservationRepository(testDB),
+	)
+}
+
+// TestForgiveIntegration_SuccessRefundsPass runs the full late-cancel
+// + admin forgive cycle against Postgres: a CANCELLED_LATE
+// reservation is forgiven; the pass session is refunded and the
+// status moves to FORGIVEN. Plant the CANCELLED_LATE row directly to
+// bypass the cancel use case, which would also block past activities.
+func TestForgiveIntegration_SuccessRefundsPass(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "forgive-owner@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+	dog := seedIntegrationDog(t, user.ID(), "Luna", nil, nil)
+
+	// Set up the realistic state: one session already consumed by
+	// the original (now late-cancelled) booking.
+	pass := seedIntegrationPass(t, user.ID(), 10)
+	passRepo := postgres.NewPassRepository(testDB)
+	loaded, err := passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	_, err = loaded.ConsumeSession("test-consume", now)
+	require.NoError(t, err)
+	require.NoError(t, passRepo.Update(context.Background(), loaded))
+	gotPass, err := passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	require.Equal(t, 9, gotPass.RemainingSessions(), "precondition: 1 session consumed by the original booking")
+
+	// Plant the CANCELLED_LATE row directly (the cancel use case
+	// would also block past activities).
+	reservationRepo := postgres.NewReservationRepository(testDB)
+	cancelled, err := domain.NewReservationWithStatus(0, activity.ID(), dog.ID(), pass.ID(), domain.StatusCancelledLate, now)
+	require.NoError(t, err)
+	cancelledID, err := reservationRepo.Create(context.Background(), cancelled)
+	require.NoError(t, err)
+	require.Positive(t, cancelledID)
+
+	// Admin forgives.
+	forgiveUC := newIntegrationForgiveUC()
+	out, err := forgiveUC.Execute(context.Background(),
+		MustNewForgiveReservationInput(cancelledID, func() time.Time { return now }))
+	require.NoError(t, err)
+	assert.True(t, out.PassSessionRefunded, "pass has consumed sessions → refundable")
+	assert.Equal(t, domain.StatusForgiven, out.Reservation.Status())
+
+	// Persisted reservation has transitioned to FORGIVEN.
+	persisted, err := reservationRepo.GetByID(context.Background(), cancelledID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusForgiven, persisted.Status())
+
+	// Pass session refunded: 9 → 10.
+	gotPass, err = passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 10, gotPass.RemainingSessions())
+}
+
+// TestForgiveIntegration_NotLateCancelledReturnsErrNotLateCancelled
+// verifies that forgiving a CONFIRMED reservation (or any other
+// non-CANCELLED_LATE status) is rejected with the sentinel that maps
+// to 409 not_late_cancelled on the wire.
+func TestForgiveIntegration_NotLateCancelledReturnsErrNotLateCancelled(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "forgive-notlate@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+	dog := seedIntegrationDog(t, user.ID(), "Toby", nil, nil)
+	pass := seedIntegrationPass(t, user.ID(), 10)
+
+	confirmed := mustNewReservation(0, activity.ID(), dog.ID(), pass.ID(), domain.StatusConfirmed, now)
+	reservationRepo := postgres.NewReservationRepository(testDB)
+	id, err := reservationRepo.Create(context.Background(), confirmed)
+	require.NoError(t, err)
+
+	forgiveUC := newIntegrationForgiveUC()
+	_, err = forgiveUC.Execute(context.Background(),
+		MustNewForgiveReservationInput(id, func() time.Time { return now }))
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrNotLateCancelled),
+		"expected ErrNotLateCancelled, got %T: %v", err, err)
+}

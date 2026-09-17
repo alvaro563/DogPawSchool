@@ -74,9 +74,34 @@ export async function cancelReservationAdmin(
   );
 }
 
-export async function fetchAllReservations(): Promise<ReservationView[]> {
-  const data = await apiClient.get<ReservationListResponse>('/reservations', { limit: '200' });
+export async function fetchAllReservations(status?: string): Promise<ReservationView[]> {
+  const params: Record<string, string> = { limit: '200' };
+  if (status) params.status = status;
+  const data = await apiClient.get<ReservationListResponse>('/reservations', params);
   return data.reservations;
+}
+
+// ForgiveReservationResponse mirrors the wire shape produced by
+// POST /reservations/{id}/forgive. pass_session_refunded=false
+// happens when the pass has nothing to refund (e.g. fresh pass with
+// no consumed sessions) — the reservation still transitions to
+// FORGIVEN.
+export interface ForgiveReservationResponse {
+  id: number;
+  status: string;
+  pass_session_refunded: boolean;
+}
+
+// forgiveReservation forgives a CANCELLED_LATE reservation. Admin
+// only — the route lives under the admin block of the router. On
+// success the reservation transitions to FORGIVEN and the pass
+// session is restored when refundable.
+export async function forgiveReservation(
+  reservationId: number,
+): Promise<ForgiveReservationResponse> {
+  return apiClient.post<ForgiveReservationResponse>(
+    `/reservations/${reservationId}/forgive`,
+  );
 }
 
 export async function fetchUpcomingReservations(): Promise<ReservationView[]> {

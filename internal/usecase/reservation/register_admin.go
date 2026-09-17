@@ -28,8 +28,9 @@ func NewRegisterAdminReservationInput(activityID, dogID, passID int, now func() 
 }
 
 type RegisterAdminReservationOutput struct {
-	ID     int
-	Status domain.ReservationStatus
+	ID             int
+	Status         domain.ReservationStatus
+	PendingReasons []PendingReason
 }
 
 type RegisterAdminReservationUseCase struct {
@@ -45,5 +46,9 @@ func (uc *RegisterAdminReservationUseCase) Execute(ctx context.Context, input Re
 		activityID: input.ActivityID(), dogID: input.DogID(), passID: input.PassID(), now: input.Now(), adminOverride: true,
 	})
 	if err != nil { return RegisterAdminReservationOutput{}, err }
-	return RegisterAdminReservationOutput{ID: out.ID, Status: out.Status}, nil
+	return RegisterAdminReservationOutput{
+		ID:             out.ID,
+		Status:         out.Status,
+		PendingReasons: out.PendingReasons,
+	}, nil
 }

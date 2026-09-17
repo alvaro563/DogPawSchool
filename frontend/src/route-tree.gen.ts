@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedAdminCancelledLateReservationsRouteImport } from './routes/_authenticated/admin/cancelled-late-reservations'
 import { Route as AuthenticatedAdminPassesRouteImport } from './routes/_authenticated/admin/passes'
 import { Route as AuthenticatedAdminReservationsRouteImport } from './routes/_authenticated/admin/reservations'
 import { Route as AuthenticatedAdminReservationsAttendanceRouteImport } from './routes/_authenticated/admin/reservations-attendance'
@@ -25,6 +26,7 @@ import { Route as AuthenticatedAdminActivitiesCompletedRouteImport } from './rou
 import { Route as AuthenticatedAdminDogsIndexRouteImport } from './routes/_authenticated/admin/dogs/index'
 import { Route as AuthenticatedAdminDogsInactiveRouteImport } from './routes/_authenticated/admin/dogs/inactive'
 import { Route as AuthenticatedAdminPendingReservationsIndexRouteImport } from './routes/_authenticated/admin/pending-reservations/index'
+import { Route as AuthenticatedAdminReservationsCancelledLateRouteImport } from './routes/_authenticated/admin/reservations/cancelled-late'
 import { Route as AuthenticatedAdminTodayClassesIndexRouteImport } from './routes/_authenticated/admin/today-classes/index'
 import { Route as AuthenticatedAdminTodayClassesIdRouteImport } from './routes/_authenticated/admin/today-classes/$id'
 
@@ -140,6 +142,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const AuthenticatedAdminCancelledLateReservationsRoute =
+  AuthenticatedAdminCancelledLateReservationsRouteImport.update({
+    id: '/cancelled-late-reservations',
+    path: '/cancelled-late-reservations',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminPassesRoute =
   AuthenticatedAdminPassesRouteImport.update({
     id: '/passes',
@@ -207,6 +215,12 @@ const AuthenticatedAdminPendingReservationsIndexRoute =
     path: '/pending-reservations/',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminReservationsCancelledLateRoute =
+  AuthenticatedAdminReservationsCancelledLateRouteImport.update({
+    id: '/cancelled-late',
+    path: '/cancelled-late',
+    getParentRoute: () => AuthenticatedAdminReservationsRoute,
+  } as any)
 const AuthenticatedAdminTodayClassesIndexRoute =
   AuthenticatedAdminTodayClassesIndexRouteImport.update({
     id: '/today-classes/',
@@ -232,8 +246,9 @@ export interface FileRoutesByFullPath {
   '/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
   '/auth/register': typeof AuthRegisterLazyRoute
+  '/admin/cancelled-late-reservations': typeof AuthenticatedAdminCancelledLateReservationsRoute
   '/admin/passes': typeof AuthenticatedAdminPassesRoute
-  '/admin/reservations': typeof AuthenticatedAdminReservationsRoute
+  '/admin/reservations': typeof AuthenticatedAdminReservationsRouteWithChildren
   '/admin/reservations-attendance': typeof AuthenticatedAdminReservationsAttendanceRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
@@ -241,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
   '/admin/activities/completed': typeof AuthenticatedAdminActivitiesCompletedRoute
   '/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
+  '/admin/reservations/cancelled-late': typeof AuthenticatedAdminReservationsCancelledLateRoute
   '/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
   '/admin/activities/': typeof AuthenticatedAdminActivitiesIndexRoute
   '/admin/dogs/': typeof AuthenticatedAdminDogsIndexRoute
@@ -258,8 +274,9 @@ export interface FileRoutesByTo {
   '/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
   '/auth/register': typeof AuthRegisterLazyRoute
+  '/admin/cancelled-late-reservations': typeof AuthenticatedAdminCancelledLateReservationsRoute
   '/admin/passes': typeof AuthenticatedAdminPassesRoute
-  '/admin/reservations': typeof AuthenticatedAdminReservationsRoute
+  '/admin/reservations': typeof AuthenticatedAdminReservationsRouteWithChildren
   '/admin/reservations-attendance': typeof AuthenticatedAdminReservationsAttendanceRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
@@ -267,6 +284,7 @@ export interface FileRoutesByTo {
   '/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
   '/admin/activities/completed': typeof AuthenticatedAdminActivitiesCompletedRoute
   '/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
+  '/admin/reservations/cancelled-late': typeof AuthenticatedAdminReservationsCancelledLateRoute
   '/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
   '/admin/activities': typeof AuthenticatedAdminActivitiesIndexRoute
   '/admin/dogs': typeof AuthenticatedAdminDogsIndexRoute
@@ -287,8 +305,9 @@ export interface FileRoutesById {
   '/_authenticated/reservations': typeof AuthenticatedReservationsLazyRoute
   '/auth/login': typeof AuthLoginLazyRoute
   '/auth/register': typeof AuthRegisterLazyRoute
+  '/_authenticated/admin/cancelled-late-reservations': typeof AuthenticatedAdminCancelledLateReservationsRoute
   '/_authenticated/admin/passes': typeof AuthenticatedAdminPassesRoute
-  '/_authenticated/admin/reservations': typeof AuthenticatedAdminReservationsRoute
+  '/_authenticated/admin/reservations': typeof AuthenticatedAdminReservationsRouteWithChildren
   '/_authenticated/admin/reservations-attendance': typeof AuthenticatedAdminReservationsAttendanceRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/dog-detail/$id': typeof AuthenticatedDogDetailIdLazyRoute
@@ -296,6 +315,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/activities/$id': typeof AuthenticatedAdminActivitiesIdRoute
   '/_authenticated/admin/activities/completed': typeof AuthenticatedAdminActivitiesCompletedRoute
   '/_authenticated/admin/dogs/inactive': typeof AuthenticatedAdminDogsInactiveRoute
+  '/_authenticated/admin/reservations/cancelled-late': typeof AuthenticatedAdminReservationsCancelledLateRoute
   '/_authenticated/admin/today-classes/$id': typeof AuthenticatedAdminTodayClassesIdRoute
   '/_authenticated/admin/activities/': typeof AuthenticatedAdminActivitiesIndexRoute
   '/_authenticated/admin/dogs/': typeof AuthenticatedAdminDogsIndexRoute
@@ -316,6 +336,7 @@ export interface FileRouteTypes {
     | '/reservations'
     | '/auth/login'
     | '/auth/register'
+    | '/admin/cancelled-late-reservations'
     | '/admin/passes'
     | '/admin/reservations'
     | '/admin/reservations-attendance'
@@ -325,6 +346,7 @@ export interface FileRouteTypes {
     | '/admin/activities/$id'
     | '/admin/activities/completed'
     | '/admin/dogs/inactive'
+    | '/admin/reservations/cancelled-late'
     | '/admin/today-classes/$id'
     | '/admin/activities/'
     | '/admin/dogs/'
@@ -342,6 +364,7 @@ export interface FileRouteTypes {
     | '/reservations'
     | '/auth/login'
     | '/auth/register'
+    | '/admin/cancelled-late-reservations'
     | '/admin/passes'
     | '/admin/reservations'
     | '/admin/reservations-attendance'
@@ -351,6 +374,7 @@ export interface FileRouteTypes {
     | '/admin/activities/$id'
     | '/admin/activities/completed'
     | '/admin/dogs/inactive'
+    | '/admin/reservations/cancelled-late'
     | '/admin/today-classes/$id'
     | '/admin/activities'
     | '/admin/dogs'
@@ -370,6 +394,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reservations'
     | '/auth/login'
     | '/auth/register'
+    | '/_authenticated/admin/cancelled-late-reservations'
     | '/_authenticated/admin/passes'
     | '/_authenticated/admin/reservations'
     | '/_authenticated/admin/reservations-attendance'
@@ -379,6 +404,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/activities/$id'
     | '/_authenticated/admin/activities/completed'
     | '/_authenticated/admin/dogs/inactive'
+    | '/_authenticated/admin/reservations/cancelled-late'
     | '/_authenticated/admin/today-classes/$id'
     | '/_authenticated/admin/activities/'
     | '/_authenticated/admin/dogs/'
@@ -486,6 +512,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/cancelled-late-reservations': {
+      id: '/_authenticated/admin/cancelled-late-reservations'
+      path: '/cancelled-late-reservations'
+      fullPath: '/admin/cancelled-late-reservations'
+      preLoaderRoute: typeof AuthenticatedAdminCancelledLateReservationsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/passes': {
       id: '/_authenticated/admin/passes'
       path: '/passes'
@@ -563,6 +596,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPendingReservationsIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/reservations/cancelled-late': {
+      id: '/_authenticated/admin/reservations/cancelled-late'
+      path: '/cancelled-late'
+      fullPath: '/admin/reservations/cancelled-late'
+      preLoaderRoute: typeof AuthenticatedAdminReservationsCancelledLateRouteImport
+      parentRoute: typeof AuthenticatedAdminReservationsRoute
+    }
     '/_authenticated/admin/today-classes/': {
       id: '/_authenticated/admin/today-classes/'
       path: '/today-classes'
@@ -580,9 +620,25 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedAdminReservationsRouteChildren {
+  AuthenticatedAdminReservationsCancelledLateRoute: typeof AuthenticatedAdminReservationsCancelledLateRoute
+}
+
+const AuthenticatedAdminReservationsRouteChildren: AuthenticatedAdminReservationsRouteChildren =
+  {
+    AuthenticatedAdminReservationsCancelledLateRoute:
+      AuthenticatedAdminReservationsCancelledLateRoute,
+  }
+
+const AuthenticatedAdminReservationsRouteWithChildren =
+  AuthenticatedAdminReservationsRoute._addFileChildren(
+    AuthenticatedAdminReservationsRouteChildren,
+  )
+
 interface AuthenticatedAdminRouteChildren {
+  AuthenticatedAdminCancelledLateReservationsRoute: typeof AuthenticatedAdminCancelledLateReservationsRoute
   AuthenticatedAdminPassesRoute: typeof AuthenticatedAdminPassesRoute
-  AuthenticatedAdminReservationsRoute: typeof AuthenticatedAdminReservationsRoute
+  AuthenticatedAdminReservationsRoute: typeof AuthenticatedAdminReservationsRouteWithChildren
   AuthenticatedAdminReservationsAttendanceRoute: typeof AuthenticatedAdminReservationsAttendanceRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -597,8 +653,11 @@ interface AuthenticatedAdminRouteChildren {
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
+  AuthenticatedAdminCancelledLateReservationsRoute:
+    AuthenticatedAdminCancelledLateReservationsRoute,
   AuthenticatedAdminPassesRoute: AuthenticatedAdminPassesRoute,
-  AuthenticatedAdminReservationsRoute: AuthenticatedAdminReservationsRoute,
+  AuthenticatedAdminReservationsRoute:
+    AuthenticatedAdminReservationsRouteWithChildren,
   AuthenticatedAdminReservationsAttendanceRoute:
     AuthenticatedAdminReservationsAttendanceRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,

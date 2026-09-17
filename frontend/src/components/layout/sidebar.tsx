@@ -14,6 +14,11 @@ import type { CreateReservationResponse } from '@/domain/entities/reservation';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  getReservationErrorMessage,
+  pendingReasonsDescription,
+} from '@/features/reservations/utils/reservation-error';
+import type { ApiError } from '@/infrastructure/api/http-client';
 
 interface NavItem {
   to: string;
@@ -46,16 +51,6 @@ interface SidebarProps {
 }
 
 const OCCUPYING_STATUSES = new Set(['CONFIRMED', 'PENDING_TO_CONFIRM']);
-
-function parseError(err: unknown, fallback: string): string {
-  const apiErr = err as { body?: { error?: string; field?: string; details?: string } };
-  const b = apiErr.body;
-  if (b?.error === 'validation' && b?.field) {
-    return `Error en ${b.field}: ${b.details || 'valor inválido'}`;
-  }
-  if (b?.details) return b.details;
-  return fallback;
-}
 
 // ReserveOtherDogForm is the inline form rendered in the sidebar
 // under "Reservar otro perro en esta actividad". It reuses the
@@ -130,7 +125,7 @@ function ReserveOtherDogForm({
       if (data.status === 'PENDING_TO_CONFIRM') {
         toast.warning(
           'Reserva pendiente de confirmación',
-          `${dogName} queda en lista de espera por incompatibilidades. La escuela revisará la reserva y te avisaremos.`,
+          pendingReasonsDescription(data.pending_reasons, dogName),
         );
       } else {
         toast.success(
@@ -141,7 +136,8 @@ function ReserveOtherDogForm({
 
       onSuccess();
     },
-    onError: (err: unknown) => setError(parseError(err, 'Error al crear la reserva.')),
+    onError: (err: ApiError) =>
+      setError(getReservationErrorMessage(err, 'Error al crear la reserva.')),
   });
 
   return (

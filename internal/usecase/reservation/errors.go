@@ -99,14 +99,17 @@ var ErrReservationNotOwned = errors.New("reservation is not owned by this user")
 // invalid_status.
 var ErrInvalidStatusFilter = errors.New("invalid status filter")
 
-// ErrDuplicateReservationForDog is returned when the
-// UNIQUE (activity_id, dog_id) constraint fires at insert time.
-// This is the only way to detect a duplicate booking when the
-// existing row is not in StatusConfirmed (e.g., the user previously
-// cancelled in time and is trying to rebook — which we want to
-// allow; the constraint is enforced to keep the history clean, so
-// we surface this as 409 and let the user cancel+rebook
-// explicitly).
+// ErrDuplicateReservationForDog is returned when the partial unique
+// index uniq_reservation_dog_active fires at insert time. The index
+// covers only active reservations (CONFIRMED, PENDING_TO_CONFIRM),
+// so the only way to reach this error in normal flow is a concurrent
+// race — two simultaneous registrations of the same dog to the same
+// activity arriving between the ListByActivity pre-check and the
+// INSERT. Cancelling and re-registering the same dog is explicitly
+// supported: terminal statuses (CANCELLED_*, NO_SHOW, FORGIVEN,
+// COMPLETED) are excluded from the index, so the user can recover
+// from accidental removal by the admin without manual SQL.
+// Maps to 409 duplicate_reservation.
 var ErrDuplicateReservationForDog = errors.New("dog already booked for this activity")
 
 // ErrDogPassOwnerMismatch is returned by RegisterReservationUseCase
@@ -151,6 +154,13 @@ var ErrNotCompletable = errors.New("reservation is not in a state that allows co
 // StatusPendingToConfirm. Maps to 409 not_pending.
 var ErrNotPending = errors.New("reservation is not pending to confirm")
 
+// ErrNotLateCancelled is returned by ForgiveReservationUseCase when
+// the target reservation is not in StatusCancelledLate. Only that
+// status can be transitioned to StatusForgiven; all others (already
+// forgiven, still confirmed, cancelled in time, completed, no-show,
+// pending) return this error. Maps to 409 not_late_cancelled.
+var ErrNotLateCancelled = errors.New("reservation is not in a state that can be forgiven")
+
 // IncompatibleDogsError is returned by RegisterReservationUseCase when
 // the candidate dog and one or more dogs already holding a slot in the
 // activity present a trigger->trait compatibility collision. It carries
@@ -163,4 +173,29 @@ type IncompatibleDogsError struct {
 
 func (e *IncompatibleDogsError) Error() string {
 	return fmt.Sprintf("incompatible dogs: %d conflict(s)", len(e.Conflicts))
+}
+
+// SexNeuteredConflictError is returned by RegisterReservationUseCase
+// when the candidate dog is a non-castrated male and one or more
+// other non-castrated males are already holding a slot in the activity.
+// Only the *blocking* sex/neutered conflicts are aggregated here —
+// pending (non-blocking) cases are surfaced as StatusPendingToConfirm
+// in the reservation itself, not as an error.
+//
+// The struct carries only stable domain data (the incoming dog and the
+// list of dogs blocking the booking). Translating these into a
+// user-facing message is the handler layer's responsibility — the
+// domain and use case layers are language-neutral.
+type SexNeuteredConflictError struct {
+	IncomingDog  *domain.Dog
+	BlockingDogs []*domain.Dog
+	Conflicts    []domain.SexNeuteredConflict
+}
+
+func (e *SexNeuteredConflictError) Error() string {
+	if e == nil || e.IncomingDog == nil {
+		return "sex_neutered_conflict: incoming dog is nil"
+	}
+	return fmt.Sprintf("sex_neutered_conflict: %s blocked by %d intact male(s)",
+		e.IncomingDog.Name(), len(e.BlockingDogs))
 }

@@ -1161,11 +1161,23 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "not_pending"})
 		return
 	}
+	if errors.Is(err, reservationuc.ErrNotLateCancelled) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "not_late_cancelled"})
+		return
+	}
 	var incompatibleDogsErr *reservationuc.IncompatibleDogsError
 	if errors.As(err, &incompatibleDogsErr) {
 		c.JSON(http.StatusConflict, errorResponse{
 			Error:   "dog_incompatible",
 			Details: incompatibleDogsErr.Error(),
+		})
+		return
+	}
+	var sexNeutErr *reservationuc.SexNeuteredConflictError
+	if errors.As(err, &sexNeutErr) {
+		c.JSON(http.StatusConflict, errorResponse{
+			Error:   "sex_neutered_incompatibility",
+			Details: formatSexNeuteredBlockingError(sexNeutErr),
 		})
 		return
 	}

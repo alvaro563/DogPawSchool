@@ -262,8 +262,10 @@ type ReservationRepository interface {
 
 	// ListAllView returns the views of every reservation in the
 	// system, ordered by created_at DESC. Paginated via limit and
-	// offset. Intended for admin dashboards and global reports.
-	ListAllView(ctx context.Context, limit, offset int) ([]*ReservationView, error)
+	// offset. When status is non-nil, only reservations with that
+	// status are returned (nil = no filter). Intended for admin
+	// dashboards and global reports.
+	ListAllView(ctx context.Context, limit, offset int, status *ReservationStatus) ([]*ReservationView, error)
 
 	// ListPendingView returns the views of every reservation in
 	// StatusPendingToConfirm, ordered by created_at ASC (oldest

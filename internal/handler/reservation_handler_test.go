@@ -66,6 +66,14 @@ func (s *stubReservationRejecter) Execute(ctx context.Context, in reservationuc.
 	return s.fn(ctx, in)
 }
 
+type stubReservationForgiver struct {
+	fn func(ctx context.Context, in reservationuc.ForgiveReservationInput) (reservationuc.ForgiveReservationOutput, error)
+}
+
+func (s *stubReservationForgiver) Execute(ctx context.Context, in reservationuc.ForgiveReservationInput) (reservationuc.ForgiveReservationOutput, error) {
+	return s.fn(ctx, in)
+}
+
 func newReservationHandler(
 	reg ReservationRegisterer,
 	cancel ReservationCanceler,
@@ -79,21 +87,27 @@ func newReservationHandler(
 	complete ReservationCompleter,
 	confirm ReservationConfirmer,
 	reject ReservationRejecter,
+	forgive ReservationForgiver,
 	listAll ReservationListerAll,
 	listUpcomingAll ReservationUpcomingAllLister,
 	adminRegister AdminReservationRegisterer,
 	activityRoster ActivityRosterGetter,
 	listPending PendingReservationsGetter,
 ) *ReservationHandler {
-	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity, noShow, complete, confirm, reject, listAll, listUpcomingAll, adminRegister, activityRoster, listPending)
+	return NewReservationHandler(reg, cancel, get, listByUser, listUpcoming, listByDog, listByPass, listByActivity, noShow, complete, confirm, reject, forgive, listAll, listUpcomingAll, adminRegister, activityRoster, listPending)
 }
 
 func newReservationHandlerReg(reg ReservationRegisterer) *ReservationHandler {
-	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newReservationHandlerCancel(cancel ReservationCanceler) *ReservationHandler {
-	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, cancel, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+}
+
+func newReservationHandlerForgive(forgive ReservationForgiver) *ReservationHandler {
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, forgive, nil, nil, nil, nil, nil)
 
 }
 
@@ -606,42 +620,42 @@ func (s *stubReservationListerByActivity) Execute(ctx context.Context, in reserv
 }
 
 func newReservationHandlerGet(get ReservationGetter) *ReservationHandler {
-	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, get, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
 func newReservationHandlerListByUser(l ReservationListerByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
 func newReservationHandlerListUpcoming(l ReservationListerUpcomingByUser) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
 func newReservationHandlerListByDog(l ReservationListerByDog) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
 func newReservationHandlerListByPass(l ReservationListerByPass) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
 func newReservationHandlerListByActivity(l ReservationListerByActivity) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, l, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
 func newReservationHandlerNoShow(noShow ReservationNoShower) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, noShow, nil, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, noShow, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
 func newReservationHandlerComplete(complete ReservationCompleter) *ReservationHandler {
-	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, complete, nil, nil, nil, nil, nil, nil, nil)
+	return newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, complete, nil, nil, nil, nil, nil, nil, nil, nil)
 
 }
 
@@ -1328,6 +1342,69 @@ func TestReservationRegister_IncompatibleDogsConflict(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"error":"dog_incompatible"`)
 }
 
+// TestReservationRegister_SexNeuteredIncompatibilityReturns409AndDetails
+// verifies that a *SexNeuteredConflictError returned by the use case
+// maps to a 409 response with the wire-level "sex_neutered_incompatibility"
+// error key and a Spanish details message that names the conflicting dogs.
+func TestReservationRegister_SexNeuteredIncompatibilityReturns409AndDetails(t *testing.T) {
+	t.Parallel()
+	incoming, err := domain.NewDog(7, "Toby", "Labrador", "ES-SNH-7", 24, domain.SexMale, 12.0, 1)
+	require.NoError(t, err)
+	blocking, err := domain.NewDog(5, "Max", "Husky", "ES-SNH-5", 24, domain.SexMale, 18.0, 99)
+	require.NoError(t, err)
+	stub := &stubReservationRegisterer{
+		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+			return reservationuc.RegisterReservationOutput{}, &reservationuc.SexNeuteredConflictError{
+				IncomingDog:  incoming,
+				BlockingDogs: []*domain.Dog{blocking},
+			}
+		},
+	}
+	h := newReservationHandlerReg(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `"error":"sex_neutered_incompatibility"`)
+	assert.Contains(t, body, `"details":"No se puede apuntar a Toby: coincide con Max (macho sin castrar)."`)
+}
+
+// TestReservationRegister_PendingReasonsIncludedInResponse verifies that
+// when the use case returns StatusPendingToConfirm with reasons, the
+// handler serialises them as Spanish strings inside the
+// `pending_reasons` array on the response body.
+func TestReservationRegister_PendingReasonsIncludedInResponse(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationRegisterer{
+		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+			return reservationuc.RegisterReservationOutput{
+				ID:     99,
+				Status: domain.StatusPendingToConfirm,
+				PendingReasons: []reservationuc.PendingReason{
+					{Code: reservationuc.SexNeuteredReasonPrefix + domain.ReasonIntactVsCastrated, DogIDs: []int{7, 5}},
+					{Code: domain.ReasonHasSpecialCondition, DogIDs: []int{7}},
+				},
+			}, nil
+		},
+	}
+	h := newReservationHandlerReg(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `"id":99`)
+	assert.Contains(t, body, `"status":"PENDING_TO_CONFIRM"`)
+	// Spanish message uses the fallback #N form because no name
+	// resolver is wired into the handler for this stub path.
+	assert.Contains(t, body, `"pending_reasons":["el perro #7 queda pendiente: coincide con el perro #5 (macho castrado).","el perro #7 tiene una condición especial y requiere revisión por la escuela."]`)
+}
+
 func sampleHandlerConflict() domain.CompatibilityConflict {
 	return domain.CompatibilityConflict{
 		TriggerName:     "Reactivo a machos enteros",
@@ -1352,7 +1429,7 @@ func TestReservationConfirmPending_Success(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{Reservation: reservation}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil, nil)
 
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
@@ -1373,7 +1450,7 @@ func TestReservationConfirmPending_InvalidID(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil, nil)
 
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/abc/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "abc"}}
@@ -1393,7 +1470,7 @@ func TestReservationConfirmPending_NotPending(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{}, reservationuc.ErrNotPending
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil, nil)
 
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
@@ -1415,7 +1492,7 @@ func TestReservationRejectPending_Success(t *testing.T) {
 			return reservationuc.RejectPendingReservationOutput{Reservation: reservation}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil)
 
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
@@ -1435,7 +1512,7 @@ func TestReservationRejectPending_NotFound(t *testing.T) {
 			return reservationuc.RejectPendingReservationOutput{}, reservationuc.ErrNotFound
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil)
 
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
@@ -1455,7 +1532,7 @@ func TestReservationConfirmPending_NotFound(t *testing.T) {
 			return reservationuc.ConfirmPendingReservationOutput{}, reservationuc.ErrNotFound
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil, nil)
 
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/confirm", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
@@ -1475,7 +1552,7 @@ func TestReservationRejectPending_NotPending(t *testing.T) {
 			return reservationuc.RejectPendingReservationOutput{}, reservationuc.ErrNotPending
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil, nil, nil, nil, nil, nil)
 
 	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/reject", "", withUserID(1))
 	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
@@ -1520,7 +1597,7 @@ func TestReservationListActivityRoster_Success(t *testing.T) {
 			}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
 
 	c, w := setupAuthCtx(http.MethodGet, "/api/v1/admin/activities/10/roster", "", withUserID(1))
 	c.Params = gin.Params{{Key: "id", Value: "10"}}
@@ -1571,7 +1648,7 @@ func TestReservationListActivityRoster_InvalidID(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+			h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
 
 			c, w := setupAuthCtx(http.MethodGet, "/api/v1/admin/activities/"+tt.pathID+"/roster", "", withUserID(1))
 			c.Params = gin.Params{{Key: "id", Value: tt.pathID}}
@@ -1595,7 +1672,7 @@ func TestReservationListActivityRoster_ActivityNotFound(t *testing.T) {
 			return reservationuc.ListActivityRosterOutput{}, reservationuc.ErrInvalidActivity
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
 
 	c, w := setupAuthCtx(http.MethodGet, "/api/v1/admin/activities/999/roster", "", withUserID(1))
 	c.Params = gin.Params{{Key: "id", Value: "999"}}
@@ -1644,7 +1721,7 @@ func TestReservationListPending_Success(t *testing.T) {
 			}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
 	c, w := setupAuthCtx(http.MethodGet, "/api/v1/reservations/pending", "", withUserID(1))
 
 	h.ListPending(c)
@@ -1680,7 +1757,7 @@ func TestReservationListPending_Empty(t *testing.T) {
 			return reservationuc.ListPendingReservationsOutput{Pending: nil}, nil
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
 	c, w := setupAuthCtx(http.MethodGet, "/api/v1/reservations/pending", "", withUserID(1))
 
 	h.ListPending(c)
@@ -1703,7 +1780,7 @@ func TestReservationListPending_RepoErrorWrapped(t *testing.T) {
 			return reservationuc.ListPendingReservationsOutput{}, errors.New("db connection lost")
 		},
 	}
-	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
 	c, w := setupAuthCtx(http.MethodGet, "/api/v1/reservations/pending", "", withUserID(1))
 
 	h.ListPending(c)
@@ -1865,4 +1942,75 @@ func TestReservationCancelAdmin_InternalError(t *testing.T) {
 	h.CancelAdmin(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// TestReservationForgive_Success validates the happy-path admin
+// forgive wire response. It mirrors the structure of
+// TestReservationCancelAdmin_SuccessInTime to make the two contracts
+// obviously analogous.
+func TestReservationForgive_Success(t *testing.T) {
+	t.Parallel()
+	reservation := newCancelledReservation(99, domain.StatusForgiven)
+	stub := &stubReservationForgiver{
+		fn: func(_ context.Context, in reservationuc.ForgiveReservationInput) (reservationuc.ForgiveReservationOutput, error) {
+			assert.Equal(t, 99, in.ReservationID())
+			return reservationuc.ForgiveReservationOutput{
+				Reservation:         reservation,
+				PassSessionRefunded: true,
+			}, nil
+		},
+	}
+	h := newReservationHandlerForgive(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/reservations/99/forgive", "", withUserID(1))
+	c.Params = gin.Params{{Key: "id", Value: "99"}}
+
+	h.Forgive(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body forgiveReservationResponse
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 99, body.ID)
+	assert.Equal(t, "FORGIVEN", body.Status)
+	assert.True(t, body.PassSessionRefunded)
+}
+
+// TestReservationForgive_NotLateCancelledReturns409 verifies that a
+// reservation outside StatusCancelledLate maps to 409
+// not_late_cancelled on the wire.
+func TestReservationForgive_NotLateCancelledReturns409(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationForgiver{
+		fn: func(context.Context, reservationuc.ForgiveReservationInput) (reservationuc.ForgiveReservationOutput, error) {
+			return reservationuc.ForgiveReservationOutput{}, reservationuc.ErrNotLateCancelled
+		},
+	}
+	h := newReservationHandlerForgive(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/reservations/99/forgive", "", withUserID(1))
+	c.Params = gin.Params{{Key: "id", Value: "99"}}
+
+	h.Forgive(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_late_cancelled"`)
+}
+
+// TestReservationForgive_InvalidIDReturns400 covers the input-
+// validation branch: non-numeric / zero / negative reservation_id.
+func TestReservationForgive_InvalidIDReturns400(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationForgiver{
+		fn: func(context.Context, reservationuc.ForgiveReservationInput) (reservationuc.ForgiveReservationOutput, error) {
+			t.Fatal("use case must not be invoked when validation fails")
+			return reservationuc.ForgiveReservationOutput{}, nil
+		},
+	}
+	h := newReservationHandlerForgive(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/reservations/abc/forgive", "", withUserID(1))
+	c.Params = gin.Params{{Key: "id", Value: "abc"}}
+
+	h.Forgive(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"validation"`)
+	assert.Contains(t, w.Body.String(), `"field":"reservation_id"`)
 }

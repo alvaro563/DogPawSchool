@@ -582,14 +582,21 @@ func (repo *ReservationRepository) CountHeldSlotsBatch(ctx context.Context, acti
 }
 
 // ListAllView returns the views of every reservation in the system,
-// ordered by created_at DESC. Used by the admin global reservation
-// list endpoint.
-func (repo *ReservationRepository) ListAllView(ctx context.Context, limit, offset int) ([]*domain.ReservationView, error) {
+// ordered by created_at DESC. When status is non-nil, only reservations
+// with that status are returned. Used by the admin global reservation
+// list endpoint and the "Canceladas tarde" view.
+func (repo *ReservationRepository) ListAllView(ctx context.Context, limit, offset int, status *domain.ReservationStatus) ([]*domain.ReservationView, error) {
 	query := reservationViewSelectClause + `
 		JOIN passes p ON p.id = r.pass_id
+		WHERE ($3::reservation_status IS NULL OR r.status = $3)
 		ORDER BY r.created_at DESC
 		LIMIT $1 OFFSET $2`
-	return queryReservationViews(ctx, runner(ctx, repo.db), query, limit, offset)
+	statusArg := (*string)(nil)
+	if status != nil {
+		s := string(*status)
+		statusArg = &s
+	}
+	return queryReservationViews(ctx, runner(ctx, repo.db), query, limit, offset, statusArg)
 }
 
 // ListPendingView returns the views of every reservation in

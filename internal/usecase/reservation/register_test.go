@@ -389,6 +389,12 @@ func TestRegisterReservationUseCase_PassExpired(t *testing.T) {
 
 func TestRegisterReservationUseCase_DuplicateReservation(t *testing.T) {
 	t.Parallel()
+	// Since the partial unique index uniq_reservation_dog_active was
+	// introduced in 000016, this error is no longer reachable via the
+	// cancel-then-rebook flow: only a true concurrent race between
+	// two simultaneous INSERTs can trip it (one wins, the other
+	// gets domain.ErrDuplicateReservation from the repo). This test
+	// keeps the sentinel-translation branch honest as a backstop.
 	activity := validFutureActivity(10)
 	dog := validDog(20, 1)
 	pass := validPass(30, 1, 5)
@@ -619,6 +625,278 @@ func TestRegisterReservationUseCase_NoConflictStaysConfirmed(t *testing.T) {
 	output, err := uc.Execute(context.Background(), validRegisterInput())
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusConfirmed, output.Status)
+}
+
+// newDogWithSex builds a dog with a specific sex and neutered state.
+// User ID is required for ownership.
+func newDogWithSex(t *testing.T, id, userID int, sex domain.Sex, neutered bool) *domain.Dog {
+	t.Helper()
+	d, err := domain.NewDog(id, "Luna", "Mixed", "ES-SN-"+strconv.Itoa(id), 24, sex, 10.0, userID)
+	require.NoError(t, err)
+	if neutered {
+		d.SetNeutered(true)
+	}
+	return d
+}
+
+// sexNeuteredFlowStubs wires a register flow with a single existing
+// slot holder (the "other" dog). The candidate is loaded via GetByID.
+// Returns the same shape as registerFlowStubs but with no trigger
+// machinery (the candidate has no triggers).
+func sexNeuteredFlowStubs(candidate, other *domain.Dog) (
+	*stubActivityRepository, *stubDogRepository, *stubPassRepository, *mockReservationRepository,
+) {
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validFutureActivity(10), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+		getByIDs: func(_ context.Context, ids []int) ([]*domain.Dog, error) {
+			return []*domain.Dog{other}, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 1, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return []*domain.Reservation{
+				mustNewReservation(1, 10, other.ID(), 30, domain.StatusConfirmed, fixedNow),
+			}, nil
+		},
+	}
+	return activityRepo, dogRepo, passRepo, reservationRepo
+}
+
+func TestRegisterReservationUseCase_SexNeutered_IntactVsIntact_Blocks(t *testing.T) {
+	t.Parallel()
+	candidate := newDogWithSex(t, 20, 1, domain.SexMale, false)
+	other := newDogWithSex(t, 21, 99, domain.SexMale, false)
+	activityRepo, dogRepo, passRepo, reservationRepo := sexNeuteredFlowStubs(candidate, other)
+	var createCalled, passUpdated bool
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		createCalled = true
+		return 0, nil
+	}
+	passRepo.update = func(context.Context, *domain.Pass) error {
+		passUpdated = true
+		return nil
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validRegisterInput())
+	require.Error(t, err)
+	var sexErr *SexNeuteredConflictError
+	assert.True(t, errors.As(err, &sexErr), "expected SexNeuteredConflictError, got %T", err)
+	require.NotNil(t, sexErr.IncomingDog)
+	assert.Equal(t, 20, sexErr.IncomingDog.ID())
+	assert.Len(t, sexErr.BlockingDogs, 1)
+	assert.Equal(t, 21, sexErr.BlockingDogs[0].ID())
+	assert.False(t, createCalled, "no reservation may be created when an intact-vs-intact block fires")
+	assert.False(t, passUpdated, "the pass session must not be consumed")
+}
+
+func TestRegisterReservationUseCase_SexNeutered_IntactVsCastrated_Pending(t *testing.T) {
+	t.Parallel()
+	candidate := newDogWithSex(t, 20, 1, domain.SexMale, false)
+	other := newDogWithSex(t, 21, 99, domain.SexMale, true)
+	activityRepo, dogRepo, passRepo, reservationRepo := sexNeuteredFlowStubs(candidate, other)
+	var captured domain.ReservationStatus
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		captured = r.Status()
+		return 99, nil
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusPendingToConfirm, captured)
+	assert.Equal(t, domain.StatusPendingToConfirm, out.Status)
+	require.Len(t, out.PendingReasons, 1)
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonIntactVsCastrated, out.PendingReasons[0].Code)
+	assert.Equal(t, []int{20, 21}, out.PendingReasons[0].DogIDs)
+}
+
+func TestRegisterReservationUseCase_SexNeutered_CastratedVsCastrated_Pending(t *testing.T) {
+	t.Parallel()
+	candidate := newDogWithSex(t, 20, 1, domain.SexMale, true)
+	other := newDogWithSex(t, 21, 99, domain.SexMale, true)
+	activityRepo, dogRepo, passRepo, reservationRepo := sexNeuteredFlowStubs(candidate, other)
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		assert.Equal(t, domain.StatusPendingToConfirm, r.Status())
+		return 99, nil
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	require.Len(t, out.PendingReasons, 1)
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonCastratedVsCastrated, out.PendingReasons[0].Code)
+}
+
+func TestRegisterReservationUseCase_SexNeutered_FemaleNotAffected(t *testing.T) {
+	t.Parallel()
+	candidate := newDogWithSex(t, 20, 1, domain.SexFemale, false)
+	other := newDogWithSex(t, 21, 99, domain.SexMale, false)
+	activityRepo, dogRepo, passRepo, reservationRepo := sexNeuteredFlowStubs(candidate, other)
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		assert.Equal(t, domain.StatusConfirmed, r.Status())
+		return 99, nil
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusConfirmed, out.Status)
+	assert.Empty(t, out.PendingReasons)
+}
+
+func TestRegisterReservationUseCase_SexNeutered_EmptyExisting_Confirmed(t *testing.T) {
+	t.Parallel()
+	candidate := newDogWithSex(t, 20, 1, domain.SexMale, false)
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validFutureActivity(10), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+		getByIDs: func(_ context.Context, ids []int) ([]*domain.Dog, error) {
+			assert.Empty(t, ids, "no slot holders means GetByIDs returns empty slice")
+			return []*domain.Dog{}, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 1, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return []*domain.Reservation{}, nil
+		},
+		create: func(_ context.Context, r *domain.Reservation) (int, error) {
+			assert.Equal(t, domain.StatusConfirmed, r.Status())
+			return 99, nil
+		},
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusConfirmed, out.Status)
+	assert.Empty(t, out.PendingReasons)
+}
+
+func TestRegisterReservationUseCase_SexNeutered_BidirectionalSymmetric(t *testing.T) {
+	t.Parallel()
+	// Two perspectives on the same pair (A,B) and (B,A) must produce
+	// the same Reason() and IsBlocker() result, because the rule is
+	// unconditional on the pair. We verify by swapping which dog is
+	// the candidate and observing that the symmetric conflict produces
+	// the same Status.
+	dogA := newDogWithSex(t, 20, 1, domain.SexMale, false)
+	dogB := newDogWithSex(t, 21, 99, domain.SexMale, false)
+
+	t.Run("A_candidate_B_existing_blocks", func(t *testing.T) {
+		activityRepo, dogRepo, passRepo, reservationRepo := sexNeuteredFlowStubs(dogA, dogB)
+		reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+			t.Fatal("Create must not be called when two intact males block")
+			return 0, nil
+		}
+		uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+		_, err := uc.Execute(context.Background(), validRegisterInput())
+		var sexErr *SexNeuteredConflictError
+		require.Error(t, err)
+		require.True(t, errors.As(err, &sexErr))
+		assert.Equal(t, 21, sexErr.BlockingDogs[0].ID())
+	})
+
+	t.Run("B_candidate_A_existing_blocks", func(t *testing.T) {
+		// Swap: B is the candidate, A is the existing slot holder.
+		activityRepo := &stubActivityRepository{
+			getByID: func(context.Context, int) (*domain.Activity, error) {
+				return validFutureActivity(10), nil
+			},
+		}
+		dogRepo := &stubDogRepository{
+			getByID: func(context.Context, int) (*domain.Dog, error) {
+				return dogB, nil
+			},
+			getByIDs: func(_ context.Context, ids []int) ([]*domain.Dog, error) {
+				return []*domain.Dog{dogA}, nil
+			},
+		}
+		passRepo := &stubPassRepository{
+			getByID: func(context.Context, int) (*domain.Pass, error) {
+				return validPass(30, 99, 5), nil
+			},
+		}
+		reservationRepo := &mockReservationRepository{
+			listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+				return []*domain.Reservation{
+					mustNewReservation(1, 10, dogA.ID(), 30, domain.StatusConfirmed, fixedNow),
+				}, nil
+			},
+		}
+		in := MustNewRegisterReservationInput(99, 10, 21, 30, func() time.Time { return fixedNow })
+		uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+		_, err := uc.Execute(context.Background(), in)
+		var sexErr *SexNeuteredConflictError
+		require.Error(t, err)
+		require.True(t, errors.As(err, &sexErr))
+		assert.Equal(t, 20, sexErr.BlockingDogs[0].ID())
+	})
+}
+
+func TestRegisterReservationUseCase_HasSpecialCondition_CreatesPending(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 1)
+	trueVal := true
+	require.NoError(t, candidate.ApplyPatch(domain.DogPatch{HasSpecialCondition: &trueVal}))
+	other := validDog(21, 99)
+	activityRepo, dogRepo, passRepo, reservationRepo := sexNeuteredFlowStubs(candidate, other)
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		assert.Equal(t, domain.StatusPendingToConfirm, r.Status())
+		return 99, nil
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusPendingToConfirm, out.Status)
+	require.Len(t, out.PendingReasons, 1)
+	assert.Equal(t, domain.ReasonHasSpecialCondition, out.PendingReasons[0].Code)
+	assert.Equal(t, []int{20}, out.PendingReasons[0].DogIDs)
+}
+
+func TestRegisterReservationUseCase_HasSpecialCondition_WithSexPending_BothReasons(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 1)
+	trueVal := true
+	require.NoError(t, candidate.ApplyPatch(domain.DogPatch{HasSpecialCondition: &trueVal}))
+	// Candidate must be MALE for the sex/neutered check to apply.
+	candidateMale, err := domain.NewDog(20, "Luna", "Labrador", "ES-HSC-M", 24, domain.SexMale, 10.0, 1)
+	require.NoError(t, err)
+	require.NoError(t, candidateMale.ApplyPatch(domain.DogPatch{HasSpecialCondition: &trueVal}))
+
+	other := newDogWithSex(t, 21, 99, domain.SexMale, true)
+	activityRepo, dogRepo, passRepo, reservationRepo := sexNeuteredFlowStubs(candidateMale, other)
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		assert.Equal(t, domain.StatusPendingToConfirm, r.Status())
+		return 99, nil
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusPendingToConfirm, out.Status)
+	// Both reasons must be present, in evaluation order: sex first
+	// (because the sex check runs before the special-condition flag).
+	require.Len(t, out.PendingReasons, 2)
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonIntactVsCastrated, out.PendingReasons[0].Code)
+	assert.Equal(t, domain.ReasonHasSpecialCondition, out.PendingReasons[1].Code)
 }
 
 func TestRegisterReservationUseCase_SizeMismatchBlocks(t *testing.T) {

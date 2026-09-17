@@ -8,26 +8,33 @@ import (
 )
 
 // ListAllReservationsInput is the validated input for listing all
-// reservations in the system. It only carries pagination; there are
-// no entity-level filters.
+// reservations in the system. It carries pagination and an optional
+// status filter.
 type ListAllReservationsInput struct {
 	limit  int
 	offset int
+	status *domain.ReservationStatus
 }
 
 func (in ListAllReservationsInput) Limit() int  { return in.limit }
 func (in ListAllReservationsInput) Offset() int { return in.offset }
+func (in ListAllReservationsInput) Status() *domain.ReservationStatus {
+	return in.status
+}
 
-// NewListAllReservationsInput normalizes pagination. Error is always
-// nil for pure-pagination inputs.
-func NewListAllReservationsInput(limit, offset int) (ListAllReservationsInput, error) {
+// NewListAllReservationsInput normalizes pagination and validates the
+// optional status filter. A nil status means "no filter".
+func NewListAllReservationsInput(limit, offset int, status *domain.ReservationStatus) (ListAllReservationsInput, error) {
 	limit, offset = normalizePagination(limit, offset)
-	return ListAllReservationsInput{limit: limit, offset: offset}, nil
+	if status != nil && !status.IsValid() {
+		return ListAllReservationsInput{}, &ValidationError{Field: "status"}
+	}
+	return ListAllReservationsInput{limit: limit, offset: offset, status: status}, nil
 }
 
 // MustNewListAllReservationsInput panics on error. For tests.
-func MustNewListAllReservationsInput(limit, offset int) ListAllReservationsInput {
-	in, err := NewListAllReservationsInput(limit, offset)
+func MustNewListAllReservationsInput(limit, offset int, status *domain.ReservationStatus) ListAllReservationsInput {
+	in, err := NewListAllReservationsInput(limit, offset, status)
 	if err != nil {
 		panic(err)
 	}
@@ -50,7 +57,7 @@ func NewListAllReservationsUseCase(repo domain.ReservationRepository) *ListAllRe
 }
 
 func (uc *ListAllReservationsUseCase) Execute(ctx context.Context, input ListAllReservationsInput) (ListAllReservationsOutput, error) {
-	views, err := uc.repo.ListAllView(ctx, input.Limit(), input.Offset())
+	views, err := uc.repo.ListAllView(ctx, input.Limit(), input.Offset(), input.Status())
 	if err != nil {
 		return ListAllReservationsOutput{}, fmt.Errorf("list all reservations: %w", err)
 	}

@@ -3,6 +3,7 @@ package reservation
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -301,6 +302,12 @@ func TestAdminRegister_ActivityFull(t *testing.T) {
 
 func TestAdminRegister_DuplicateReservation(t *testing.T) {
 	t.Parallel()
+	// Backstop test: since migration 000016 the partial unique
+	// index excludes terminal statuses, so the cancel-then-rebook
+	// flow no longer surfaces this error. Only a concurrent race
+	// between two INSERTs can reach it. The admin path translates
+	// domain.ErrDuplicateReservation -> ErrDuplicateReservationForDog
+	// identically to the user path, which is what this test asserts.
 	activity := validFutureActivity(10)
 	dog := validDog(20, 99)
 	pass := validPass(30, 99, 5)
@@ -718,4 +725,62 @@ func adminFlowStubs(t *testing.T, candidate, other *domain.Dog, ownerID int) (
 		},
 	}
 	return activityRepo, dogRepo, passRepo, reservationRepo
+}
+
+// ── Sex/neutered and special-condition bypasses on admin path ─────
+
+// newAdminDogWithSex builds a dog for the admin path with the given
+// sex and neutered state. userID is the OWNER, not the admin; the
+// admin path always books on behalf of any owner.
+func newAdminDogWithSex(t *testing.T, id, userID int, sex domain.Sex, neutered bool) *domain.Dog {
+	t.Helper()
+	d, err := domain.NewDog(id, "Luna", "Mixed", "ES-ASN-"+strconv.Itoa(id), 24, sex, 10.0, userID)
+	require.NoError(t, err)
+	if neutered {
+		d.SetNeutered(true)
+	}
+	return d
+}
+
+func TestAdminRegister_SexNeutered_IntactVsIntact_BypassesBlock(t *testing.T) {
+	t.Parallel()
+	// Two intact males would block on the user path. On the admin
+	// path, the compatibility block (which includes the sex/neutered
+	// check) is entirely bypassed, so the booking succeeds with
+	// StatusConfirmed and no pending reasons.
+	candidate := newAdminDogWithSex(t, 20, 99, domain.SexMale, false)
+	other := newAdminDogWithSex(t, 21, 1, domain.SexMale, false)
+	activityRepo, dogRepo, passRepo, reservationRepo := adminFlowStubs(t, candidate, other, 99)
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		assert.Equal(t, domain.StatusConfirmed, r.Status())
+		return 99, nil
+	}
+	uc := newAdminRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validAdminRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusConfirmed, out.Status)
+	assert.Empty(t, out.PendingReasons)
+}
+
+func TestAdminRegister_HasSpecialCondition_BypassesToConfirmed(t *testing.T) {
+	t.Parallel()
+	// A dog with HasSpecialCondition=true would land at
+	// StatusPendingToConfirm on the user path. On the admin path the
+	// special-condition escalation is bypassed together with the rest
+	// of the compatibility block, so the booking succeeds with
+	// StatusConfirmed and no pending reasons.
+	candidate := newAdminDogWithSex(t, 20, 99, domain.SexMale, true)
+	trueVal := true
+	require.NoError(t, candidate.ApplyPatch(domain.DogPatch{HasSpecialCondition: &trueVal}))
+	other := validDog(21, 1)
+	activityRepo, dogRepo, passRepo, reservationRepo := adminFlowStubs(t, candidate, other, 99)
+	reservationRepo.create = func(_ context.Context, r *domain.Reservation) (int, error) {
+		assert.Equal(t, domain.StatusConfirmed, r.Status())
+		return 99, nil
+	}
+	uc := newAdminRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validAdminRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusConfirmed, out.Status)
+	assert.Empty(t, out.PendingReasons)
 }

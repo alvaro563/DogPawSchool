@@ -274,6 +274,68 @@ func conflictsFrom(triggerDog, targetDog *Dog) []CompatibilityConflict {
 	return conflicts
 }
 
+// Reason codes for SexNeuteredConflict. The domain owns these stable
+// identifiers; presentation layers (handler / frontend) translate them
+// to user-facing text. Keep the names and string values stable — they
+// are part of the API contract.
+const (
+	ReasonIntactVsIntact       = "intact_vs_intact"
+	ReasonIntactVsCastrated    = "intact_vs_castrated"
+	ReasonCastratedVsIntact    = "castrated_vs_intact"
+	ReasonCastratedVsCastrated = "castrated_vs_castrated"
+)
+
+// ReasonHasSpecialCondition is the code emitted when a dog is flagged
+// as having a special condition and therefore requires admin review
+// before the reservation can be confirmed.
+const ReasonHasSpecialCondition = "has_special_condition"
+
+// SexNeuteredConflict describes a single pair-level conflict between
+// two dogs based on sex and neutered state. The rule is symmetric: the
+// same Reason() is produced regardless of which dog is the "incoming"
+// one and which is the "existing" one, because the constraint is
+// unconditional on the pair. Callers should never depend on field
+// ordering for behavior, only on Reason() / IsBlocker().
+type SexNeuteredConflict struct {
+	IncomingDogID    int
+	IncomingDogName  string
+	IncomingSex      Sex
+	IncomingNeutered bool
+	ExistingDogID    int
+	ExistingDogName  string
+	ExistingSex      Sex
+	ExistingNeutered bool
+}
+
+// Reason returns one of the Reason* constants above, or the empty
+// string when the conflict is not well-formed (e.g. zero value, or a
+// pair that does not involve two males). Treat the empty string as
+// "no conflict".
+func (c SexNeuteredConflict) Reason() string {
+	if c.IncomingSex != SexMale || c.ExistingSex != SexMale {
+		return ""
+	}
+	switch {
+	case !c.IncomingNeutered && !c.ExistingNeutered:
+		return ReasonIntactVsIntact
+	case !c.IncomingNeutered && c.ExistingNeutered:
+		return ReasonIntactVsCastrated
+	case c.IncomingNeutered && !c.ExistingNeutered:
+		return ReasonCastratedVsIntact
+	case c.IncomingNeutered && c.ExistingNeutered:
+		return ReasonCastratedVsCastrated
+	}
+	return ""
+}
+
+// IsBlocker reports whether this conflict must reject the reservation
+// outright. The only blocking case under the current business rule is
+// two intact (non-castrated) males. Every other male-male combination
+// is "pending review".
+func (c SexNeuteredConflict) IsBlocker() bool {
+	return c.Reason() == ReasonIntactVsIntact
+}
+
 // AgeBracket derives the age category from ageInMonths.
 func (dog *Dog) AgeBracket() AgeBracket {
 	switch {
@@ -307,6 +369,39 @@ func (dog *Dog) SizeBracket() SizeBracket {
 // IsIntactMale reports whether the dog is a non-neutered male.
 func (dog *Dog) IsIntactMale() bool {
 	return dog.sex == SexMale && !dog.neutered
+}
+
+// SexNeuteredConflictsWith returns every sex/neutered conflict between
+// the receiver and other. The rule is SYMMETRIC: a single call per pair
+// covers both directions ("incoming vs existing" and "existing vs
+// incoming"), because the rule is unconditional on the pair — calling
+// this method from either perspective yields the same conflict.
+//
+// Nil and self are no-ops. An empty result means no conflict of this
+// type. Only male-male pairs can ever produce a conflict; any other
+// combination returns nil.
+//
+// The receiver is treated as the "incoming" dog; the other argument as
+// the "existing" dog. Callers iterating over existing slot holders
+// should pass the candidate as the receiver so IncomingDogID matches
+// the dog being registered.
+func (dog *Dog) SexNeuteredConflictsWith(other *Dog) []SexNeuteredConflict {
+	if dog == nil || other == nil || dog.ID() == other.ID() {
+		return nil
+	}
+	if dog.sex != SexMale || other.sex != SexMale {
+		return nil
+	}
+	return []SexNeuteredConflict{{
+		IncomingDogID:    dog.id,
+		IncomingDogName:  dog.name,
+		IncomingSex:      dog.sex,
+		IncomingNeutered: dog.neutered,
+		ExistingDogID:    other.id,
+		ExistingDogName:  other.name,
+		ExistingSex:      other.sex,
+		ExistingNeutered: other.neutered,
+	}}
 }
 
 func containsIncompatibility(list []Incompatibility, id int) bool {

@@ -40,6 +40,11 @@ export interface CreateReservationRequest {
 export interface CreateReservationResponse {
   id: number;
   status: string;
+  // Spanish explanations of why the reservation was held in
+  // StatusPendingToConfirm. Populated only when status is
+  // 'PENDING_TO_CONFIRM' and the backend attached reasons; absent on
+  // CONFIRMED responses.
+  pending_reasons?: string[];
 }
 
 // ActivityRoster is the admin class-day view returned by

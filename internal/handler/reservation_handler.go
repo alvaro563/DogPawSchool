@@ -72,6 +72,10 @@ type ReservationRejecter interface {
 	Execute(ctx context.Context, input reservationuc.RejectPendingReservationInput) (reservationuc.RejectPendingReservationOutput, error)
 }
 
+type ReservationForgiver interface {
+	Execute(ctx context.Context, input reservationuc.ForgiveReservationInput) (reservationuc.ForgiveReservationOutput, error)
+}
+
 type ActivityRosterGetter interface {
 	Execute(ctx context.Context, input reservationuc.ListActivityRosterInput) (reservationuc.ListActivityRosterOutput, error)
 }
@@ -100,6 +104,7 @@ type ReservationHandler struct {
 	complete       ReservationCompleter
 	confirm        ReservationConfirmer
 	reject         ReservationRejecter
+	forgive        ReservationForgiver
 	listAll        ReservationListerAll
 	listUpcomingAll ReservationUpcomingAllLister
 	activityRoster ActivityRosterGetter
@@ -119,6 +124,7 @@ func NewReservationHandler(
 	complete ReservationCompleter,
 	confirm ReservationConfirmer,
 	reject ReservationRejecter,
+	forgive ReservationForgiver,
 	listAll ReservationListerAll,
 	listUpcomingAll ReservationUpcomingAllLister,
 	adminRegister AdminReservationRegisterer,
@@ -139,6 +145,7 @@ func NewReservationHandler(
 		complete:       complete,
 		confirm:        confirm,
 		reject:         reject,
+		forgive:        forgive,
 		listAll:        listAll,
 		listUpcomingAll: listUpcomingAll,
 		activityRoster: activityRoster,
@@ -201,7 +208,11 @@ func (h *ReservationHandler) Register(c *gin.Context) {
 		return
 	}
 	c.Header("Location", "/api/v1/reservations/"+strconv.Itoa(output.ID))
-	c.JSON(http.StatusCreated, registerReservationResponse{ID: output.ID, Status: string(output.Status)})
+	c.JSON(http.StatusCreated, registerReservationResponse{
+		ID:             output.ID,
+		Status:         string(output.Status),
+		PendingReasons: formatPendingReasons(output.PendingReasons, nil),
+	})
 }
 
 // RegisterAdmin godoc
@@ -236,7 +247,11 @@ func (h *ReservationHandler) RegisterAdmin(c *gin.Context) {
 		return
 	}
 	c.Header("Location", "/api/v1/reservations/"+strconv.Itoa(output.ID))
-	c.JSON(http.StatusCreated, registerReservationResponse{ID: output.ID, Status: string(output.Status)})
+	c.JSON(http.StatusCreated, registerReservationResponse{
+		ID:             output.ID,
+		Status:         string(output.Status),
+		PendingReasons: formatPendingReasons(output.PendingReasons, nil),
+	})
 }
 
 // registerReservationRequest is the wire format for creating a
@@ -249,8 +264,12 @@ type registerReservationRequest struct {
 }
 
 type registerReservationResponse struct {
-	ID     int    `json:"id"     example:"99"`
-	Status string `json:"status" example:"CONFIRMED"`
+	ID             int      `json:"id"             example:"99"`
+	Status         string   `json:"status"         example:"CONFIRMED"`
+	// PendingReasons carries the user-facing Spanish explanations for
+	// each reason the reservation was held in StatusPendingToConfirm.
+	// Populated only when Status is "PENDING_TO_CONFIRM" and non-empty.
+	PendingReasons []string `json:"pending_reasons,omitempty"`
 }
 
 // confirmPendingReservationResponse is the wire format for a
@@ -442,6 +461,56 @@ func (h *ReservationHandler) CancelAdmin(c *gin.Context) {
 type cancelReservationResponse struct {
 	ID     int    `json:"id"     example:"99"`
 	Status string `json:"status" example:"CANCELLED_IN_TIME"`
+}
+
+// forgiveReservationResponse is the wire format for a successful
+// forgive. The pass_session_refunded field mirrors the use case's
+// output: when false (fresh pass with nothing to refund), the client
+// should show an honest "forgiven but session was not refundable"
+// message.
+type forgiveReservationResponse struct {
+	ID                  int    `json:"id"                  example:"99"`
+	Status              string `json:"status"              example:"FORGIVEN"`
+	PassSessionRefunded bool   `json:"pass_session_refunded" example:"true"`
+}
+
+// Forgive godoc
+// @Summary      Forgive a late-cancelled reservation
+// @Description  Admin-only. Transitions a CANCELLED_LATE reservation
+// @Description  to FORGIVEN and, when the pass has available balance,
+// @Description  refunds the consumed session. The only path that
+// @Description  converts a late cancellation into a pass refund.
+// @Tags         reservations
+// @Produce      json
+// @Param        id   path      int     true  "Reservation ID"
+// @Success      200  {object}  forgiveReservationResponse "Reservation forgiven"
+// @Failure      400  {object}  errorResponse              "Invalid reservation_id"
+// @Failure      404  {object}  errorResponse              "Reservation not found"
+// @Failure      409  {object}  errorResponse              "Reservation is not in a state that can be forgiven"
+// @Failure      500  {object}  errorResponse              "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/reservations/{id}/forgive [post]
+func (h *ReservationHandler) Forgive(c *gin.Context) {
+	reservationID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || reservationID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "reservation_id"})
+		return
+	}
+	in, err := reservationuc.NewForgiveReservationInput(reservationID, time.Now)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.forgive.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, forgiveReservationResponse{
+		ID:                  output.Reservation.ID(),
+		Status:              string(output.Reservation.Status()),
+		PassSessionRefunded: output.PassSessionRefunded,
+	})
 }
 
 // markNoShowResponse is the wire format for a successful
@@ -821,14 +890,29 @@ func (h *ReservationHandler) ListByActivity(c *gin.Context) {
 // @Produce      json
 // @Param        limit    query     int     false  "Maximum number of reservations to return (default 50, max 100)"
 // @Param        offset   query     int     false  "Number of reservations to skip for pagination (default 0)"
+// @Param        status   query     string  false  "Filter by status (CONFIRMED, PENDING_TO_CONFIRM, COMPLETED, CANCELLED_IN_TIME, CANCELLED_LATE, FORGIVEN, NO_SHOW). Empty = no filter."
 // @Success      200      {object}  listReservationsResponse
+// @Failure      400      {object}  errorResponse
 // @Failure      500      {object}  errorResponse
 // @Security     BearerAuth
 // @Router       /api/v1/reservations [get]
 func (h *ReservationHandler) ListAll(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	in, _ := reservationuc.NewListAllReservationsInput(limit, offset)
+	status, err := parseStatusFilter(c.Query("status"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{
+			Error:   "validation",
+			Field:   "status",
+			Details: err.Error(),
+		})
+		return
+	}
+	in, err := reservationuc.NewListAllReservationsInput(limit, offset, status)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
 	output, err := h.listAll.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)

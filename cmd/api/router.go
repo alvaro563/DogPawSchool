@@ -165,6 +165,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	listActivityRosterUC := reservationuc.NewListActivityRosterUseCase(activityRepo, reservationRepo, userRepo)
 	listPendingUC := reservationuc.NewListPendingReservationsUseCase(reservationRepo, userRepo)
 	listAttendanceReportUC := reservationuc.NewListAttendanceReportUseCase(reservationRepo)
+	forgiveReservationUC := reservationuc.NewForgiveReservationUseCase(transactor, passRepo, reservationRepo)
 	attendanceH := handler.NewAttendanceHandler(listAttendanceReportUC)
 	reservationH := handler.NewReservationHandler(
 		registerReservationUC, cancelReservationUC,
@@ -172,6 +173,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		listByDogReservationsUC, listByPassReservationsUC, listByActivityReservationsUC,
 		markNoShowReservationUC, completeReservationUC,
 		confirmPendingReservationUC, rejectPendingReservationUC,
+		forgiveReservationUC,
 		listAllReservationsUC,
 		listUpcomingAllUC,
 		registerAdminReservationUC,
@@ -288,6 +290,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		{
 			admin.POST("/reservations", reservationH.RegisterAdmin)
 			admin.POST("/reservations/:id/cancel", reservationH.CancelAdmin)
+			admin.POST("/reservations/:id/forgive", reservationH.Forgive)
 			admin.GET("/users", userH.List)
 			admin.PATCH("/users/:user_id", userH.Update)
 			admin.POST("/users/:user_id/deactivate", userH.Deactivate)

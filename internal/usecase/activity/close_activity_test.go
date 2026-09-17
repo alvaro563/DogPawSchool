@@ -182,7 +182,7 @@ func (s *stubResRepoForClose) ListByPassView(_ context.Context, _, _, _ int) ([]
 func (s *stubResRepoForClose) ListByActivityView(_ context.Context, _, _, _ int) ([]*domain.ReservationView, error) {
 	return nil, nil
 }
-func (s *stubResRepoForClose) ListAllView(_ context.Context, _, _ int) ([]*domain.ReservationView, error) {
+func (s *stubResRepoForClose) ListAllView(_ context.Context, _, _ int, _ *domain.ReservationStatus) ([]*domain.ReservationView, error) {
 	return nil, nil
 }
 func (s *stubResRepoForClose) ListAllUpcomingView(_ context.Context, _, _ int) ([]*domain.ReservationView, error) {

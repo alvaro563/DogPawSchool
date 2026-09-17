@@ -16,6 +16,10 @@ import type { User } from '@/domain/entities/user';
 import { getSizeBracket, sizeBracketLabel, type SizeBracket } from '@/features/dogs/utils/size';
 import type { ApiError } from '@/infrastructure/api/http-client';
 import type { CreateReservationResponse } from '@/domain/entities/reservation';
+import {
+  getReservationErrorMessage,
+  pendingReasonsDescription,
+} from '@/features/reservations/utils/reservation-error';
 
 export interface ExistingReservation {
   dogId: number;
@@ -36,19 +40,6 @@ const TYPE_LABELS: Record<string, string> = {
   INDIVIDUAL_CLASS: 'Clase individual',
   EXTRA: 'Evento extra',
 };
-
-function getErrorMessage(status: number): string {
-  switch (status) {
-    case 409:
-      return 'No hay plazas disponibles o ya tienes una reserva.';
-    case 400:
-      return 'Datos inválidos. Revisa la selección.';
-    case 404:
-      return 'Recurso no encontrado.';
-    default:
-      return 'Error al crear la reserva. Inténtalo de nuevo.';
-  }
-}
 
 export function ActivityDetailSheet({
   activity,
@@ -167,7 +158,7 @@ export function ActivityDetailSheet({
       if (data.status === 'PENDING_TO_CONFIRM') {
         toast.warning(
           'Reserva pendiente de confirmación',
-          `${dogName} queda en lista de espera por incompatibilidades. La escuela revisará la reserva y te avisaremos.`,
+          pendingReasonsDescription(data.pending_reasons, dogName),
         );
       } else if (isAdmin) {
         toast.success(
@@ -184,7 +175,7 @@ export function ActivityDetailSheet({
       onOpenChange(false);
     },
     onError: (err: ApiError) => {
-      setMutationError(getErrorMessage(err.status));
+      setMutationError(getReservationErrorMessage(err, 'Error al crear la reserva. Inténtalo de nuevo.'));
     },
   });
 
