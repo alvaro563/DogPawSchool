@@ -222,6 +222,7 @@ func (h *DogHandler) Register(c *gin.Context) {
 		request.Name, request.Breed, request.Passport,
 		request.AgeInMonths, domain.Sex(request.Sex),
 		request.WeightKg, request.UserID,
+		request.HasSpecialCondition,
 	)
 	if err != nil {
 		writeError(c, err)
@@ -377,17 +378,18 @@ func (h *DogHandler) Modify(c *gin.Context) {
 	}
 
 	patch := domain.DogPatch{
-		Name:          request.Name,
-		Breed:         request.Breed,
-		AgeInMonths:   request.AgeInMonths,
-		Passport:      request.Passport,
-		WeightKg:      request.WeightKg,
-		Neutered:      request.Neutered,
-		Heat:          request.Heat,
-		PhotoURL:      request.PhotoURL,
-		MedicalNotes:  request.MedicalNotes,
-		EducatorNotes: request.EducatorNotes,
-		IsActive:      request.IsActive,
+		Name:                request.Name,
+		Breed:               request.Breed,
+		AgeInMonths:         request.AgeInMonths,
+		Passport:            request.Passport,
+		WeightKg:            request.WeightKg,
+		Neutered:            request.Neutered,
+		Heat:                request.Heat,
+		PhotoURL:            request.PhotoURL,
+		MedicalNotes:        request.MedicalNotes,
+		EducatorNotes:       request.EducatorNotes,
+		IsActive:            request.IsActive,
+		HasSpecialCondition: request.HasSpecialCondition,
 	}
 	if request.Sex != nil {
 		sexValue := domain.Sex(*request.Sex)
@@ -1293,13 +1295,14 @@ func mapActivityCloseError(err error) string {
 }
 
 type registerDogRequest struct {
-	Name        string  `json:"name" example:"Luna"`
-	Breed       string  `json:"breed" example:"Labrador"`
-	AgeInMonths int     `json:"age_in_months" example:"24"`
-	Sex         string  `json:"sex" example:"FEMALE"`
-	WeightKg    float64 `json:"weight_kg" example:"22.5"`
-	Passport    string  `json:"passport" example:"ES-12345"`
-	UserID      int     `json:"user_id" example:"1"`
+	Name                string  `json:"name" example:"Luna"`
+	Breed               string  `json:"breed" example:"Labrador"`
+	AgeInMonths         int     `json:"age_in_months" example:"24"`
+	Sex                 string  `json:"sex" example:"FEMALE"`
+	WeightKg            float64 `json:"weight_kg" example:"22.5"`
+	Passport            string  `json:"passport" example:"ES-12345"`
+	UserID              int     `json:"user_id" example:"1"`
+	HasSpecialCondition bool    `json:"has_special_condition" example:"false"`
 }
 
 type registerDogResponse struct {
@@ -1307,38 +1310,40 @@ type registerDogResponse struct {
 }
 
 type dogDTO struct {
-	ID                int                  `json:"id" example:"1"`
-	Name              string               `json:"name" example:"Luna"`
-	Breed             string               `json:"breed" example:"Labrador"`
-	AgeInMonths       int                  `json:"age_in_months" example:"24"`
-	Sex               string               `json:"sex" example:"FEMALE"`
-	Neutered          bool                 `json:"neutered" example:"false"`
-	Heat              bool                 `json:"heat" example:"false"`
-	WeightKg          float64              `json:"weight_kg" example:"22.5"`
-	PhotoURL          string               `json:"photo_url" example:""`
-	MedicalNotes      string               `json:"medical_notes" example:""`
-	EducatorNotes     string               `json:"educator_notes" example:""`
-	Passport          string               `json:"passport" example:"ES-12345"`
-	UserID            int                  `json:"user_id" example:"1"`
-	OwnerName         string               `json:"owner_name" example:"Ana"`
-	IsActive          bool                 `json:"is_active" example:"true"`
-	Traits            []incompatibilityDTO `json:"traits"`
-	Incompatibilities []incompatibilityDTO `json:"incompatibilities"`
+	ID                  int                  `json:"id" example:"1"`
+	Name                string               `json:"name" example:"Luna"`
+	Breed               string               `json:"breed" example:"Labrador"`
+	AgeInMonths         int                  `json:"age_in_months" example:"24"`
+	Sex                 string               `json:"sex" example:"FEMALE"`
+	Neutered            bool                 `json:"neutered" example:"false"`
+	Heat                bool                 `json:"heat" example:"false"`
+	WeightKg            float64              `json:"weight_kg" example:"22.5"`
+	PhotoURL            string               `json:"photo_url" example:""`
+	MedicalNotes        string               `json:"medical_notes" example:""`
+	EducatorNotes       string               `json:"educator_notes" example:""`
+	Passport            string               `json:"passport" example:"ES-12345"`
+	UserID              int                  `json:"user_id" example:"1"`
+	OwnerName           string               `json:"owner_name" example:"Ana"`
+	IsActive            bool                 `json:"is_active" example:"true"`
+	HasSpecialCondition bool                 `json:"has_special_condition" example:"false"`
+	Traits              []incompatibilityDTO `json:"traits"`
+	Incompatibilities   []incompatibilityDTO `json:"incompatibilities"`
 }
 
 type modifyDogRequest struct {
-	Name          *string  `json:"name,omitempty" example:"Buddie"`
-	Breed         *string  `json:"breed,omitempty" example:"Labrador"`
-	AgeInMonths   *int     `json:"age_in_months,omitempty" example:"24"`
-	Sex           *string  `json:"sex,omitempty" example:"FEMALE"`
-	Passport      *string  `json:"passport,omitempty" example:"ES-12345"`
-	WeightKg      *float64 `json:"weight_kg,omitempty" example:"22.5"`
-	Neutered      *bool    `json:"neutered,omitempty" example:"true"`
-	Heat          *bool    `json:"heat,omitempty" example:"false"`
-	PhotoURL      *string  `json:"photo_url,omitempty" example:""`
-	MedicalNotes  *string  `json:"medical_notes,omitempty" example:""`
-	EducatorNotes *string  `json:"educator_notes,omitempty" example:""`
-	IsActive      *bool    `json:"is_active,omitempty" example:"true"`
+	Name                *string  `json:"name,omitempty" example:"Buddie"`
+	Breed               *string  `json:"breed,omitempty" example:"Labrador"`
+	AgeInMonths         *int     `json:"age_in_months,omitempty" example:"24"`
+	Sex                 *string  `json:"sex,omitempty" example:"FEMALE"`
+	Passport            *string  `json:"passport,omitempty" example:"ES-12345"`
+	WeightKg            *float64 `json:"weight_kg,omitempty" example:"22.5"`
+	Neutered            *bool    `json:"neutered,omitempty" example:"true"`
+	Heat                *bool    `json:"heat,omitempty" example:"false"`
+	PhotoURL            *string  `json:"photo_url,omitempty" example:""`
+	MedicalNotes        *string  `json:"medical_notes,omitempty" example:""`
+	EducatorNotes       *string  `json:"educator_notes,omitempty" example:""`
+	IsActive            *bool    `json:"is_active,omitempty" example:"true"`
+	HasSpecialCondition *bool    `json:"has_special_condition,omitempty" example:"true"`
 }
 
 type modifyDogResponse struct {
@@ -1391,21 +1396,22 @@ type errorResponse struct {
 // clients can iterate unconditionally.
 func toDogDTO(dog *domain.Dog, ownerName string) dogDTO {
 	dto := dogDTO{
-		ID:            dog.ID(),
-		Name:          dog.Name(),
-		Breed:         dog.Breed(),
-		AgeInMonths:   dog.AgeInMonths(),
-		Sex:           string(dog.Sex()),
-		Neutered:      dog.Neutered(),
-		Heat:          dog.Heat(),
-		WeightKg:      dog.WeightKg(),
-		PhotoURL:      dog.PhotoURL(),
-		MedicalNotes:  dog.MedicalNotes(),
-		EducatorNotes: dog.EducatorNotes(),
-		Passport:      dog.Passport(),
-		UserID:        dog.UserID(),
-		OwnerName:     ownerName,
-		IsActive:      dog.IsActive(),
+		ID:                  dog.ID(),
+		Name:                dog.Name(),
+		Breed:               dog.Breed(),
+		AgeInMonths:         dog.AgeInMonths(),
+		Sex:                 string(dog.Sex()),
+		Neutered:            dog.Neutered(),
+		Heat:                dog.Heat(),
+		WeightKg:            dog.WeightKg(),
+		PhotoURL:            dog.PhotoURL(),
+		MedicalNotes:        dog.MedicalNotes(),
+		EducatorNotes:       dog.EducatorNotes(),
+		Passport:            dog.Passport(),
+		UserID:              dog.UserID(),
+		OwnerName:           ownerName,
+		IsActive:            dog.IsActive(),
+		HasSpecialCondition: dog.HasSpecialCondition(),
 	}
 	traits := dog.Traits()
 	dto.Traits = make([]incompatibilityDTO, 0, len(traits))

@@ -88,27 +88,29 @@ type Dog struct {
 	medicalNotes      string
 	educatorNotes     string
 	passport          string
-	incompatibilities []Incompatibility
-	traits            []Incompatibility
-	userID            int
-	isActive          bool
+	incompatibilities     []Incompatibility
+	traits                []Incompatibility
+	userID                int
+	isActive              bool
+	hasSpecialCondition   bool
 }
 
 // DogPatch is a partial update for Dog: only the non-nil fields are
 // applied. Each field has its own validation rules; see ApplyPatch.
 type DogPatch struct {
-	Name          *string
-	Breed         *string
-	AgeInMonths   *int
-	Sex           *Sex
-	Passport      *string
-	WeightKg      *float64
-	Neutered      *bool
-	Heat          *bool
-	PhotoURL      *string
-	MedicalNotes  *string
-	EducatorNotes *string
-	IsActive      *bool
+	Name                *string
+	Breed               *string
+	AgeInMonths         *int
+	Sex                 *Sex
+	Passport            *string
+	WeightKg            *float64
+	Neutered            *bool
+	Heat                *bool
+	PhotoURL            *string
+	MedicalNotes        *string
+	EducatorNotes       *string
+	IsActive            *bool
+	HasSpecialCondition *bool
 }
 
 // DogValidationError is returned by ApplyPatch when a supplied value is
@@ -152,15 +154,16 @@ func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weig
 		return nil, fmt.Errorf("dog: userID must be greater than 0")
 	}
 	return &Dog{
-		id:          id,
-		name:        name,
-		breed:       breed,
-		ageInMonths: ageInMonths,
-		sex:         sex,
-		weightKg:    weightKg,
-		passport:    passport,
-		userID:      userID,
-		isActive:    true,
+		id:                  id,
+		name:                name,
+		breed:               breed,
+		ageInMonths:         ageInMonths,
+		sex:                 sex,
+		weightKg:            weightKg,
+		passport:            passport,
+		userID:              userID,
+		isActive:            true,
+		hasSpecialCondition: false,
 	}, nil
 }
 
@@ -177,7 +180,8 @@ func (dog *Dog) MedicalNotes() string  { return dog.medicalNotes }
 func (dog *Dog) EducatorNotes() string { return dog.educatorNotes }
 func (dog *Dog) Passport() string      { return dog.passport }
 func (dog *Dog) UserID() int           { return dog.userID }
-func (dog *Dog) IsActive() bool        { return dog.isActive }
+func (dog *Dog) IsActive() bool              { return dog.isActive }
+func (dog *Dog) HasSpecialCondition() bool   { return dog.hasSpecialCondition }
 
 // Incompatibilities returns a defensive copy of the dog's incompatibilities.
 func (dog *Dog) Incompatibilities() []Incompatibility {
@@ -435,6 +439,9 @@ func (dog *Dog) ApplyPatch(patch DogPatch) error {
 	}
 	if patch.IsActive != nil {
 		dog.isActive = *patch.IsActive
+	}
+	if patch.HasSpecialCondition != nil {
+		dog.hasSpecialCondition = *patch.HasSpecialCondition
 	}
 	return nil
 }

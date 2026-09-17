@@ -27,12 +27,12 @@ const (
 	pgErrUniqueViolation     = "23505"
 )
 
-// dogSelectClause is the 14-column projection reused by every list method.
+// dogSelectClause is the 15-column projection reused by every list method.
 // Keep the column order in lockstep with scanDog.
 const dogSelectClause = `SELECT id, user_id, name, breed, age_in_months, sex,
 	       neutered, heat, weight_kg,
 	       photo_url, medical_notes, educator_notes,
-	       passport, is_active
+	       passport, is_active, has_special_condition
 	FROM dogs`
 
 // dogJoinSelectClause is the projection used by ListByIncompatibility. It
@@ -41,7 +41,7 @@ const dogSelectClause = `SELECT id, user_id, name, breed, age_in_months, sex,
 const dogJoinSelectClause = `SELECT d.id, d.user_id, d.name, d.breed, d.age_in_months, d.sex,
 	       d.neutered, d.heat, d.weight_kg,
 	       d.photo_url, d.medical_notes, d.educator_notes,
-	       d.passport, d.is_active
+	       d.passport, d.is_active, d.has_special_condition
 	FROM dogs d`
 
 type DogRepository struct {
@@ -58,8 +58,8 @@ func (repo *DogRepository) Create(ctx context.Context, dog *domain.Dog) (int, er
 			user_id, name, breed, age_in_months, sex,
 			neutered, heat, weight_kg,
 			photo_url, medical_notes, educator_notes,
-			passport, is_active
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			passport, is_active, has_special_condition
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id
 	`
 	var newDogID int64
@@ -67,7 +67,7 @@ func (repo *DogRepository) Create(ctx context.Context, dog *domain.Dog) (int, er
 		dog.UserID(), dog.Name(), dog.Breed(), dog.AgeInMonths(), dog.Sex(),
 		dog.Neutered(), dog.Heat(), dog.WeightKg(),
 		nullString(dog.PhotoURL()), nullString(dog.MedicalNotes()), nullString(dog.EducatorNotes()),
-		dog.Passport(), dog.IsActive(),
+		dog.Passport(), dog.IsActive(), dog.HasSpecialCondition(),
 	).Scan(&newDogID)
 	if err != nil {
 		return 0, mapCreateError(err)
@@ -80,7 +80,7 @@ func (repo *DogRepository) GetByID(ctx context.Context, id int) (*domain.Dog, er
 		SELECT id, user_id, name, breed, age_in_months, sex,
 		       neutered, heat, weight_kg,
 		       photo_url, medical_notes, educator_notes,
-		       passport, is_active
+		       passport, is_active, has_special_condition
 		FROM dogs WHERE id = $1
 	`
 	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
@@ -105,7 +105,7 @@ func (repo *DogRepository) GetByIDForUpdate(ctx context.Context, id int) (*domai
 		SELECT id, user_id, name, breed, age_in_months, sex,
 		       neutered, heat, weight_kg,
 		       photo_url, medical_notes, educator_notes,
-		       passport, is_active
+		       passport, is_active, has_special_condition
 		FROM dogs WHERE id = $1 FOR UPDATE
 	`
 	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
@@ -241,14 +241,14 @@ func (repo *DogRepository) Update(ctx context.Context, dog *domain.Dog) error {
 				name = $1, breed = $2, age_in_months = $3, sex = $4,
 				weight_kg = $5, neutered = $6, heat = $7,
 				photo_url = $8, medical_notes = $9, educator_notes = $10,
-				passport = $11, is_active = $12
-			WHERE id = $13
+				passport = $11, is_active = $12, has_special_condition = $13
+			WHERE id = $14
 		`
 		queryResult, err := runner(txCtx, repo.db).ExecContext(txCtx, updateQuery,
 			dog.Name(), dog.Breed(), dog.AgeInMonths(), dog.Sex(),
 			dog.WeightKg(), dog.Neutered(), dog.Heat(),
 			nullString(dog.PhotoURL()), nullString(dog.MedicalNotes()), nullString(dog.EducatorNotes()),
-			dog.Passport(), dog.IsActive(), dog.ID(),
+			dog.Passport(), dog.IsActive(), dog.HasSpecialCondition(), dog.ID(),
 		)
 		if err != nil {
 			return mapUpdateError(err)
@@ -624,10 +624,11 @@ func scanDog(scanner rowScanner) (*domain.Dog, error) {
 		weightKg                              float64
 		photoURL, medicalNotes, educatorNotes sql.NullString
 		passport                              string
+		hasSpecialCondition                   bool
 	)
 	if err := scanner.Scan(&id, &userID, &name, &breed, &ageInMonths, &sex,
 		&neutered, &heat, &weightKg, &photoURL, &medicalNotes, &educatorNotes,
-		&passport, &isActive); err != nil {
+		&passport, &isActive, &hasSpecialCondition); err != nil {
 		return nil, err
 	}
 	dog, err := domain.NewDog(int(id), name, breed, passport, ageInMonths,
@@ -636,13 +637,14 @@ func scanDog(scanner rowScanner) (*domain.Dog, error) {
 		return nil, fmt.Errorf("reconstruct dog: %w", err)
 	}
 	if err := dog.ApplyPatch(domain.DogPatch{
-		Neutered:      &neutered,
-		Heat:          &heat,
-		WeightKg:      &weightKg,
-		PhotoURL:      &photoURL.String,
-		MedicalNotes:  &medicalNotes.String,
-		EducatorNotes: &educatorNotes.String,
-		IsActive:      &isActive,
+		Neutered:            &neutered,
+		Heat:                &heat,
+		WeightKg:            &weightKg,
+		PhotoURL:            &photoURL.String,
+		MedicalNotes:        &medicalNotes.String,
+		EducatorNotes:       &educatorNotes.String,
+		IsActive:            &isActive,
+		HasSpecialCondition: &hasSpecialCondition,
 	}); err != nil {
 		return nil, fmt.Errorf("reconstruct dog profile: %w", err)
 	}
@@ -690,15 +692,15 @@ type DogWithOwnerRow struct {
 	OwnerName string
 }
 
-// listActiveDogsWithOwnerSelectClause is the 16-column projection
+// listActiveDogsWithOwnerSelectClause is the 17-column projection
 // reused only by ListActiveWithOwnerRaw. Kept separate from
 // dogSelectClause so the LEFT JOIN against users is opt-in and the
-// existing scanDog (14 columns) stays untouched.
+// existing scanDog (15 columns) stays untouched.
 const listActiveDogsWithOwnerSelectClause = `
 	SELECT d.id, d.user_id, d.name, d.breed, d.age_in_months, d.sex,
 	       d.neutered, d.heat, d.weight_kg,
 	       d.photo_url, d.medical_notes, d.educator_notes,
-	       d.passport, d.is_active,
+	       d.passport, d.is_active, d.has_special_condition,
 	       u.name AS owner_name
 	FROM dogs d
 	LEFT JOIN users u ON u.id = d.user_id
@@ -748,11 +750,12 @@ func scanDogWithOwner(scanner rowScanner) (*DogWithOwnerRow, error) {
 		weightKg                              float64
 		photoURL, medicalNotes, educatorNotes sql.NullString
 		passport                              string
+		hasSpecialCondition                   bool
 		ownerName                             sql.NullString
 	)
 	if err := scanner.Scan(&id, &userID, &name, &breed, &ageInMonths, &sex,
 		&neutered, &heat, &weightKg, &photoURL, &medicalNotes, &educatorNotes,
-		&passport, &isActive, &ownerName); err != nil {
+		&passport, &isActive, &hasSpecialCondition, &ownerName); err != nil {
 		return nil, err
 	}
 	dog, err := domain.NewDog(int(id), name, breed, passport, ageInMonths,
@@ -767,7 +770,8 @@ func scanDogWithOwner(scanner rowScanner) (*DogWithOwnerRow, error) {
 		PhotoURL:      &photoURL.String,
 		MedicalNotes:  &medicalNotes.String,
 		EducatorNotes: &educatorNotes.String,
-		IsActive:      &isActive,
+		IsActive:            &isActive,
+		HasSpecialCondition: &hasSpecialCondition,
 	}); err != nil {
 		return nil, fmt.Errorf("reconstruct dog profile: %w", err)
 	}

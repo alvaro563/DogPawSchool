@@ -260,6 +260,12 @@ export function InactiveDogsManagementPage() {
                     </span>
                   )}
 
+                  {dog.has_special_condition && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                      Condición especial
+                    </span>
+                  )}
+
                   <span className="inline-flex items-center gap-1 rounded-md bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
                     {sizeBracketLabel[sizeBracket]}
                   </span>

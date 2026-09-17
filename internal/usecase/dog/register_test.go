@@ -11,7 +11,7 @@ import (
 )
 
 func validRegisterInput() RegisterDogInput {
-	return MustNewRegisterDogInput("Buddy", "Labrador", "ES12345", 24, domain.SexMale, 25.0, 1)
+	return MustNewRegisterDogInput("Buddy", "Labrador", "ES12345", 24, domain.SexMale, 25.0, 1, false)
 }
 
 func TestNewRegisterDogInput(t *testing.T) {
@@ -21,14 +21,14 @@ func TestNewRegisterDogInput(t *testing.T) {
 		factory       func() (RegisterDogInput, error)
 		expectedField string
 	}{
-		{"empty_name", func() (RegisterDogInput, error) { return NewRegisterDogInput("", "x", "x", 1, domain.SexMale, 1, 1) }, "name"},
-		{"empty_breed", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "", "x", 1, domain.SexMale, 1, 1) }, "breed"},
-		{"zero_age", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 0, domain.SexMale, 1, 1) }, "age_in_months"},
-		{"empty_sex", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.Sex(""), 1, 1) }, "sex"},
-		{"zero_weight", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 0, 1) }, "weight_kg"},
-		{"empty_passport", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "", 1, domain.SexMale, 1, 1) }, "passport"},
-		{"zero_user_id", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 1, 0) }, "user_id"},
-		{"negative_user_id", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 1, -5) }, "user_id"},
+		{"empty_name", func() (RegisterDogInput, error) { return NewRegisterDogInput("", "x", "x", 1, domain.SexMale, 1, 1, false) }, "name"},
+		{"empty_breed", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "", "x", 1, domain.SexMale, 1, 1, false) }, "breed"},
+		{"zero_age", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 0, domain.SexMale, 1, 1, false) }, "age_in_months"},
+		{"empty_sex", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.Sex(""), 1, 1, false) }, "sex"},
+		{"zero_weight", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 0, 1, false) }, "weight_kg"},
+		{"empty_passport", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "", 1, domain.SexMale, 1, 1, false) }, "passport"},
+		{"zero_user_id", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 1, 0, false) }, "user_id"},
+		{"negative_user_id", func() (RegisterDogInput, error) { return NewRegisterDogInput("x", "x", "x", 1, domain.SexMale, 1, -5, false) }, "user_id"},
 	}
 
 	for _, s := range scenarios {
@@ -46,7 +46,7 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 	t.Parallel()
 	t.Run("factory_blocks_invalid_before_use_case_runs", func(t *testing.T) {
 		// The factory rejects invalid input; the use case never sees it.
-		_, err := NewRegisterDogInput("", "", "", 0, domain.Sex(""), 0, 0)
+		_, err := NewRegisterDogInput("", "", "", 0, domain.Sex(""), 0, 0, false)
 		assert.Error(t, err)
 	})
 
@@ -95,5 +95,23 @@ func TestRegisterDogUseCase_Execute(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, repoErr), "expected wrapped error to contain original")
+	})
+
+	t.Run("has_special_condition_applied", func(t *testing.T) {
+		var capturedDog *domain.Dog
+		mock := &mockDogRepository{
+			create: func(ctx context.Context, dog *domain.Dog) (int, error) {
+				capturedDog = dog
+				return 42, nil
+			},
+		}
+		uc := NewRegisterDogUseCase(mock)
+
+		in := MustNewRegisterDogInput("Luna", "Husky", "ES-HSC", 12, domain.SexFemale, 15.0, 1, true)
+		_, err := uc.Execute(context.Background(), in)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, capturedDog)
+		assert.True(t, capturedDog.HasSpecialCondition(), "hasSpecialCondition flag should be true")
 	})
 }

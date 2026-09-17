@@ -307,6 +307,42 @@ func TestDog_Activate_Deactivate(t *testing.T) {
 	})
 }
 
+func TestDog_HasSpecialCondition(t *testing.T) {
+	t.Parallel()
+	t.Run("defaults_to_false", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		assert.False(t, d.HasSpecialCondition())
+	})
+
+	t.Run("apply_patch_sets_true", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		v := true
+		err := d.ApplyPatch(domain.DogPatch{HasSpecialCondition: &v})
+		assert.NoError(t, err)
+		assert.True(t, d.HasSpecialCondition())
+	})
+
+	t.Run("apply_patch_clears_flag", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		v := true
+		err := d.ApplyPatch(domain.DogPatch{HasSpecialCondition: &v})
+		assert.NoError(t, err)
+		assert.True(t, d.HasSpecialCondition())
+
+		f := false
+		err = d.ApplyPatch(domain.DogPatch{HasSpecialCondition: &f})
+		assert.NoError(t, err)
+		assert.False(t, d.HasSpecialCondition())
+	})
+
+	t.Run("nil_is_noop", func(t *testing.T) {
+		d := newTestDog(t, 24, domain.SexMale, 10.0, false)
+		err := d.ApplyPatch(domain.DogPatch{HasSpecialCondition: nil})
+		assert.NoError(t, err)
+		assert.False(t, d.HasSpecialCondition())
+	})
+}
+
 func TestSex_IsValid(t *testing.T) {
 	t.Parallel()
 	assert.True(t, domain.SexMale.IsValid())

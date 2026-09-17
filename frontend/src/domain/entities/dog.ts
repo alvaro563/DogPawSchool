@@ -22,6 +22,7 @@ export interface Dog {
   user_id: number;
   owner_name: string;
   is_active: boolean;
+  has_special_condition: boolean;
   traits: IncompatibilityDTO[];
   incompatibilities: IncompatibilityDTO[];
 }

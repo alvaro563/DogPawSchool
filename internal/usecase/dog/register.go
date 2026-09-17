@@ -11,13 +11,14 @@ import (
 // All fields are private: the only way to obtain a value is
 // NewRegisterDogInput, which guarantees every invariant holds.
 type RegisterDogInput struct {
-	name        string
-	breed       string
-	passport    string
-	ageInMonths int
-	sex         domain.Sex
-	weightKg    float64
-	userID      int
+	name                string
+	breed               string
+	passport            string
+	ageInMonths         int
+	sex                 domain.Sex
+	weightKg            float64
+	userID              int
+	hasSpecialCondition bool
 }
 
 func (in RegisterDogInput) Name() string      { return in.name }
@@ -25,8 +26,9 @@ func (in RegisterDogInput) Breed() string     { return in.breed }
 func (in RegisterDogInput) Passport() string  { return in.passport }
 func (in RegisterDogInput) AgeInMonths() int  { return in.ageInMonths }
 func (in RegisterDogInput) Sex() domain.Sex   { return in.sex }
-func (in RegisterDogInput) WeightKg() float64 { return in.weightKg }
-func (in RegisterDogInput) UserID() int       { return in.userID }
+func (in RegisterDogInput) WeightKg() float64          { return in.weightKg }
+func (in RegisterDogInput) UserID() int                { return in.userID }
+func (in RegisterDogInput) HasSpecialCondition() bool  { return in.hasSpecialCondition }
 
 // NewRegisterDogInput is the validating factory. It returns the first
 // *ValidationError encountered (single-error policy). On success, the
@@ -37,6 +39,7 @@ func NewRegisterDogInput(
 	sex domain.Sex,
 	weightKg float64,
 	userID int,
+	hasSpecialCondition bool,
 ) (RegisterDogInput, error) {
 	if name == "" {
 		return RegisterDogInput{}, &ValidationError{Field: "name"}
@@ -62,6 +65,7 @@ func NewRegisterDogInput(
 	return RegisterDogInput{
 		name: name, breed: breed, passport: passport,
 		ageInMonths: ageInMonths, sex: sex, weightKg: weightKg, userID: userID,
+		hasSpecialCondition: hasSpecialCondition,
 	}, nil
 }
 
@@ -73,8 +77,9 @@ func MustNewRegisterDogInput(
 	sex domain.Sex,
 	weightKg float64,
 	userID int,
+	hasSpecialCondition bool,
 ) RegisterDogInput {
-	in, err := NewRegisterDogInput(name, breed, passport, ageInMonths, sex, weightKg, userID)
+	in, err := NewRegisterDogInput(name, breed, passport, ageInMonths, sex, weightKg, userID, hasSpecialCondition)
 	if err != nil {
 		panic(err)
 	}
@@ -103,9 +108,14 @@ func (uc *RegisterDogUseCase) Execute(ctx context.Context, input RegisterDogInpu
 	if err != nil {
 		return RegisterDogOutput{}, err
 	}
+	if input.HasSpecialCondition() {
+		_ = dog.ApplyPatch(domain.DogPatch{HasSpecialCondition: boolPtr(true)})
+	}
 	id, err := uc.repo.Create(ctx, dog)
 	if err != nil {
 		return RegisterDogOutput{}, fmt.Errorf("register dog: %w", err)
 	}
 	return RegisterDogOutput{ID: id}, nil
 }
+
+func boolPtr(v bool) *bool { return &v }

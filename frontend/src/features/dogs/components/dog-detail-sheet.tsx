@@ -253,6 +253,11 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
                 En celo
               </span>
             )}
+            {dog.has_special_condition && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                Condición especial
+              </span>
+            )}
             <span className="inline-flex items-center gap-1 rounded-md bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
               {sizeBracketLabel[sizeBracket]}
             </span>
@@ -279,6 +284,7 @@ export function DogDetailSheet({ dogId, onClose }: DogDetailSheetProps) {
           <SelectField label="Sexo" value={dog.sex} opts={SEX_OPTIONS} editing form={form} setForm={setForm} field="sex" />
           <BoolField label="Castrado" value={dog.neutered} editing form={form} setForm={setForm} field="neutered" />
           <BoolField label="En celo" value={dog.heat} editing form={form} setForm={setForm} field="heat" />
+          <BoolField label="Condición especial" value={dog.has_special_condition} editing form={form} setForm={setForm} field="has_special_condition" />
           <BoolField label="Activo" value={dog.is_active} editing form={form} setForm={setForm} field="is_active" />
         </Section>
       )}
@@ -471,7 +477,7 @@ function buildForm(dog: Dog): Record<string, unknown> {
     name: dog.name, breed: dog.breed, age_in_months: dog.age_in_months, sex: dog.sex,
     neutered: dog.neutered, heat: dog.heat, weight_kg: dog.weight_kg, photo_url: dog.photo_url,
     medical_notes: dog.medical_notes, educator_notes: dog.educator_notes, passport: dog.passport,
-    is_active: dog.is_active,
+    is_active: dog.is_active, has_special_condition: dog.has_special_condition,
   };
 }
 

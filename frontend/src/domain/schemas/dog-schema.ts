@@ -13,6 +13,7 @@ export const dogEditSchema = z.object({
   educator_notes: z.string(),
   passport: z.string().min(1, 'Pasaporte obligatorio'),
   is_active: z.boolean(),
+  has_special_condition: z.boolean(),
 });
 
 export type DogEditInput = z.infer<typeof dogEditSchema>;
