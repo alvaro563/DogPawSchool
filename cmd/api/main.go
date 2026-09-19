@@ -53,10 +53,6 @@ func run() error {
 	}
 	slog.Info("migrations applied")
 
-	if _, err := ensureDevUsers(db, cfg.Env); err != nil {
-		return fmt.Errorf("ensure dev users: %w", err)
-	}
-
 	router := newRouter(db, cfg)
 	return startServer(ctx, cfg, router)
 }
