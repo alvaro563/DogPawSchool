@@ -46,9 +46,5 @@ func (uc *RegisterAdminReservationUseCase) Execute(ctx context.Context, input Re
 		activityID: input.ActivityID(), dogID: input.DogID(), passID: input.PassID(), now: input.Now(), adminOverride: true,
 	})
 	if err != nil { return RegisterAdminReservationOutput{}, err }
-	return RegisterAdminReservationOutput{
-		ID:             out.ID,
-		Status:         out.Status,
-		PendingReasons: out.PendingReasons,
-	}, nil
+	return RegisterAdminReservationOutput(out), nil
 }
