@@ -23,14 +23,6 @@ type devUser struct {
 	role     string
 }
 
-// devUsers holds well-known local credentials. ensureDevUsers upserts these
-// so a development instance always has a usable admin and demo account.
-var devUsers = []devUser{
-	{name: "Carlos Admin", email: "admin@dogpaw.com", password: "admin123", role: "ADMIN"},
-	{name: "Demo Owner", email: "demo@dogpaw.com", password: "demo1234", role: "REGULAR"},
-}
-
-
 
 func openDB(ctx context.Context, cfg DBConfig) (*sql.DB, error) {
 	db, err := sql.Open("pgx", cfg.DSN())
