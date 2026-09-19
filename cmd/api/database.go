@@ -16,13 +16,6 @@ import (
 	"dogpaw/migrations"
 )
 
-type devUser struct {
-	name     string
-	email    string
-	password string
-	role     string
-}
-
 
 func openDB(ctx context.Context, cfg DBConfig) (*sql.DB, error) {
 	db, err := sql.Open("pgx", cfg.DSN())
