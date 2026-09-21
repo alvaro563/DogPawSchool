@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { User, Edit3, Save, X, AlertCircle } from 'lucide-react';
+import { User, Edit3, Save, X, AlertCircle, KeyRound } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { fetchUserByID, updateUser } from '@/infrastructure/repositories/user-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { ChangePasswordForm } from '@/features/profile/components/change-password-form';
 import type { ApiError } from '@/infrastructure/api/http-client';
 
 function parseError(err: unknown, fallback: string): string {
@@ -22,6 +23,7 @@ export function ProfilePage() {
   const { user, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -67,22 +69,43 @@ export function ProfilePage() {
     <div className="mx-auto max-w-lg px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Perfil</h1>
-        {isAdmin && !editing && (
-          <Button size="sm" variant="outline" onClick={handleEdit}>
-            <Edit3 className="h-3.5 w-3.5" /> Editar
-          </Button>
-        )}
-        {editing && (
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={handleCancel} disabled={updateMutation.isPending}>
-              <X className="h-3.5 w-3.5" /> Cancelar
+        <div className="flex items-center gap-2">
+          {/* Password-change is available for every role (clients AND
+              admins). Edit (name/email) stays admin-only because it
+              modifies more sensitive data and was the original
+              behaviour of this page. */}
+          {!changePasswordOpen && !editing && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setChangePasswordOpen(true)}
+            >
+              <KeyRound className="h-3.5 w-3.5" /> Cambiar contraseña
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? <LoadingSpinner size="sm" className="border-t-background" /> : <><Save className="h-3.5 w-3.5" /> Guardar</>}
+          )}
+          {isAdmin && !editing && !changePasswordOpen && (
+            <Button size="sm" variant="outline" onClick={handleEdit}>
+              <Edit3 className="h-3.5 w-3.5" /> Editar
             </Button>
-          </div>
-        )}
+          )}
+          {editing && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={handleCancel} disabled={updateMutation.isPending}>
+                <X className="h-3.5 w-3.5" /> Cancelar
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? <LoadingSpinner size="sm" className="border-t-background" /> : <><Save className="h-3.5 w-3.5" /> Guardar</>}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
+
+      {changePasswordOpen && (
+        <div className="mb-6 rounded-lg border border-border bg-muted/20 p-4">
+          <ChangePasswordForm onClose={() => setChangePasswordOpen(false)} />
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">

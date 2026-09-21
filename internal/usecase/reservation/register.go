@@ -59,24 +59,22 @@ func MustNewRegisterReservationInput(userID, activityID, dogID, passID int, now 
 	return in
 }
 
-// PendingReason is a stable, language-neutral description of why a
-// reservation was held in StatusPendingToConfirm. The handler translates
-// each Code into a user-facing message; the domain and use case layers
-// never produce localized text.
+// PendingReason has moved to the domain package so the persistence
+// layer can serialize it without importing the use case. Use
+// domain.PendingReason everywhere; this alias keeps the existing
+// references inside the package working without a mass-rename.
 //
-// DogIDs references the dogs that triggered this reason (usually the
-// incoming candidate + the existing dog(s) involved in the conflict),
-// so the handler can resolve names from its in-memory store.
-type PendingReason struct {
-	Code   string
-	DogIDs []int
-}
-
 // SexNeuteredReasonPrefix is prepended to every sex/neutered reason
 // code so the handler can route them through a dedicated translator
 // while still distinguishing them from non-sex reasons (e.g. the
 // special-condition reason).
 const SexNeuteredReasonPrefix = "sex_neutered:"
+
+// PendingReason is the in-package alias for domain.PendingReason,
+// kept so the hundreds of existing references inside this package
+// continue to compile after the move. Equal to domain.PendingReason;
+// the two types share the same underlying representation.
+type PendingReason = domain.PendingReason
 
 // RegisterReservationOutput is the result of a successful create. The
 // Status tells the client whether the booking was confirmed outright or
@@ -173,6 +171,15 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 		return 0, domain.StatusConfirmed, nil, ErrActivityInPast
 	}
 
+	// 1b. Closed activities are not bookable. An admin marks an
+	// activity closed via CloseActivityUseCase; once that flag is
+	// set, every booking flow (user + admin override) rejects the
+	// request. Placed BEFORE the capacity check because a closed
+	// activity with room left is still closed.
+	if activity.IsClosed() {
+		return 0, domain.StatusConfirmed, nil, ErrActivityClosed
+	}
+
 	// 2. Activity must have remaining capacity. Pending bookings hold
 	// their slot until the admin decides, so capacity is measured over
 	// HoldsSlot (confirmed or pending).
@@ -203,6 +210,31 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 	}
 	if !input.adminOverride && dog.UserID() != input.UserID() {
 		return 0, domain.StatusConfirmed, nil, ErrInvalidDog
+	}
+	// 3.0. Inactive (soft-deleted) dogs must not be booked. Reachable
+	// on both the user and admin paths: even with adminOverride the
+	// admin must reactivate the dog first via the dog-management
+	// flow. Placed BEFORE the individual-class check because an
+	// inactive dog is a hard invariant of the booking — no check
+	// beyond this point is meaningful for a deactivated record.
+	if !dog.IsActive() {
+		return 0, domain.StatusConfirmed, nil, ErrDogNotActive
+	}
+	// 3.0b. Individual-class dog match: an INDIVIDUAL_CLASS activity
+	// is private to one specific dog. Without this check, a
+	// non-admin user with sequential activity_id guesses could
+	// burn another user's individual class slot and consume a pass
+	// session. The activity is loaded with admin visibility
+	// (GetByIDForUpdate(viewerIsAdmin=true)), so the row is in
+	// memory regardless of who the caller is — but the in-memory
+	// dog_id is what gates the booking. There is no adminOverride
+	// carve-out: reassigning an individual slot to a different dog
+	// belongs to a dedicated admin flow.
+	if activity.IsIndividualClass() {
+		target := activity.DogID()
+		if target == nil || *target != dog.ID() {
+			return 0, domain.StatusConfirmed, nil, ErrIndividualClassDogMismatch
+		}
 	}
 	// 3a. Size match: when the activity targets a single size bracket
 	// (SOCIALIZATION_GROUP / ROUTE with sizeTarget != nil), the dog
@@ -343,6 +375,17 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 		}
 		return 0, domain.StatusConfirmed, nil, fmt.Errorf("create reservation: %w", err)
 	}
+
+	// 8. Persist the pending reasons audit row(s) when the booking was
+	// escalated to StatusPendingToConfirm. Done inside the same
+	// transaction so a write failure here rolls the reservation back
+	// too (no half-state). An empty slice is a no-op.
+	if status == domain.StatusPendingToConfirm && len(pendingReasons) > 0 {
+		if err := uc.reservationRepo.SavePendingReasons(ctx, id, pendingReasons); err != nil {
+			return 0, domain.StatusConfirmed, nil, fmt.Errorf("save pending reasons for reservation %d: %w", id, err)
+		}
+	}
+
 	return id, status, pendingReasons, nil
 }
 

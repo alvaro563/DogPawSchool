@@ -51,12 +51,18 @@ export interface CreateReservationResponse {
 // GET /admin/activities/{id}/roster. Server-side partitioning:
 // confirmed and pending are already separated so the client can
 // render the page with one fetch and zero filtering.
+//
+// pending_reasons carries the same Spanish audit-trail sentences
+// as PendingReservationEntry, exposed on every PENDING entry
+// (omitted on CONFIRMED). Used by the class-day roster page to
+// explain why a dog is on the "pending to approve" list.
 export interface ActivityRosterEntry {
   reservation_id: number;
   dog_id: number;
   dog_name: string;
   owner_id: number;
   owner_name: string;
+  pending_reasons?: string[];
 }
 
 export interface ActivityRoster {
@@ -69,6 +75,12 @@ export interface ActivityRoster {
 // It mirrors ActivityRosterEntry for the activity-scoped view but
 // adds activity_date and activity_location because the global
 // pending page needs to render the class context per row.
+//
+// pending_reasons carries the audit trail of why the reservation
+// was held in PENDING_TO_CONFIRM. Backend-translated to Spanish
+// (one sentence per reason), so the admin sees the same copy the
+// owner sees in their booking toast. Present only when the server
+// attached at least one reason.
 export interface PendingReservationEntry {
   reservation_id: number;
   dog_id: number;
@@ -79,6 +91,7 @@ export interface PendingReservationEntry {
   activity_name: string;
   activity_date: string;
   activity_location: string;
+  pending_reasons?: string[];
 }
 
 export interface PendingReservationsResponse {

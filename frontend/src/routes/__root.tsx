@@ -26,7 +26,16 @@ function RootLayout() {
 
           {isAuthenticated && user && (
             <div className="flex items-center gap-3 sm:gap-4">
-              <div className="hidden items-center gap-2 sm:flex">
+              {/* Clicking the user block (icon + name + role) goes to
+                  the profile page where the user can change their
+                  password, edit their data (admin), etc. Hovering
+                  shows the same affordance as the "Salir" button on
+                  the right. */}
+              <Link
+                to="/profile"
+                aria-label="Ir a mi perfil"
+                className="hidden items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted sm:flex"
+              >
                 <User className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
                   {user.name}
@@ -34,7 +43,7 @@ function RootLayout() {
                 <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                   {user.role}
                 </span>
-              </div>
+              </Link>
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

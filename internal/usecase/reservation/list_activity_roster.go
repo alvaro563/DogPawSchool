@@ -41,12 +41,20 @@ func MustNewListActivityRosterInput(activityID int) ListActivityRosterInput {
 // (confirm, reject, identify the dog+owner). Activity, pass, and
 // timestamp fields are not exposed because they live on the
 // activity and reservation aggregates in the response envelope.
+//
+// Reasons is the audit trail captured at booking time; it is
+// populated only for PENDING_TO_CONFIRM entries (confirmed ones
+// have no reason rows). When the admin opens the class day, they
+// see exactly what triggered the pending escalation. Nil/empty
+// means "no recorded reasons" — the read APIs should omit the
+// field on the wire.
 type ActivityRosterEntry struct {
 	reservationID int
 	dogID         int
 	dogName       string
 	ownerID       int
 	ownerName     string
+	reasons       []domain.PendingReason
 }
 
 func (e ActivityRosterEntry) ReservationID() int { return e.reservationID }
@@ -55,17 +63,26 @@ func (e ActivityRosterEntry) DogName() string    { return e.dogName }
 func (e ActivityRosterEntry) OwnerID() int       { return e.ownerID }
 func (e ActivityRosterEntry) OwnerName() string  { return e.ownerName }
 
+// Reasons returns the audit-trail reasons for this entry, in the
+// original evaluation order. Returns nil when the entry has no
+// recorded reasons (the read APIs should omit the field on the
+// wire).
+func (e ActivityRosterEntry) Reasons() []domain.PendingReason {
+	return e.reasons
+}
+
 // NewActivityRosterEntry is the only path to construct an entry from
 // outside the use case (handler tests, future serializers). It does
 // NOT validate the fields: the use case is the only authority on
 // roster semantics; the constructor is a plain data holder.
-func NewActivityRosterEntry(reservationID, dogID, ownerID int, dogName, ownerName string) ActivityRosterEntry {
+func NewActivityRosterEntry(reservationID, dogID, ownerID int, dogName, ownerName string, reasons []domain.PendingReason) ActivityRosterEntry {
 	return ActivityRosterEntry{
 		reservationID: reservationID,
 		dogID:         dogID,
 		dogName:       dogName,
 		ownerID:       ownerID,
 		ownerName:     ownerName,
+		reasons:       reasons,
 	}
 }
 
@@ -116,6 +133,11 @@ func NewListActivityRosterUseCase(
 // (CANCELLED_*, COMPLETED, NO_SHOW, FORGIVEN) is intentionally
 // dropped because it is irrelevant to a class-day roster and would
 // clutter the response. Order is created_at ASC for both slices.
+//
+// Pending reasons (the audit trail captured at booking time) are
+// loaded in a single batched query along with the owner name
+// resolution. Confirmed entries always get a nil reasons slice;
+// the wire layer omits the field entirely for them.
 func (uc *ListActivityRosterUseCase) Execute(ctx context.Context, input ListActivityRosterInput) (ListActivityRosterOutput, error) {
 	// Admin viewer: this endpoint is served only by the admin route.
 	activity, err := uc.activityRepo.GetByID(ctx, input.ActivityID(), 0, true)
@@ -140,6 +162,7 @@ func (uc *ListActivityRosterUseCase) Execute(ctx context.Context, input ListActi
 	confirmed := make([]ActivityRosterEntry, 0)
 	pending := make([]ActivityRosterEntry, 0)
 	ownerIDSet := make(map[int]struct{}, len(views))
+	pendingResIDs := make([]int, 0)
 	for _, view := range views {
 		switch view.Status() {
 		case domain.StatusConfirmed:
@@ -158,6 +181,7 @@ func (uc *ListActivityRosterUseCase) Execute(ctx context.Context, input ListActi
 				ownerID:       view.DogUserID(),
 			})
 			ownerIDSet[view.DogUserID()] = struct{}{}
+			pendingResIDs = append(pendingResIDs, view.ID())
 		default:
 			// CANCELLED_*, COMPLETED, NO_SHOW, FORGIVEN: not on the
 			// class-day roster.
@@ -189,6 +213,21 @@ func (uc *ListActivityRosterUseCase) Execute(ctx context.Context, input ListActi
 		}
 		for i := range pending {
 			pending[i].ownerName = nameByID[pending[i].ownerID]
+		}
+	}
+
+	// Pending reasons: one batched query scoped to the pending set.
+	// Confirmed entries are excluded from this query because they
+	// can never have reason rows.
+	if len(pendingResIDs) > 0 {
+		reasonsByRes, err := uc.reservationRepo.ListPendingReasonsByReservations(ctx, pendingResIDs)
+		if err != nil {
+			return ListActivityRosterOutput{}, fmt.Errorf("resolve pending reasons for activity %d: %w", input.ActivityID(), err)
+		}
+		for i := range pending {
+			if rs, ok := reasonsByRes[pending[i].reservationID]; ok {
+				pending[i].reasons = rs
+			}
 		}
 	}
 

@@ -6,6 +6,21 @@ import (
 	"time"
 )
 
+// PendingReason is a stable, language-neutral description of why a
+// reservation was held in StatusPendingToConfirm. Code is a stable
+// identifier (e.g. "sex_neutered:intact_vs_castrated" or
+// "has_special_condition") and DogIDs references the dogs that
+// triggered the reason (usually the incoming candidate + the
+// existing dog(s) involved in the conflict), so the handler can
+// resolve names from its in-memory store.
+//
+// Lives in the domain package so the persistence layer can
+// serialize/deserialize it without importing the use case package.
+type PendingReason struct {
+	Code   string
+	DogIDs []int
+}
+
 // ReservationStatus tracks the lifecycle of a Reservation.
 //
 // The state machine is:
@@ -292,4 +307,26 @@ type ReservationRepository interface {
 		from, to *time.Time,
 		limit, offset int,
 	) ([]*AttendanceReportEntry, error)
+
+	// SavePendingReasons persists the audit trail of why a reservation
+	// was held in StatusPendingToConfirm. The ordinal order in the
+	// slice is preserved as the row's `ordinal` column. Called from
+	// inside the booking transaction so the reasons are atomically
+	// linked to the reservation row. An empty reasons slice is a
+	// no-op (no rows written, no error).
+	SavePendingReasons(ctx context.Context, reservationID int, reasons []PendingReason) error
+
+	// ListPendingReasonsByReservation returns every reason row for a
+	// single reservation, in the original ordinal order. Returns
+	// (nil, nil) when the reservation has no pending reasons.
+	ListPendingReasonsByReservation(ctx context.Context, reservationID int) ([]PendingReason, error)
+
+	// ListPendingReasonsByReservations is the batched variant: one
+	// query returns every reason for every reservation in the input.
+	// The map key is the reservation id; the value is the reason
+	// slice in ordinal order. Reservations with no reasons are absent
+	// from the map (callers should treat a missing key as an empty
+	// slice, not an error). Used by the admin list endpoints to keep
+	// the page-load query count at O(1) regardless of row count.
+	ListPendingReasonsByReservations(ctx context.Context, reservationIDs []int) (map[int][]PendingReason, error)
 }

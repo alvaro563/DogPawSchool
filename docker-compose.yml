@@ -1,15 +1,32 @@
+# =============================================================================
+# DogPaw local stack.
+#
+# SECURITY:
+# * Postgres is bound to 127.0.0.1 only. There is no public surface.
+#   If you need external access for some reason, do it on purpose and
+#   own the consequence.
+# * Postgres credentials come from the repo-root `.env` (git-ignored),
+#   not from defaults baked into this file. See README for setup.
+#   The required vars: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD.
+#   The `${VAR:?msg}` syntax makes docker-compose fail to start the
+#   stack if any of them is missing — same fail-fast philosophy as
+#   the backend's LoadConfig.
+# =============================================================================
 services:
   postgres:
     image: postgres:15-alpine
     container_name: dogpaw_postgres
     restart: unless-stopped
+    # Bind to loopback only. No public surface.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_DB: dogpaw_db
-      POSTGRES_USER: dogpaw_user
-      POSTGRES_PASSWORD: dogpaw_pass
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required — see README}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required — see README}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — see README}
       PGDATA: /var/lib/postgresql/data/pgdata
+    env_file:
+      - .env
     volumes:
       - dogpaw_pgdata:/var/lib/postgresql/data
     command:
@@ -23,7 +40,7 @@ services:
       - "-c"
       - "timezone=UTC"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dogpaw_user -d dogpaw_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -367,3 +367,84 @@ func TestListActivityRosterUseCase_DuplicateOwnerIDsAreDeduped(t *testing.T) {
 	}
 	assert.Equal(t, "Ana", output.Pending[0].OwnerName())
 }
+
+// ── Pending reasons audit trail ──────────────────────────────────
+
+// TestListActivityRosterUseCase_LoadsPendingReasonsBatched verifies
+// that the use case asks the repo for reasons exactly once with the
+// reservation IDs of the pending slice (never the confirmed ones),
+// and that each pending entry exposes the reasons in ordinal order.
+// Confirmed entries always get a nil Reasons slice (the wire layer
+// omits the field on confirmed rows).
+func TestListActivityRosterUseCase_LoadsPendingReasonsBatched(t *testing.T) {
+	t.Parallel()
+	activity := validFutureActivity(10)
+	views := []*domain.ReservationView{
+		rosterView(1, 10, 20, 99, domain.StatusConfirmed, fixedNow, "Luna"),
+		rosterView(2, 10, 21, 99, domain.StatusPendingToConfirm, fixedNow, "Toby"),
+		rosterView(3, 10, 22, 99, domain.StatusPendingToConfirm, fixedNow, "Maya"),
+	}
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivityView: func(context.Context, int, int, int) ([]*domain.ReservationView, error) {
+			return views, nil
+		},
+		listPendingReasonsByReservations: func(_ context.Context, ids []int) (map[int][]domain.PendingReason, error) {
+			assert.ElementsMatch(t, []int{2, 3}, ids, "reasons query must scope to pending-only ids")
+			return map[int][]domain.PendingReason{
+				2: {{Code: SexNeuteredReasonPrefix + domain.ReasonCastratedVsIntact, DogIDs: []int{21, 30}}},
+				3: {{Code: domain.ReasonHasSpecialCondition, DogIDs: []int{22}}},
+			}, nil
+		},
+	}
+	userRepo := &stubUserRepository{
+		getByIDs: func(context.Context, []int) ([]*domain.User, error) {
+			return []*domain.User{fixedOwner(99, "Ana")}, nil
+		},
+	}
+	uc := NewListActivityRosterUseCase(activityRepo, reservationRepo, userRepo)
+	output, err := uc.Execute(context.Background(), MustNewListActivityRosterInput(10))
+	require.NoError(t, err)
+
+	// Confirmed entries carry no reasons (no audit row exists for them).
+	require.Len(t, output.Confirmed, 1)
+	assert.Nil(t, output.Confirmed[0].Reasons(), "confirmed entries must never carry reasons")
+
+	// Pending entries expose the reasons in the order they were recorded.
+	require.Len(t, output.Pending, 2)
+	require.Len(t, output.Pending[0].Reasons(), 1)
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonCastratedVsIntact, output.Pending[0].Reasons()[0].Code)
+	assert.Equal(t, []int{21, 30}, output.Pending[0].Reasons()[0].DogIDs)
+	require.Len(t, output.Pending[1].Reasons(), 1)
+	assert.Equal(t, domain.ReasonHasSpecialCondition, output.Pending[1].Reasons()[0].Code)
+}
+
+// TestListActivityRosterUseCase_ReasonsBatchErrorWrapped makes sure
+// a failure in the reasons query bubbles up rather than being
+// silently swallowed.
+func TestListActivityRosterUseCase_ReasonsBatchErrorWrapped(t *testing.T) {
+	t.Parallel()
+	activity := validFutureActivity(10)
+	views := []*domain.ReservationView{
+		rosterView(1, 10, 21, 99, domain.StatusPendingToConfirm, fixedNow, "Toby"),
+	}
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivityView: func(context.Context, int, int, int) ([]*domain.ReservationView, error) {
+			return views, nil
+		},
+		listPendingReasonsByReservations: func(context.Context, []int) (map[int][]domain.PendingReason, error) {
+			return nil, errors.New("audit table unreachable")
+		},
+	}
+	userRepo := &stubUserRepository{}
+	uc := NewListActivityRosterUseCase(activityRepo, reservationRepo, userRepo)
+	_, err := uc.Execute(context.Background(), MustNewListActivityRosterInput(10))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "resolve pending reasons for activity 10")
+	assert.Contains(t, err.Error(), "audit table unreachable")
+}

@@ -161,6 +161,41 @@ var ErrNotPending = errors.New("reservation is not pending to confirm")
 // pending) return this error. Maps to 409 not_late_cancelled.
 var ErrNotLateCancelled = errors.New("reservation is not in a state that can be forgiven")
 
+// ErrIndividualClassDogMismatch is returned by
+// RegisterReservationUseCase when the booking targets an
+// INDIVIDUAL_CLASS activity whose dog_id does not match the
+// candidate dog's id on the request. An individual class is private
+// to one specific dog; only the owner of that dog may book it.
+//
+// The handler maps this to 403 individual_class_foreign — this is an
+// authorization issue (the requester has no right to this activity
+// slot), not a state conflict. There is no admin override: even
+// under adminOverride=true the check fires, because reassigning the
+// slot to a different dog is a different operation that belongs in
+// its own admin flow. Rejecting here closes a real seat-stealing
+// hole: a non-admin user with sequential activity_id guesses could
+// otherwise burn another user's individual class slot and consume a
+// pass session in the process.
+var ErrIndividualClassDogMismatch = errors.New("individual class is reserved for another dog")
+
+// ErrDogNotActive is returned by RegisterReservationUseCase when
+// the candidate dog has been soft-deleted via Deactivate. Inactive
+// dogs must not appear on any booking; re-activation is a separate
+// admin operation (Dog.Activate) performed on the dog record
+// directly. The handler maps this to 400 dog_not_active.
+//
+// There is no adminOverride carve-out: even an admin override path
+// must activate the dog first. Carving out an exception here would
+// leave an "inactive dog with confirmed reservation" state which
+// has no good answer in the audit log.
+var ErrDogNotActive = errors.New("dog is not active")
+
+// ErrActivityClosed is returned by RegisterReservationUseCase when
+// the target activity has been marked closed via
+// CloseActivityUseCase. A closed activity is no longer bookable
+// from any flow. The handler maps this to 409 activity_closed.
+var ErrActivityClosed = errors.New("activity is closed")
+
 // IncompatibleDogsError is returned by RegisterReservationUseCase when
 // the candidate dog and one or more dogs already holding a slot in the
 // activity present a trigger->trait compatibility collision. It carries

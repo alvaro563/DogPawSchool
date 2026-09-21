@@ -603,6 +603,38 @@ func TestListActivityRosterUseCase_Integration(t *testing.T) {
 	assert.Equal(t, "Maya", out.Pending[0].DogName())
 	assert.Equal(t, ownerAna.ID(), out.Pending[0].OwnerID())
 	assert.Equal(t, ownerAna.Name(), out.Pending[0].OwnerName())
+	// Maya's pending row was seeded without an audit-trail entry, so
+	// the use case must surface an empty (nil) Reasons slice.
+	assert.Nil(t, out.Pending[0].Reasons())
+
+	// Now insert an audit row for Maya and re-run the query — the
+	// reason must appear on the pending entry.
+	resRepo := postgres.NewReservationRepository(testDB)
+	mayaReservations, err := resRepo.ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	var mayaResID int
+	for _, r := range mayaReservations {
+		if r.DogID() == dogAna2.ID() {
+			mayaResID = r.ID()
+		}
+	}
+	require.NotZero(t, mayaResID, "Maya's reservation row must exist")
+	require.NoError(t, resRepo.SavePendingReasons(context.Background(), mayaResID,
+		[]domain.PendingReason{
+			{Code: domain.ReasonHasSpecialCondition, DogIDs: []int{dogAna2.ID()}},
+		}))
+
+	out, err = uc.Execute(context.Background(), MustNewListActivityRosterInput(activity.ID()))
+	require.NoError(t, err)
+	require.Len(t, out.Pending, 1)
+	require.Len(t, out.Pending[0].Reasons(), 1)
+	assert.Equal(t, domain.ReasonHasSpecialCondition, out.Pending[0].Reasons()[0].Code)
+	assert.Equal(t, []int{dogAna2.ID()}, out.Pending[0].Reasons()[0].DogIDs)
+
+	// Confirmed entries must never carry reasons.
+	for _, e := range out.Confirmed {
+		assert.Nil(t, e.Reasons(), "confirmed entries must NOT carry reasons")
+	}
 
 	// Negative path: invalid activity id returns ErrInvalidActivity.
 	_, err = uc.Execute(context.Background(), MustNewListActivityRosterInput(99999))
@@ -723,6 +755,15 @@ func TestSexNeutered_IntactVsCastratedCreatesPending(t *testing.T) {
 	require.NotNil(t, pending)
 	assert.Equal(t, domain.StatusPendingToConfirm, pending.Status())
 
+	// Audit trail row persisted with the sex/neutered reason and the
+	// dog pair (candidate, existing) recorded in ordinal 0.
+	resRepo := postgres.NewReservationRepository(testDB)
+	reasons, err := resRepo.ListPendingReasonsByReservation(context.Background(), pending.ID())
+	require.NoError(t, err)
+	require.Len(t, reasons, 1, "the sex/neutered reason must land in the audit table")
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonIntactVsCastrated, reasons[0].Code)
+	assert.Equal(t, []int{candidate.ID(), existing.ID()}, reasons[0].DogIDs)
+
 	// One session consumed (slot held).
 	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), candidatePass.ID())
 	require.NoError(t, err)
@@ -760,6 +801,14 @@ func TestHasSpecialConditionIntegration_CreatesPendingWithReason(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, reservations, 1)
 	assert.Equal(t, domain.StatusPendingToConfirm, reservations[0].Status())
+
+	// Audit trail row persisted with the same reason and ordinal 0.
+	resRepo := postgres.NewReservationRepository(testDB)
+	reasons, err := resRepo.ListPendingReasonsByReservation(context.Background(), reservations[0].ID())
+	require.NoError(t, err)
+	require.Len(t, reasons, 1, "the special-condition reason must land in the audit table")
+	assert.Equal(t, domain.ReasonHasSpecialCondition, reasons[0].Code)
+	assert.Equal(t, []int{candidate.ID()}, reasons[0].DogIDs)
 
 	// One session consumed (slot held).
 	gotPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
@@ -1058,4 +1107,239 @@ func TestForgiveIntegration_NotLateCancelledReturnsErrNotLateCancelled(t *testin
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrNotLateCancelled),
 		"expected ErrNotLateCancelled, got %T: %v", err, err)
+}
+
+// ── ListPending reasons audit trail (integration) ────────────────
+
+// TestListPendingReservationsUseCase_Integration_SurfacesReasons is
+// the end-to-end check that the audit row persisted by the booking
+// flow is surfaced by the admin triage page. Seeds a confirmed
+// reservation (must NOT appear in the output), a pending
+// reservation with no audit row (empty reasons), and a pending
+// reservation with a sex/neutered reason row (must appear in
+// the output with the dog pair resolved).
+func TestListPendingReservationsUseCase_Integration_SurfacesReasons(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "list-pending-reasons@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	// Three dogs: one already in the class (forces sex/neutered
+	// reason on the second candidate), one pending with reason, one
+	// pending without reason, one confirmed (must be dropped).
+	existing := seedIntegrationMaleDog(t, user.ID(), "Max", true, false) // castrated male
+	withReason := seedIntegrationMaleDog(t, user.ID(), "Toby", false, false) // intact male
+	withoutReason := seedIntegrationMaleDog(t, user.ID(), "Maya", true, true) // castrated female (no conflict path)
+	confirmedDog := seedIntegrationDog(t, user.ID(), "Luna", nil, nil)
+
+	classPass := seedIntegrationPass(t, user.ID(), 10)
+	withReasonPass := seedIntegrationPass(t, user.ID(), 10)
+	withoutReasonPass := seedIntegrationPass(t, user.ID(), 10)
+	confirmedPass := seedIntegrationPass(t, user.ID(), 10)
+
+	// Seed the existing slot holder first so the conflict check fires.
+	seedIntegrationReservation(t, activity.ID(), existing.ID(), classPass.ID(), domain.StatusConfirmed, now.Add(-3*time.Hour))
+	// Pending with reason: create the reservation in PENDING_TO_CONFIRM
+	// directly (the booking flow would refuse because of the sex
+	// conflict, but the audit row is what we want to assert).
+	withReasonRes := mustNewReservation(0, activity.ID(), withReason.ID(), withReasonPass.ID(), domain.StatusPendingToConfirm, now.Add(-2*time.Hour))
+	resRepo := postgres.NewReservationRepository(testDB)
+	withReasonID, err := resRepo.Create(context.Background(), withReasonRes)
+	require.NoError(t, err)
+	require.NoError(t, resRepo.SavePendingReasons(context.Background(), withReasonID,
+		[]domain.PendingReason{
+			{Code: SexNeuteredReasonPrefix + domain.ReasonIntactVsCastrated, DogIDs: []int{withReason.ID(), existing.ID()}},
+		}))
+	// Pending without reason: same status, no audit row.
+	withoutReasonRes := mustNewReservation(0, activity.ID(), withoutReason.ID(), withoutReasonPass.ID(), domain.StatusPendingToConfirm, now.Add(-1*time.Hour))
+	_, err = resRepo.Create(context.Background(), withoutReasonRes)
+	require.NoError(t, err)
+	// Confirmed: must not appear in the pending list output.
+	seedIntegrationReservation(t, activity.ID(), confirmedDog.ID(), confirmedPass.ID(), domain.StatusConfirmed, now.Add(-30*time.Minute))
+
+	uc := NewListPendingReservationsUseCase(
+		postgres.NewReservationRepository(testDB),
+		postgres.NewUserRepository(testDB),
+	)
+	out, err := uc.Execute(context.Background(), MustNewListPendingReservationsInput(100, 0))
+	require.NoError(t, err)
+	require.Len(t, out.Pending, 2, "two pending rows, confirmed entry must be dropped")
+
+	// Walk the output by reservation id to avoid relying on row order.
+	byID := make(map[int]PendingReservationEntry, len(out.Pending))
+	for _, e := range out.Pending {
+		byID[e.ReservationID()] = e
+	}
+
+	gotWithReason, ok := byID[withReasonID]
+	require.True(t, ok, "the pending reservation with audit row must be in the output")
+	require.Len(t, gotWithReason.Reasons(), 1)
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonIntactVsCastrated, gotWithReason.Reasons()[0].Code)
+	assert.Equal(t, []int{withReason.ID(), existing.ID()}, gotWithReason.Reasons()[0].DogIDs)
+	assert.Equal(t, withReason.ID(), gotWithReason.DogID())
+	assert.Equal(t, user.Name(), gotWithReason.OwnerName())
+
+	for id, e := range byID {
+		if id == withReasonID {
+			continue
+		}
+		// The "without reason" entry: must have a nil Reasons slice
+		// so the wire layer omits the field.
+		assert.Nil(t, e.Reasons(), "pending rows without audit rows must surface nil reasons")
+	}
+}
+
+// ── Pre-flight integrity checks (integration) ───────────────────
+//
+// These exercise the new checks against the real Postgres so the
+// full transaction boundary is covered: a rejection must leave the
+// DB exactly as it found it (no orphaned reservation, no consumed
+// pass session, no audit row).
+
+// TestRegisterReservationUseCase_Integration_IndividualClassForeignDogBlocked
+// is the end-to-end regression test for the seat-stealing bug:
+// another user's individual class must reject a foreign-dog
+// booking attempt and leave the activity untouched.
+func TestRegisterReservationUseCase_Integration_IndividualClassForeignDogBlocked(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	ownerA := seedIntegrationUser(t, "icla-owner-a@test.com")
+	ownerB := seedIntegrationUser(t, "icla-owner-b@test.com")
+
+	// Build an INDIVIDUAL_CLASS activity targeting dog A directly
+	// through the repo (no seedIntegrationActivity helper exists
+	// because the existing helper hard-codes TypeRoute). The class
+	// is private to dog A; dog B's owner must NOT be able to book.
+	targetDog := seedIntegrationDog(t, ownerA.ID(), "Rex", nil, nil)
+	targetID := targetDog.ID()
+	intent, err := domain.NewActivity(0, "1:1 con Rex", "", "Escuela",
+		domain.TypeIndividual, 1, 1, now.Add(7*24*time.Hour), &targetID, nil)
+	require.NoError(t, err)
+	actRepo := postgres.NewActivityRepository(testDB)
+	activityID, err := actRepo.Create(context.Background(), intent)
+	require.NoError(t, err)
+
+	// Owner B is a completely separate user with their own dog and
+	// their own pass. They should be rejected for activityID.
+	foreignDog := seedIntegrationDog(t, ownerB.ID(), "Luna", nil, nil)
+	foreignPass := seedIntegrationPass(t, ownerB.ID(), 10)
+
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(ownerB.ID(), activityID, foreignDog.ID(), foreignPass.ID(), func() time.Time { return now })
+	_, err = uc.Execute(context.Background(), in)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrIndividualClassDogMismatch)
+
+	// DB invariants: no reservation row, no consumed pass session.
+	resRepo := postgres.NewReservationRepository(testDB)
+	reservations, err := resRepo.ListByActivity(context.Background(), activityID)
+	require.NoError(t, err)
+	assert.Empty(t, reservations, "no reservation row may have been written")
+
+	persistedPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), foreignPass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 10, persistedPass.RemainingSessions(), "the pass session must not have been consumed")
+}
+
+// TestRegisterReservationUseCase_Integration_IndividualClassOwnDogSucceeds
+// is the positive control: an INDIVIDUAL_CLASS booking for the
+// matching dog lands at StatusConfirmed.
+func TestRegisterReservationUseCase_Integration_IndividualClassOwnDogSucceeds(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	owner := seedIntegrationUser(t, "icla-own@test.com")
+	targetDog := seedIntegrationDog(t, owner.ID(), "Rex", nil, nil)
+	targetID := targetDog.ID()
+	intent, err := domain.NewActivity(0, "1:1 con Rex", "", "Escuela",
+		domain.TypeIndividual, 1, 1, now.Add(7*24*time.Hour), &targetID, nil)
+	require.NoError(t, err)
+	actRepo := postgres.NewActivityRepository(testDB)
+	activityID, err := actRepo.Create(context.Background(), intent)
+	require.NoError(t, err)
+
+	pass := seedIntegrationPass(t, owner.ID(), 10)
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(owner.ID(), activityID, targetDog.ID(), pass.ID(), func() time.Time { return now })
+	out, err := uc.Execute(context.Background(), in)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusConfirmed, out.Status)
+
+	resRepo := postgres.NewReservationRepository(testDB)
+	reservations, err := resRepo.ListByActivity(context.Background(), activityID)
+	require.NoError(t, err)
+	require.Len(t, reservations, 1)
+	assert.Equal(t, targetDog.ID(), reservations[0].DogID())
+}
+
+// TestRegisterReservationUseCase_Integration_InactiveDogBlocked
+// verifies the inactive-dog rejection against the real DB: the dog
+// is soft-deleted (Deactivate + Update), then a booking attempt
+// must reject and leave the pass untouched.
+func TestRegisterReservationUseCase_Integration_InactiveDogBlocked(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	owner := seedIntegrationUser(t, "inactive-dog@test.com")
+	dog := seedIntegrationDog(t, owner.ID(), "Luna", nil, nil)
+	pass := seedIntegrationPass(t, owner.ID(), 10)
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	// Soft-delete the dog via the repo so the rejection in
+	// runInTx exercises the real row, not just the in-memory
+	// candidate. The candidate loaded by runInTx comes from the
+	// repo's GetByID — which is the same Update'd row.
+	dog.Deactivate()
+	dogRepo := postgres.NewDogRepository(testDB)
+	require.NoError(t, dogRepo.Update(context.Background(), dog))
+
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(owner.ID(), activity.ID(), dog.ID(), pass.ID(), func() time.Time { return now })
+	_, err := uc.Execute(context.Background(), in)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDogNotActive)
+
+	// Pass session must NOT have been consumed.
+	persistedPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 10, persistedPass.RemainingSessions())
+}
+
+// TestRegisterReservationUseCase_Integration_ActivityClosedBlocked
+// verifies the closed-activity rejection. The activity is closed
+// via the domain Close() + repo Update path so the persisted row
+// has closed=true at the time of the booking attempt.
+func TestRegisterReservationUseCase_Integration_ActivityClosedBlocked(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	owner := seedIntegrationUser(t, "closed-activity@test.com")
+	dog := seedIntegrationDog(t, owner.ID(), "Luna", nil, nil)
+	pass := seedIntegrationPass(t, owner.ID(), 10)
+	activity := seedIntegrationActivity(t, 5, now.Add(7*24*time.Hour))
+
+	// Close the activity in the DB. The activity helper built the
+	// row with closed=false; flip it via the same Update path the
+	// use case uses.
+	require.NoError(t, activity.Close())
+	actRepo := postgres.NewActivityRepository(testDB)
+	require.NoError(t, actRepo.Update(context.Background(), activity))
+
+	uc := newIntegrationRegisterUC()
+	in := MustNewRegisterReservationInput(owner.ID(), activity.ID(), dog.ID(), pass.ID(), func() time.Time { return now })
+	_, err := uc.Execute(context.Background(), in)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrActivityClosed)
+
+	// No reservation, no consumed pass.
+	resRepo := postgres.NewReservationRepository(testDB)
+	reservations, err := resRepo.ListByActivity(context.Background(), activity.ID())
+	require.NoError(t, err)
+	assert.Empty(t, reservations)
+
+	persistedPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 10, persistedPass.RemainingSessions())
 }

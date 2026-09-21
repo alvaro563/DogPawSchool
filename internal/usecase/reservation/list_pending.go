@@ -45,6 +45,11 @@ func MustNewListPendingReservationsInput(limit, offset int) ListPendingReservati
 // live on the wire response; they are not exposed as separate
 // accessors because the page does not need them outside of the
 // pre-serialized envelope.
+//
+// Reasons is the audit trail captured at booking time — when the
+// admin opens the page they see exactly what triggered the
+// PENDING_TO_CONFIRM escalation. Nil/empty means the reservation
+// has no recorded reasons (the read APIs should omit the field).
 type PendingReservationEntry struct {
 	reservationID    int
 	dogID            int
@@ -55,6 +60,7 @@ type PendingReservationEntry struct {
 	activityName     string
 	activityDate     time.Time
 	activityLocation string
+	reasons          []domain.PendingReason
 }
 
 func (e PendingReservationEntry) ReservationID() int    { return e.reservationID }
@@ -71,6 +77,13 @@ func (e PendingReservationEntry) ActivityLocation() string {
 	return e.activityLocation
 }
 
+// Reasons returns the audit-trail reasons for this entry, in the
+// original evaluation order. Returns nil when the reservation has no
+// recorded reasons (the read APIs should omit the field on the wire).
+func (e PendingReservationEntry) Reasons() []domain.PendingReason {
+	return e.reasons
+}
+
 // NewPendingReservationEntry is the only path to construct an
 // entry from outside the use case (handler tests, future
 // serializers). It does NOT validate fields: the use case is the
@@ -79,6 +92,7 @@ func NewPendingReservationEntry(
 	reservationID, dogID, ownerID, activityID int,
 	dogName, ownerName, activityName, activityLocation string,
 	activityDate time.Time,
+	reasons []domain.PendingReason,
 ) PendingReservationEntry {
 	return PendingReservationEntry{
 		reservationID:    reservationID,
@@ -90,6 +104,7 @@ func NewPendingReservationEntry(
 		activityName:     activityName,
 		activityDate:     activityDate,
 		activityLocation: activityLocation,
+		reasons:          reasons,
 	}
 }
 
@@ -130,6 +145,11 @@ func NewListPendingReservationsUseCase(
 // leave the entry with an empty OwnerName rather than failing the
 // whole call — the page remains useful even if an owner has been
 // soft-deleted between the booking and the triage.
+//
+// Reasons (the audit trail captured at booking time) are loaded in
+// a second batched query, also skipped when there are no entries.
+// Reservations with no recorded reasons get an empty slice rather
+// than a nil, so the wire format is deterministic.
 func (uc *ListPendingReservationsUseCase) Execute(ctx context.Context, input ListPendingReservationsInput) (ListPendingReservationsOutput, error) {
 	views, err := uc.reservationRepo.ListPendingView(ctx, input.Limit(), input.Offset())
 	if err != nil {
@@ -138,6 +158,7 @@ func (uc *ListPendingReservationsUseCase) Execute(ctx context.Context, input Lis
 
 	pending := make([]PendingReservationEntry, 0, len(views))
 	ownerIDSet := make(map[int]struct{}, len(views))
+	reservationIDs := make([]int, 0, len(views))
 	for _, view := range views {
 		pending = append(pending, PendingReservationEntry{
 			reservationID:    view.ID(),
@@ -150,6 +171,7 @@ func (uc *ListPendingReservationsUseCase) Execute(ctx context.Context, input Lis
 			activityLocation: view.ActivityLocation(),
 		})
 		ownerIDSet[view.DogUserID()] = struct{}{}
+		reservationIDs = append(reservationIDs, view.ID())
 	}
 
 	if len(ownerIDSet) > 0 {
@@ -169,6 +191,19 @@ func (uc *ListPendingReservationsUseCase) Execute(ctx context.Context, input Lis
 		}
 		for i := range pending {
 			pending[i].ownerName = nameByID[pending[i].ownerID]
+		}
+	}
+
+	// Reasons: one batched query for the whole page. Reservations
+	// without reasons are absent from the map; we leave the slice
+	// nil so the handler omits the wire field.
+	reasonsByRes, err := uc.reservationRepo.ListPendingReasonsByReservations(ctx, reservationIDs)
+	if err != nil {
+		return ListPendingReservationsOutput{}, fmt.Errorf("resolve pending reasons: %w", err)
+	}
+	for i := range pending {
+		if rs, ok := reasonsByRes[pending[i].reservationID]; ok {
+			pending[i].reasons = rs
 		}
 	}
 

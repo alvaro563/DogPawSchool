@@ -995,6 +995,13 @@ type pendingReservationsResponse struct {
 // scoped view but adds activity_date and activity_location because
 // the "pending" page needs to render the class context, not just
 // the attendance.
+//
+// PendingReasons carries the audit trail of why the reservation
+// was held in StatusPendingToConfirm. Translated to Spanish by the
+// same helper the booking response uses, so admins see consistent
+// copy between booking-time toast and triage-time row. Omitted
+// when no reasons were recorded (should not happen in practice:
+// every pending reservation today comes from a conflict path).
 type pendingReservationEntryDTO struct {
 	ReservationID    int       `json:"reservation_id"    example:"42"`
 	DogID            int       `json:"dog_id"            example:"5"`
@@ -1005,6 +1012,7 @@ type pendingReservationEntryDTO struct {
 	ActivityName     string    `json:"activity_name"     example:"Paseo Río"`
 	ActivityDate     time.Time `json:"activity_date"     example:"2026-08-01T10:00:00Z"`
 	ActivityLocation string    `json:"activity_location" example:"Parking Central"`
+	PendingReasons   []string  `json:"pending_reasons,omitempty"`
 }
 
 // toPendingReservationsResponse converts the use case output into
@@ -1012,6 +1020,13 @@ type pendingReservationEntryDTO struct {
 // input so the client sees the values that the use case actually
 // applied (mirrors the convention used by every other list
 // endpoint in this handler).
+//
+// PendingReasons are translated with the same formatPendingReasons
+// helper the booking endpoint already uses; dog-name resolution is
+// skipped at this layer because reason dog IDs reference dogs that
+// are NOT the owner's dog (incoming candidate + existing conflict
+// pair). The wire DTO falls back to the bare dog id when the
+// helper can't resolve a name.
 func toPendingReservationsResponse(
 	out reservationuc.ListPendingReservationsOutput,
 	in reservationuc.ListPendingReservationsInput,
@@ -1028,6 +1043,7 @@ func toPendingReservationsResponse(
 			ActivityName:     e.ActivityName(),
 			ActivityDate:     e.ActivityDate(),
 			ActivityLocation: e.ActivityLocation(),
+			PendingReasons:   formatPendingReasons(e.Reasons(), nil),
 		}
 	}
 	return pendingReservationsResponse{
@@ -1087,12 +1103,18 @@ type activityRosterResponse struct {
 // activityRosterEntryDTO is the wire shape for a single attendee
 // on the roster. It is intentionally flat (no nested aggregates) so
 // the client can render the row directly without unwrapping.
+//
+// PendingReasons carries the audit trail for PENDING_TO_CONFIRM
+// entries — the same Spanish strings the booking toast shows.
+// Always nil/absent on CONFIRMED entries, so the omitempty tag
+// keeps the wire shape clean.
 type activityRosterEntryDTO struct {
-	ReservationID int    `json:"reservation_id" example:"42"`
-	DogID         int    `json:"dog_id"         example:"5"`
-	DogName       string `json:"dog_name"       example:"Luna"`
-	OwnerID       int    `json:"owner_id"       example:"7"`
-	OwnerName     string `json:"owner_name"     example:"Carlos García"`
+	ReservationID   int      `json:"reservation_id"  example:"42"`
+	DogID           int      `json:"dog_id"          example:"5"`
+	DogName         string   `json:"dog_name"        example:"Luna"`
+	OwnerID         int      `json:"owner_id"        example:"7"`
+	OwnerName       string   `json:"owner_name"      example:"Carlos García"`
+	PendingReasons  []string `json:"pending_reasons,omitempty"`
 }
 
 // toActivityRosterResponse converts the use case output into the
@@ -1122,11 +1144,12 @@ func toActivityRosterEntryDTOs(entries []reservationuc.ActivityRosterEntry) []ac
 	dtos := make([]activityRosterEntryDTO, len(entries))
 	for i, e := range entries {
 		dtos[i] = activityRosterEntryDTO{
-			ReservationID: e.ReservationID(),
-			DogID:         e.DogID(),
-			DogName:       e.DogName(),
-			OwnerID:       e.OwnerID(),
-			OwnerName:     e.OwnerName(),
+			ReservationID:  e.ReservationID(),
+			DogID:          e.DogID(),
+			DogName:        e.DogName(),
+			OwnerID:        e.OwnerID(),
+			OwnerName:      e.OwnerName(),
+			PendingReasons: formatPendingReasons(e.Reasons(), nil),
 		}
 	}
 	return dtos

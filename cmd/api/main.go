@@ -32,7 +32,16 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	slog.Info("config loaded", "env", cfg.Env, "port", cfg.Port)
+	// Startup banner. The operator should be able to confirm at a
+	// glance which mode the process is running in and whether TLS
+	// is configured. NEVER log the secret values themselves — only
+	// the metadata above.
+	slog.Info("config loaded",
+		"env", cfg.Env,
+		"port", cfg.Port,
+		"db_sslmode", cfg.DB.SSLMode,
+		"tls", cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
+	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

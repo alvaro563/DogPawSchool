@@ -73,7 +73,7 @@ func TestJWTTokenGenerator_Generate_InvalidUser(t *testing.T) {
 
 	// User with empty name is invalid for NewUser, so we can't create one.
 	// Instead verify the generator handles a valid user gracefully.
-	generator := NewJWTTokenGenerator("test-secret", 1*time.Hour)
+	generator := NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
 
 	_, err := domain.NewUser(0, "", "x@y.com", "pw", domain.RoleRegular)
 	require.Error(t, err, "user with empty name should fail validation")

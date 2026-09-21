@@ -196,6 +196,16 @@ func (s *stubResRepoForClose) ListAttendanceReport(_ context.Context, _, _ *time
 	return nil, nil
 }
 
+func (s *stubResRepoForClose) SavePendingReasons(_ context.Context, _ int, _ []domain.PendingReason) error {
+	return nil
+}
+func (s *stubResRepoForClose) ListPendingReasonsByReservation(_ context.Context, _ int) ([]domain.PendingReason, error) {
+	return nil, nil
+}
+func (s *stubResRepoForClose) ListPendingReasonsByReservations(_ context.Context, _ []int) (map[int][]domain.PendingReason, error) {
+	return map[int][]domain.PendingReason{}, nil
+}
+
 // fixedNow is a deterministic clock used by all close tests.
 var fixedNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 

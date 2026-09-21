@@ -1165,6 +1165,21 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "not_late_cancelled"})
 		return
 	}
+	if errors.Is(err, reservationuc.ErrIndividualClassDogMismatch) {
+		// 403 (not 409): the requester has no authorization over
+		// this specific activity slot. The activity exists and is
+		// open, but it is reserved for a different dog.
+		c.JSON(http.StatusForbidden, errorResponse{Error: "individual_class_foreign"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrDogNotActive) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "dog_not_active"})
+		return
+	}
+	if errors.Is(err, reservationuc.ErrActivityClosed) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "activity_closed"})
+		return
+	}
 	var incompatibleDogsErr *reservationuc.IncompatibleDogsError
 	if errors.As(err, &incompatibleDogsErr) {
 		c.JSON(http.StatusConflict, errorResponse{

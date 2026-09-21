@@ -627,6 +627,226 @@ func TestRegisterReservationUseCase_NoConflictStaysConfirmed(t *testing.T) {
 	assert.Equal(t, domain.StatusConfirmed, output.Status)
 }
 
+// ── Pre-flight integrity checks (closed activity, inactive dog, individual
+//    class foreign dog). These three checks all fire BEFORE any pass
+//    movement is persisted, so a rejected request leaves no trace in the
+//    pass ledger. They are also the audit-trail sentinels: a future
+//    refactor that adds an adminOverride carve-out to any of them would
+//    re-open the seat-stealing hole described in the security audit. ──
+
+// validIndividualActivityForDog builds a future INDIVIDUAL_CLASS
+// activity targeting the given dog. Capacity is 1 — the seat can be
+// held by exactly one booking. Use ReconstituteActivity (the only
+// constructor that accepts a dog id on INDIVIDUAL_CLASS without
+// panicking) to keep the construction site concise.
+func validIndividualActivityForDog(id, targetDogID int) *domain.Activity {
+	act, err := domain.ReconstituteActivity(
+		id, "1:1 con " + strconv.Itoa(targetDogID), "", "Escuela",
+		domain.TypeIndividual, 1, 1, fixedNow.Add(7*24*time.Hour), false,
+		&targetDogID, nil,
+	)
+	if err != nil {
+		panic(err)
+	}
+	return act
+}
+
+// validClosedFutureActivity builds a future activity that has been
+// marked closed (the only state mutation the registration flow is
+// concerned with). Used to drive the closed-activity branch of
+// runInTx.
+func validClosedFutureActivity(id int) *domain.Activity {
+	act, err := domain.ReconstituteActivity(
+		id, "Cerrada", "", "Escuela",
+		domain.TypeRoute, 5, 1, fixedNow.Add(7*24*time.Hour), true, nil, nil,
+	)
+	if err != nil {
+		panic(err)
+	}
+	return act
+}
+
+// TestRegisterReservationUseCase_ActivityClosedBlocksBooking verifies
+// that a closed activity is not bookable even when the requester
+// owns a valid dog and pass and the seat is still free. The check
+// runs BEFORE the capacity check so a closed activity with empty
+// capacity stays closed.
+func TestRegisterReservationUseCase_ActivityClosedBlocksBooking(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 1)
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validClosedFutureActivity(10), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 1, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+	}
+	// Guard rails: the pass must NOT have been decremented and the
+	// reservation must NOT have been written.
+	var passUpdated, reservationCreated bool
+	passRepo.update = func(context.Context, *domain.Pass) error {
+		passUpdated = true
+		return nil
+	}
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		reservationCreated = true
+		return 0, nil
+	}
+
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validRegisterInput())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrActivityClosed)
+	assert.False(t, passUpdated, "closed-activity rejection must not consume a pass session")
+	assert.False(t, reservationCreated, "closed-activity rejection must not write a reservation row")
+}
+
+// TestRegisterReservationUseCase_IndividualClassForeignDogBlocked is
+// the regression test for the seat-stealing bug: a non-admin user
+// who knows (or guesses) another user's individual class id must
+// not be able to burn the slot or consume a pass session.
+func TestRegisterReservationUseCase_IndividualClassForeignDogBlocked(t *testing.T) {
+	t.Parallel()
+	// The individual class targets dog 25 (a different dog, owned by
+	// user 99). The requester is user 1 with their own dog 20.
+	candidate := validDog(20, 1)
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validIndividualActivityForDog(10, 25), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 1, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+	}
+	var passUpdated, reservationCreated bool
+	passRepo.update = func(context.Context, *domain.Pass) error {
+		passUpdated = true
+		return nil
+	}
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		reservationCreated = true
+		return 0, nil
+	}
+
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validRegisterInput())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrIndividualClassDogMismatch)
+	assert.False(t, passUpdated, "foreign-dog rejection must not consume a pass session")
+	assert.False(t, reservationCreated, "foreign-dog rejection must not write a reservation row")
+}
+
+// TestRegisterReservationUseCase_IndividualClassOwnDogSucceeds is the
+// positive control for the previous test: a request whose dog
+// matches the individual class's target dog books normally. Without
+// this case, a wrong-direction regression (the check firing for the
+// matching dog too) would not be caught.
+func TestRegisterReservationUseCase_IndividualClassOwnDogSucceeds(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 1)
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			// The activity targets dog 20 — same id as the candidate.
+			return validIndividualActivityForDog(10, 20), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 1, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+		create: func(_ context.Context, r *domain.Reservation) (int, error) {
+			assert.Equal(t, domain.StatusConfirmed, r.Status())
+			return 99, nil
+		},
+	}
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusConfirmed, out.Status)
+}
+
+// TestRegisterReservationUseCase_InactiveDogBlocked verifies that a
+// soft-deleted dog cannot be booked. Inactive dogs must not appear
+// on any booking; re-activation is a separate dog-management
+// operation.
+func TestRegisterReservationUseCase_InactiveDogBlocked(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 1)
+	candidate.Deactivate() // simulate a soft-deleted dog
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validFutureActivity(10), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 1, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+	}
+	var passUpdated, reservationCreated bool
+	passRepo.update = func(context.Context, *domain.Pass) error {
+		passUpdated = true
+		return nil
+	}
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		reservationCreated = true
+		return 0, nil
+	}
+
+	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validRegisterInput())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDogNotActive)
+	assert.False(t, passUpdated, "inactive-dog rejection must not consume a pass session")
+	assert.False(t, reservationCreated, "inactive-dog rejection must not write a reservation row")
+}
+
 // newDogWithSex builds a dog with a specific sex and neutered state.
 // User ID is required for ownership.
 func newDogWithSex(t *testing.T, id, userID int, sex domain.Sex, neutered bool) *domain.Dog {

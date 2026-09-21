@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lib/pq"
 
 	"dogpaw/internal/domain"
 )
@@ -679,6 +680,181 @@ func (repo *ReservationRepository) ListAttendanceReport(
 		return nil, fmt.Errorf("rows err: %w", err)
 	}
 	return out, nil
+}
+
+// SavePendingReasons persists the audit trail rows for a reservation
+// that was escalated to StatusPendingToConfirm. Each reason becomes
+// one row; the input slice's ordinal position becomes the row's
+// `ordinal` column so evaluation order is preserved.
+//
+// The slice is REPLACED, not appended: any rows that previously
+// existed for the same reservation_id are deleted first. This makes
+// the call idempotent on retry and safe to call from any context.
+//
+// When called inside an existing Transactor.WithinTx transaction,
+// the call joins that transaction rather than opening its own: the
+// caller is responsible for the outer commit/rollback. When called
+// without a transaction, the method opens its own and commits when
+// every row is written.
+//
+// An empty reasons slice deletes any pre-existing rows for the
+// reservation and returns nil — this matches the "no reasons" state
+// used by the read APIs to omit the field on the wire.
+func (repo *ReservationRepository) SavePendingReasons(ctx context.Context, reservationID int, reasons []domain.PendingReason) error {
+	if reservationID <= 0 {
+		return fmt.Errorf("save pending reasons: reservation_id must be positive, got %d", reservationID)
+	}
+
+	if TxFrom(ctx) == nil {
+		return repo.savePendingReasonsStandalone(ctx, reservationID, reasons)
+	}
+
+	// Inside a caller-owned transaction. Do not commit/rollback; the
+	// caller decides. All operations share the same tx so a failure
+	// here surfaces up and rolls the whole booking back.
+	if _, err := runner(ctx, repo.db).ExecContext(ctx,
+		`DELETE FROM reservation_pending_reasons WHERE reservation_id = $1`,
+		reservationID); err != nil {
+		return fmt.Errorf("delete existing pending reasons for reservation %d: %w", reservationID, err)
+	}
+	for i, r := range reasons {
+		if err := repo.insertPendingReason(ctx, reservationID, i, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// savePendingReasonsStandalone is the non-transactional path. It
+// opens its own short-lived transaction, writes the rows, and
+// commits when every row succeeds.
+func (repo *ReservationRepository) savePendingReasonsStandalone(ctx context.Context, reservationID int, reasons []domain.PendingReason) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx for save pending reasons: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txCtx := withTx(ctx, tx)
+	if _, err := tx.ExecContext(txCtx,
+		`DELETE FROM reservation_pending_reasons WHERE reservation_id = $1`,
+		reservationID); err != nil {
+		return fmt.Errorf("delete existing pending reasons for reservation %d: %w", reservationID, err)
+	}
+	for i, r := range reasons {
+		if err := repo.insertPendingReason(txCtx, reservationID, i, r); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit pending reasons save: %w", err)
+	}
+	return nil
+}
+
+// insertPendingReason writes one row. Errors are wrapped with the
+// ordinal + reservation id so the caller can pinpoint the bad row.
+func (repo *ReservationRepository) insertPendingReason(ctx context.Context, reservationID int, ordinal int, r domain.PendingReason) error {
+	if r.Code == "" {
+		return fmt.Errorf("save pending reasons: empty reason code at ordinal %d", ordinal)
+	}
+	dogIDs := r.DogIDs
+	if dogIDs == nil {
+		dogIDs = []int{}
+	}
+	if _, err := runner(ctx, repo.db).ExecContext(ctx,
+		`INSERT INTO reservation_pending_reasons (reservation_id, ordinal, reason_code, dog_ids)
+		 VALUES ($1, $2, $3, $4)`,
+		reservationID, ordinal, r.Code, pq.Array(dogIDs)); err != nil {
+		return fmt.Errorf("insert pending reason %d for reservation %d: %w", ordinal, reservationID, err)
+	}
+	return nil
+}
+
+// ListPendingReasonsByReservation returns the reason rows for one
+// reservation in original ordinal order. Returns (nil, nil) when the
+// reservation has no reasons.
+func (repo *ReservationRepository) ListPendingReasonsByReservation(ctx context.Context, reservationID int) ([]domain.PendingReason, error) {
+	rows, err := runner(ctx, repo.db).QueryContext(ctx,
+		`SELECT reason_code, dog_ids
+		 FROM reservation_pending_reasons
+		 WHERE reservation_id = $1
+		 ORDER BY ordinal ASC`,
+		reservationID)
+	if err != nil {
+		return nil, fmt.Errorf("list pending reasons for reservation %d: %w", reservationID, err)
+	}
+	defer rows.Close()
+
+	out := make([]domain.PendingReason, 0)
+	for rows.Next() {
+		var (
+			code   string
+			dogIDs pq.Int64Array
+		)
+		if err := rows.Scan(&code, &dogIDs); err != nil {
+			return nil, fmt.Errorf("scan pending reason: %w", err)
+		}
+		out = append(out, domain.PendingReason{Code: code, DogIDs: int64ArrayToInts(dogIDs)})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	return out, nil
+}
+
+// ListPendingReasonsByResolutions is the batched variant used by the
+// admin list endpoints. One SQL query returns every reason for every
+// reservation in the input; the returned map is keyed by reservation
+// id and value is the reason slice in ordinal order. Reservations
+// without reasons are absent from the map (callers must treat a
+// missing key as an empty slice).
+func (repo *ReservationRepository) ListPendingReasonsByReservations(ctx context.Context, reservationIDs []int) (map[int][]domain.PendingReason, error) {
+	out := make(map[int][]domain.PendingReason)
+	if len(reservationIDs) == 0 {
+		return out, nil
+	}
+
+	rows, err := runner(ctx, repo.db).QueryContext(ctx,
+		`SELECT reservation_id, reason_code, dog_ids
+		 FROM reservation_pending_reasons
+		 WHERE reservation_id = ANY($1)
+		 ORDER BY reservation_id ASC, ordinal ASC`,
+		pq.Array(reservationIDs))
+	if err != nil {
+		return nil, fmt.Errorf("list pending reasons batch: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			reservationID int
+			code          string
+			dogIDs        pq.Int64Array
+		)
+		if err := rows.Scan(&reservationID, &code, &dogIDs); err != nil {
+			return nil, fmt.Errorf("scan pending reason batch: %w", err)
+		}
+		out[reservationID] = append(out[reservationID], domain.PendingReason{Code: code, DogIDs: int64ArrayToInts(dogIDs)})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows err: %w", err)
+	}
+	return out, nil
+}
+
+// int64ArrayToInts converts the libpq array scanner result into the
+// plain []int slice the domain layer expects. Keeps BIGINT[] typed as
+// pq.Int64Array end-to-end until the boundary.
+func int64ArrayToInts(a pq.Int64Array) []int {
+	if len(a) == 0 {
+		return nil
+	}
+	out := make([]int, len(a))
+	for i, v := range a {
+		out[i] = int(v)
+	}
+	return out
 }
 
 var _ domain.ReservationRepository = (*ReservationRepository)(nil)

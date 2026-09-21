@@ -37,6 +37,13 @@ type mockReservationRepository struct {
 
 	// Read-model for the admin attendance report (status = COMPLETED).
 	listAttendanceReport func(ctx context.Context, from, to *time.Time, limit, offset int) ([]*domain.AttendanceReportEntry, error)
+
+	// Pending-reason audit trail. Save is called from inside the
+	// booking transaction; the two readers are called by the admin
+	// list endpoints.
+	savePendingReasons               func(ctx context.Context, reservationID int, reasons []domain.PendingReason) error
+	listPendingReasonsByReservation  func(ctx context.Context, reservationID int) ([]domain.PendingReason, error)
+	listPendingReasonsByReservations func(ctx context.Context, reservationIDs []int) (map[int][]domain.PendingReason, error)
 }
 
 func (m *mockReservationRepository) Create(ctx context.Context, reservation *domain.Reservation) (int, error) {
@@ -155,6 +162,27 @@ func (m *mockReservationRepository) ListAttendanceReport(ctx context.Context, fr
 		return m.listAttendanceReport(ctx, from, to, limit, offset)
 	}
 	return nil, nil
+}
+
+func (m *mockReservationRepository) SavePendingReasons(ctx context.Context, reservationID int, reasons []domain.PendingReason) error {
+	if m.savePendingReasons != nil {
+		return m.savePendingReasons(ctx, reservationID, reasons)
+	}
+	return nil
+}
+
+func (m *mockReservationRepository) ListPendingReasonsByReservation(ctx context.Context, reservationID int) ([]domain.PendingReason, error) {
+	if m.listPendingReasonsByReservation != nil {
+		return m.listPendingReasonsByReservation(ctx, reservationID)
+	}
+	return nil, nil
+}
+
+func (m *mockReservationRepository) ListPendingReasonsByReservations(ctx context.Context, reservationIDs []int) (map[int][]domain.PendingReason, error) {
+	if m.listPendingReasonsByReservations != nil {
+		return m.listPendingReasonsByReservations(ctx, reservationIDs)
+	}
+	return map[int][]domain.PendingReason{}, nil
 }
 
 // stubActivityRepository is the local mock for the activity repo used

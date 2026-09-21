@@ -56,6 +56,12 @@ export function getReservationErrorMessage(err: ApiError, fallback: string): str
       return 'El bono ha caducado.';
     case 'dog_pass_owner_mismatch':
       return 'El perro y el bono deben pertenecer al mismo usuario.';
+    case 'individual_class_foreign':
+      return 'Esta clase individual es para otro perro.';
+    case 'dog_not_active':
+      return 'Este perro está desactivado y no puede apuntarse a actividades.';
+    case 'activity_closed':
+      return 'Esta actividad está cerrada y no admite más reservas.';
     case 'validation':
       if (body?.field) return `Error en ${body.field}: ${details ?? 'valor inválido'}`;
       return details ?? 'Datos inválidos.';

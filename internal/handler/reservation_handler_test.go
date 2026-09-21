@@ -1589,10 +1589,10 @@ func TestReservationListActivityRoster_Success(t *testing.T) {
 			return reservationuc.ListActivityRosterOutput{
 				Activity: activity,
 				Confirmed: []reservationuc.ActivityRosterEntry{
-					reservationuc.NewActivityRosterEntry(1, 20, 7, "Luna", "Ana"),
+					reservationuc.NewActivityRosterEntry(1, 20, 7, "Luna", "Ana", nil),
 				},
 				Pending: []reservationuc.ActivityRosterEntry{
-					reservationuc.NewActivityRosterEntry(2, 21, 7, "Toby", "Ana"),
+					reservationuc.NewActivityRosterEntry(2, 21, 7, "Toby", "Ana", nil),
 				},
 			}, nil
 		},
@@ -1710,12 +1710,12 @@ func TestReservationListPending_Success(t *testing.T) {
 					reservationuc.NewPendingReservationEntry(
 						1, 20, 7, 10,
 						"Luna", "Ana", "Paseo Río", "Parking Central",
-						activityDate,
+						activityDate, nil,
 					),
 					reservationuc.NewPendingReservationEntry(
 						2, 21, 7, 10,
 						"Toby", "Ana", "Paseo Río", "Parking Central",
-						activityDate,
+						activityDate, nil,
 					),
 				},
 			}, nil
@@ -1745,6 +1745,128 @@ func TestReservationListPending_Success(t *testing.T) {
 	assert.EqualValues(t, 50, body["limit"])
 	assert.EqualValues(t, 0, body["offset"])
 	assert.EqualValues(t, 2, body["count"])
+}
+
+// TestReservationListPending_PendingReasonsOnWire verifies that the
+// `pending_reasons` array is translated to Spanish and exposed on
+// every pending entry. Uses the real formatPendingReasons helper so
+// the wire copy mirrors what the booking toast shows to users.
+func TestReservationListPending_PendingReasonsOnWire(t *testing.T) {
+	t.Parallel()
+	activityDate := fixedNow.Add(7 * 24 * time.Hour)
+	stub := &stubPendingReservationsGetter{
+		fn: func(context.Context, reservationuc.ListPendingReservationsInput) (reservationuc.ListPendingReservationsOutput, error) {
+			return reservationuc.ListPendingReservationsOutput{
+				Pending: []reservationuc.PendingReservationEntry{
+					reservationuc.NewPendingReservationEntry(
+						1, 20, 7, 10,
+						"Luna", "Ana", "Paseo Río", "Parking Central",
+						activityDate,
+						[]domain.PendingReason{
+							{Code: reservationuc.SexNeuteredReasonPrefix + domain.ReasonIntactVsCastrated, DogIDs: []int{20, 21}},
+						},
+					),
+					reservationuc.NewPendingReservationEntry(
+						2, 22, 7, 10,
+						"Maya", "Ana", "Paseo Río", "Parking Central",
+						activityDate,
+						[]domain.PendingReason{
+							{Code: domain.ReasonHasSpecialCondition, DogIDs: []int{22}},
+						},
+					),
+				},
+			}, nil
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub)
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/reservations/pending", "", withUserID(1))
+
+	h.ListPending(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+
+	pending := body["pending"].([]any)
+	require.Len(t, pending, 2)
+
+	// First entry: sex/neutered reason → Spanish sentence mentioning
+	// both dogs (name fallback to "el perro #N" since dogNames is
+	// nil in the handler test path).
+	first := pending[0].(map[string]any)
+	reasons, ok := first["pending_reasons"].([]any)
+	require.True(t, ok, "pending_reasons must be exposed as an array")
+	require.Len(t, reasons, 1)
+	reasonStr, ok := reasons[0].(string)
+	require.True(t, ok)
+	assert.Contains(t, reasonStr, "coincide con el perro #21")
+	assert.Contains(t, reasonStr, "macho castrado")
+
+	// Second entry: special-condition reason → Spanish sentence
+	// mentioning the candidate dog only (falls back to the bare id
+	// when no name map is provided to the handler translator).
+	second := pending[1].(map[string]any)
+	reasons2, ok := second["pending_reasons"].([]any)
+	require.True(t, ok)
+	require.Len(t, reasons2, 1)
+	reasonStr2, ok := reasons2[0].(string)
+	require.True(t, ok)
+	assert.Contains(t, reasonStr2, "el perro #22")
+	assert.Contains(t, reasonStr2, "condición especial")
+}
+
+// TestReservationListActivityRoster_PendingReasonsOnWire verifies
+// the activity roster endpoint exposes pending_reasons on each
+// PENDING entry. Confirmed entries must NOT carry the field (the
+// omitempty tag drops it from the JSON object).
+func TestReservationListActivityRoster_PendingReasonsOnWire(t *testing.T) {
+	t.Parallel()
+	activity, err := domain.NewActivity(10, "Paseo Río", "", "Parking Central",
+		domain.TypeRoute, 5, 2, fixedNow.Add(7*24*time.Hour), nil, nil)
+	require.NoError(t, err)
+
+	stub := &stubActivityRosterGetter{
+		fn: func(context.Context, reservationuc.ListActivityRosterInput) (reservationuc.ListActivityRosterOutput, error) {
+			return reservationuc.ListActivityRosterOutput{
+				Activity: activity,
+				Confirmed: []reservationuc.ActivityRosterEntry{
+					reservationuc.NewActivityRosterEntry(1, 20, 7, "Luna", "Ana", nil),
+				},
+				Pending: []reservationuc.ActivityRosterEntry{
+					reservationuc.NewActivityRosterEntry(2, 21, 7, "Toby", "Ana",
+						[]domain.PendingReason{
+							{Code: reservationuc.SexNeuteredReasonPrefix + domain.ReasonCastratedVsIntact, DogIDs: []int{21, 30}},
+						}),
+				},
+			}, nil
+		},
+	}
+	h := newReservationHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stub, nil)
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/admin/activities/10/roster", "", withUserID(1))
+	c.Params = gin.Params{{Key: "id", Value: "10"}}
+
+	h.ListActivityRoster(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+
+	// Confirmed: no pending_reasons field on the wire.
+	confirmed := body["confirmed"].([]any)
+	require.Len(t, confirmed, 1)
+	_, hasReasons := confirmed[0].(map[string]any)["pending_reasons"]
+	assert.False(t, hasReasons, "confirmed entries must NOT carry pending_reasons")
+
+	// Pending: pending_reasons exposed as a translated Spanish string.
+	pending := body["pending"].([]any)
+	require.Len(t, pending, 1)
+	reasons, ok := pending[0].(map[string]any)["pending_reasons"].([]any)
+	require.True(t, ok, "pending_reasons must be exposed on pending entries")
+	require.Len(t, reasons, 1)
+	reasonStr, ok := reasons[0].(string)
+	require.True(t, ok)
+	assert.Contains(t, reasonStr, "coincide con el perro #30")
+	assert.Contains(t, reasonStr, "macho sin castrar")
 }
 
 // TestReservationListPending_Empty verifies that the empty result
@@ -2013,4 +2135,73 @@ func TestReservationForgive_InvalidIDReturns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":"validation"`)
 	assert.Contains(t, w.Body.String(), `"field":"reservation_id"`)
+}
+
+// ── Pre-flight integrity sentinels ───────────────────────────────
+//
+// Wire-format coverage for the three new pre-flight sentinels
+// (closed activity, foreign individual class dog, inactive dog).
+// These mirror the user/admin/activity_in_past family of tests
+// above and pin the wire contract: 403 for foreign individual
+// (authorization), 400 for inactive dog (validation), 409 for
+// closed activity (state conflict).
+
+// TestReservationRegister_IndividualClassForeignDogMapsTo403 pins
+// the wire contract for the seat-stealing bug: a foreign-dog
+// booking attempt on another user's individual class returns 403
+// individual_class_foreign. The 403 (vs 409 or 400) is intentional:
+// this is an authorization issue — the requester has no right to
+// the activity slot.
+func TestReservationRegister_IndividualClassForeignDogMapsTo403(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerReg(&stubReservationRegisterer{
+		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrIndividualClassDogMismatch
+		},
+	})
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"individual_class_foreign"`)
+}
+
+// TestReservationRegister_DogNotActiveMapsTo400 pins the wire
+// contract for the inactive-dog rejection: 400 dog_not_active.
+func TestReservationRegister_DogNotActiveMapsTo400(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerReg(&stubReservationRegisterer{
+		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrDogNotActive
+		},
+	})
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"dog_not_active"`)
+}
+
+// TestReservationRegister_ActivityClosedMapsTo409 pins the wire
+// contract for the closed-activity rejection: 409 activity_closed.
+// Same status family as ErrActivityFull — closed is a state
+// conflict, not a validation issue.
+func TestReservationRegister_ActivityClosedMapsTo409(t *testing.T) {
+	t.Parallel()
+	h := newReservationHandlerReg(&stubReservationRegisterer{
+		fn: func(context.Context, reservationuc.RegisterReservationInput) (reservationuc.RegisterReservationOutput, error) {
+			return reservationuc.RegisterReservationOutput{}, reservationuc.ErrActivityClosed
+		},
+	})
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations", validRegisterReservationBody(), withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}}
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"activity_closed"`)
 }

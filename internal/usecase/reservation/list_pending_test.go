@@ -237,3 +237,79 @@ func TestListPendingReservationsUseCase_MissingOwnerLeavesEmptyName(t *testing.T
 	assert.Equal(t, 99, output.Pending[0].OwnerID())
 	assert.Equal(t, "", output.Pending[0].OwnerName(), "missing owner → empty name, no error")
 }
+
+// ── Pending reasons audit trail ──────────────────────────────────
+
+// TestListPendingReservationsUseCase_LoadsReasonsBatched verifies
+// that the use case calls ListPendingReasonsByReservations once per
+// page with the full set of reservation IDs, and that the per-entry
+// Reasons() accessor returns the matching slice in ordinal order.
+//
+// Missing reservations in the map (i.e. no reasons recorded) leave
+// the entry with a nil Reasons slice — the wire layer must omit the
+// field in that case.
+func TestListPendingReservationsUseCase_LoadsReasonsBatched(t *testing.T) {
+	t.Parallel()
+	reservationRepo := &mockReservationRepository{
+		listPendingView: func(context.Context, int, int) ([]*domain.ReservationView, error) {
+			return []*domain.ReservationView{
+				pendingView(1, 10, 20, 99, domain.StatusPendingToConfirm, fixedNow, "Luna"),
+				pendingView(2, 10, 21, 99, domain.StatusPendingToConfirm, fixedNow, "Toby"),
+				pendingView(3, 10, 22, 99, domain.StatusPendingToConfirm, fixedNow, "Maya"),
+			}, nil
+		},
+		listPendingReasonsByReservations: func(_ context.Context, ids []int) (map[int][]domain.PendingReason, error) {
+			assert.ElementsMatch(t, []int{1, 2, 3}, ids, "single batched query with every page id")
+			return map[int][]domain.PendingReason{
+				1: {{Code: SexNeuteredReasonPrefix + domain.ReasonIntactVsCastrated, DogIDs: []int{20, 30}}},
+				3: {{Code: domain.ReasonHasSpecialCondition, DogIDs: []int{22}}},
+				// 2 has no recorded reasons → absent from map.
+			}, nil
+		},
+	}
+	userRepo := &stubUserRepository{
+		getByIDs: func(context.Context, []int) ([]*domain.User, error) {
+			return []*domain.User{fixedOwner(99, "Ana")}, nil
+		},
+	}
+	uc := NewListPendingReservationsUseCase(reservationRepo, userRepo)
+	output, err := uc.Execute(context.Background(), MustNewListPendingReservationsInput(100, 0))
+	require.NoError(t, err)
+	require.Len(t, output.Pending, 3)
+
+	// Reservation 1: one sex/neutered reason.
+	require.Len(t, output.Pending[0].Reasons(), 1)
+	assert.Equal(t, SexNeuteredReasonPrefix+domain.ReasonIntactVsCastrated, output.Pending[0].Reasons()[0].Code)
+	assert.Equal(t, []int{20, 30}, output.Pending[0].Reasons()[0].DogIDs)
+
+	// Reservation 2: no reasons recorded → nil.
+	assert.Nil(t, output.Pending[1].Reasons())
+
+	// Reservation 3: one special-condition reason.
+	require.Len(t, output.Pending[2].Reasons(), 1)
+	assert.Equal(t, domain.ReasonHasSpecialCondition, output.Pending[2].Reasons()[0].Code)
+	assert.Equal(t, []int{22}, output.Pending[2].Reasons()[0].DogIDs)
+}
+
+// TestListPendingReservationsUseCase_ReasonsBatchErrorWrapped makes
+// sure a failure in the reasons query is wrapped and propagated
+// rather than silently swallowed.
+func TestListPendingReservationsUseCase_ReasonsBatchErrorWrapped(t *testing.T) {
+	t.Parallel()
+	reservationRepo := &mockReservationRepository{
+		listPendingView: func(context.Context, int, int) ([]*domain.ReservationView, error) {
+			return []*domain.ReservationView{
+				pendingView(1, 10, 20, 99, domain.StatusPendingToConfirm, fixedNow, "Luna"),
+			}, nil
+		},
+		listPendingReasonsByReservations: func(context.Context, []int) (map[int][]domain.PendingReason, error) {
+			return nil, errors.New("audit table unreachable")
+		},
+	}
+	userRepo := &stubUserRepository{}
+	uc := NewListPendingReservationsUseCase(reservationRepo, userRepo)
+	_, err := uc.Execute(context.Background(), MustNewListPendingReservationsInput(100, 0))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "resolve pending reasons")
+	assert.Contains(t, err.Error(), "audit table unreachable")
+}

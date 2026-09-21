@@ -18,6 +18,15 @@ api
 .env.*
 config.local.yaml
 
+# Plantillas versionadas (las puede ver todo el mundo).
+# Los archivos reales (con secretos) están ignorados por las reglas
+# `.env` / `.env.*` de arriba.
+!cmd/api/.env.example
+!frontend/.env.example
+
+# docker-compose local env (Postgres password, etc.)
+docker-compose.override.yml
+
 # Carpetas de editores (VS Code, GoLand...)
 .vscode/
 .idea/

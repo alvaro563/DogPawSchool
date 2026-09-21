@@ -784,3 +784,177 @@ func TestAdminRegister_HasSpecialCondition_BypassesToConfirmed(t *testing.T) {
 	assert.Equal(t, domain.StatusConfirmed, out.Status)
 	assert.Empty(t, out.PendingReasons)
 }
+
+// ── Pre-flight integrity checks on the admin path ───────────────
+//
+// The user picked "Hard block: nadie reserva ajena (ni admin)" for the
+// foreign individual-class dog, so the three new checks (closed
+// activity, foreign individual dog, inactive dog) all fire even with
+// adminOverride=true. These tests lock that contract: a future
+// refactor that adds an adminOverride carve-out to any of these
+// sentinels will fail here.
+
+// TestAdminRegister_ActivityClosedBlocksEvenUnderOverride verifies
+// that an admin cannot book a closed activity either. The closure
+// is an admin-only state mutation; once set, no admin or user
+// path may bypass it.
+func TestAdminRegister_ActivityClosedBlocksEvenUnderOverride(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 99)
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validClosedFutureActivity(10), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 99, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+	}
+	var passUpdated, reservationCreated bool
+	passRepo.update = func(context.Context, *domain.Pass) error {
+		passUpdated = true
+		return nil
+	}
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		reservationCreated = true
+		return 0, nil
+	}
+	uc := newAdminRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminRegisterInput())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrActivityClosed)
+	assert.False(t, passUpdated)
+	assert.False(t, reservationCreated)
+}
+
+// TestAdminRegister_IndividualClassForeignDogBlockedUnderOverride
+// verifies the "Hard block: nadie reserva ajena (ni admin)" choice.
+// Even with adminOverride=true the foreign-dog check fires. The
+// admin path is delegated to the same RegisterReservationUseCase
+// with adminOverride=true; we test the contract at this layer
+// rather than the inner use case to keep the regression test
+// focused on the admin user-facing entry point.
+func TestAdminRegister_IndividualClassForeignDogBlockedUnderOverride(t *testing.T) {
+	t.Parallel()
+	// The class targets dog 25 (a different dog). Admin tries to
+	// book dog 20 (still a foreign dog from the class's POV).
+	candidate := validDog(20, 99)
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validIndividualActivityForDog(10, 25), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 99, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+	}
+	var reservationCreated bool
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		reservationCreated = true
+		return 0, nil
+	}
+	uc := newAdminRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminRegisterInput())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrIndividualClassDogMismatch)
+	assert.False(t, reservationCreated)
+}
+
+// TestAdminRegister_IndividualClassOwnDogSucceedsUnderOverride is
+// the positive control: an admin booking the matching dog to an
+// individual class works. Without this case, a wrong-direction
+// regression would not be caught.
+func TestAdminRegister_IndividualClassOwnDogSucceedsUnderOverride(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 99)
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			// The activity targets dog 20 — same id as the candidate.
+			return validIndividualActivityForDog(10, 20), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 99, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+		create: func(_ context.Context, r *domain.Reservation) (int, error) {
+			assert.Equal(t, domain.StatusConfirmed, r.Status())
+			return 99, nil
+		},
+	}
+	uc := newAdminRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	out, err := uc.Execute(context.Background(), validAdminRegisterInput())
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusConfirmed, out.Status)
+}
+
+// TestAdminRegister_InactiveDogBlockedUnderOverride verifies that
+// the inactive-dog check has no adminOverride carve-out. The admin
+// must reactivate the dog first via the dog-management flow.
+func TestAdminRegister_InactiveDogBlockedUnderOverride(t *testing.T) {
+	t.Parallel()
+	candidate := validDog(20, 99)
+	candidate.Deactivate()
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) {
+			return validFutureActivity(10), nil
+		},
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) {
+			return candidate, nil
+		},
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) {
+			return validPass(30, 99, 5), nil
+		},
+	}
+	reservationRepo := &mockReservationRepository{
+		listByActivity: func(context.Context, int) ([]*domain.Reservation, error) {
+			return nil, nil
+		},
+	}
+	var reservationCreated bool
+	reservationRepo.create = func(context.Context, *domain.Reservation) (int, error) {
+		reservationCreated = true
+		return 0, nil
+	}
+	uc := newAdminRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validAdminRegisterInput())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDogNotActive)
+	assert.False(t, reservationCreated)
+}

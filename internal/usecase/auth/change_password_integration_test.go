@@ -27,7 +27,7 @@ func TestChangePassword_Integration_Success(t *testing.T) {
 	hasher := crypto.NewDefaultBcryptHasher()
 	userRepo := postgres.NewUserRepository(testDB)
 
-	loginUC := NewLoginUseCase(userRepo, verifier, crypto.NewJWTTokenGenerator("test-secret", 1*time.Hour))
+	loginUC := NewLoginUseCase(userRepo, verifier, crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour))
 	changeUC := NewChangePasswordUseCase(userRepo, verifier, hasher)
 
 	// Step 1: Login with old password works
@@ -50,7 +50,7 @@ func TestChangePassword_Integration_Success(t *testing.T) {
 	require.NoError(t, err, "login with new password must succeed")
 	require.NotEmpty(t, loginOut2.Token)
 
-	claims, err := crypto.ParseToken(loginOut2.Token, []byte("test-secret"))
+	claims, err := crypto.ParseToken(loginOut2.Token, []byte("test-secret-32-bytes-of-entropy!!"))
 	require.NoError(t, err)
 	assert.Equal(t, seeded.ID(), claims.UserID)
 }

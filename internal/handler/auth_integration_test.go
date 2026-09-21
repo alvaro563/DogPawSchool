@@ -39,7 +39,7 @@ import (
 )
 
 var integrationDB *sql.DB
-var jwtTestSecret = "integration-test-secret"
+var jwtTestSecret = "integration-test-secret-min-32-bytes-please!"
 
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)

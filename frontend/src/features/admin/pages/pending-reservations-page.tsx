@@ -90,6 +90,16 @@ function PendingRow({ entry, onInvalidate }: PendingRowProps) {
               {entry.activity_location}
             </span>
           </div>
+          {entry.pending_reasons && entry.pending_reasons.length > 0 && (
+            <ul className="mt-2 space-y-1 border-t border-amber-200 pt-2 text-xs text-amber-900 dark:border-amber-900/40 dark:text-amber-200">
+              {entry.pending_reasons.map((reason, i) => (
+                <li key={i} className="flex gap-1.5">
+                  <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>{reason}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
