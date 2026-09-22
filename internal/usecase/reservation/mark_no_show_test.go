@@ -95,7 +95,7 @@ func TestMarkReservationNoShow_Success_ActivityStarted(t *testing.T) {
 			assert.Equal(t, 99, id)
 			return reservation, nil
 		},
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusNoShow, r.Status())
 			return nil
 		},
@@ -151,7 +151,7 @@ func TestMarkReservationNoShow_ActivityNotYetStarted(t *testing.T) {
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return confirmedReservation(99, 10, 20, 30), nil
 		},
-		update: func(context.Context, *domain.Reservation) error {
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error {
 			t.Fatal("update must not be called when the activity has not started")
 			return nil
 		},
@@ -184,7 +184,7 @@ func TestMarkReservationNoShow_AlreadyNotCancellable(t *testing.T) {
 			}
 			reservationRepo := &mockReservationRepository{
 				getByID: func(context.Context, int) (*domain.Reservation, error) { return r, nil },
-				update: func(context.Context, *domain.Reservation) error {
+				update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error {
 					t.Fatal("update must not be called on non-CONFIRMED reservation")
 					return nil
 				},
@@ -209,7 +209,7 @@ func TestMarkReservationNoShow_DogNotOwnedByUser(t *testing.T) {
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return confirmedReservation(99, 10, 20, 30), nil
 		},
-		update: func(context.Context, *domain.Reservation) error {
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error {
 			t.Fatal("update must not be called when dog is owned by another user")
 			return nil
 		},
@@ -238,7 +238,7 @@ func TestMarkReservationNoShow_NoPassUpdateOrMovement(t *testing.T) {
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusNoShow, r.Status())
 			return nil
 		},

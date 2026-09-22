@@ -23,7 +23,7 @@ func TestSetPassPaidUseCase_Success_MarkPaid(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return original, nil
 		},
-		update: func(ctx context.Context, pass *domain.Pass) error {
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
 			saved = pass
 			return nil
 		},
@@ -46,7 +46,7 @@ func TestSetPassPaidUseCase_Success_MarkUnpaid(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return original, nil
 		},
-		update: func(ctx context.Context, pass *domain.Pass) error {
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
 			saved = pass
 			return nil
 		},
@@ -65,7 +65,7 @@ func TestSetPassPaidUseCase_NotFound(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return nil, nil
 		},
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			t.Fatal("update should not be called when pass is missing")
 			return nil
 		},
@@ -95,7 +95,7 @@ func TestSetPassPaidUseCase_RepoError_OnUpdate(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return newTestPassWithPaid(1, false), nil
 		},
-		update: func(ctx context.Context, pass *domain.Pass) error {
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
 			return sentinelErr
 		},
 	}
@@ -117,7 +117,7 @@ func TestSetPassPaidUseCase_RepoError_OnGetUpdated(t *testing.T) {
 			}
 			return nil, sentinelErr
 		},
-		update: func(ctx context.Context, pass *domain.Pass) error {
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
 			return nil
 		},
 	}

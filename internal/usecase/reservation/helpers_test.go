@@ -19,7 +19,8 @@ import (
 type mockReservationRepository struct {
 	create         func(ctx context.Context, reservation *domain.Reservation) (int, error)
 	getByID        func(ctx context.Context, id int) (*domain.Reservation, error)
-	update         func(ctx context.Context, reservation *domain.Reservation) error
+	getByIDForUpdate func(ctx context.Context, id int) (*domain.Reservation, error)
+	update         func(ctx context.Context, reservation *domain.Reservation, expectedStatus domain.ReservationStatus) error
 	listByActivity func(ctx context.Context, activityID int) ([]*domain.Reservation, error)
 	listByDog      func(ctx context.Context, dogID int) ([]*domain.Reservation, error)
 	listByPass     func(ctx context.Context, passID int) ([]*domain.Reservation, error)
@@ -60,9 +61,22 @@ func (m *mockReservationRepository) GetByID(ctx context.Context, id int) (*domai
 	return nil, nil
 }
 
-func (m *mockReservationRepository) Update(ctx context.Context, reservation *domain.Reservation) error {
+func (m *mockReservationRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Reservation, error) {
+	if m.getByIDForUpdate != nil {
+		return m.getByIDForUpdate(ctx, id)
+	}
+	// Default fallback: behaves like GetByID when only that is set.
+	// Most tests don't care about the lock semantics; the few that
+	// do set getByIDForUpdate explicitly.
+	if m.getByID != nil {
+		return m.getByID(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *mockReservationRepository) Update(ctx context.Context, reservation *domain.Reservation, expectedStatus domain.ReservationStatus) error {
 	if m.update != nil {
-		return m.update(ctx, reservation)
+		return m.update(ctx, reservation, expectedStatus)
 	}
 	return nil
 }
@@ -334,7 +348,7 @@ func (s *stubDogRepository) Delete(ctx context.Context, _ int) error { return ni
 // case calls GetByID, GetByIDForUpdate, and Update.
 type stubPassRepository struct {
 	getByID func(ctx context.Context, id int) (*domain.Pass, error)
-	update  func(ctx context.Context, pass *domain.Pass) error
+	update  func(ctx context.Context, pass *domain.Pass, expectedUpdatedAt time.Time) error
 }
 
 func (s *stubPassRepository) GetByID(ctx context.Context, id int) (*domain.Pass, error) {
@@ -349,9 +363,9 @@ func (s *stubPassRepository) GetByIDForUpdate(ctx context.Context, id int) (*dom
 	}
 	return nil, nil
 }
-func (s *stubPassRepository) Update(ctx context.Context, pass *domain.Pass) error {
+func (s *stubPassRepository) Update(ctx context.Context, pass *domain.Pass, expectedUpdatedAt time.Time) error {
 	if s.update != nil {
-		return s.update(ctx, pass)
+		return s.update(ctx, pass, expectedUpdatedAt)
 	}
 	return nil
 }

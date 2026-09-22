@@ -20,7 +20,7 @@ func TestConfirmPendingReservationUseCase_Success(t *testing.T) {
 			assert.Equal(t, 42, id)
 			return pending, nil
 		},
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			updated = true
 			assert.Equal(t, domain.StatusConfirmed, r.Status())
 			return nil
@@ -52,7 +52,7 @@ func TestConfirmPendingReservationUseCase_NotPending(t *testing.T) {
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return confirmed, nil
 		},
-		update: func(context.Context, *domain.Reservation) error {
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error {
 			t.Fatal("update must not be called for a non-pending reservation")
 			return nil
 		},

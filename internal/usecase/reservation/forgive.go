@@ -101,12 +101,13 @@ func (uc *ForgiveReservationUseCase) Execute(ctx context.Context, input ForgiveR
 }
 
 func (uc *ForgiveReservationUseCase) runInTx(ctx context.Context, input ForgiveReservationInput) (*domain.Reservation, bool, error) {
-	// 1. Load the reservation row. The downstream status precondition
-	// (Forgive -> only CANCELLED_LATE) prevents double-forgive even
-	// without FOR UPDATE: the second concurrent admin sees
-	// StatusForgiven and is rejected by the precondition. We mirror
-	// RejectPendingReservationUseCase which uses the same pattern.
-	reservation, err := uc.reservationRepo.GetByID(ctx, input.ReservationID())
+	// 1. Load the reservation row with FOR UPDATE. Two concurrent
+	// admin forgives would otherwise both read the row as
+	// CANCELLED_LATE before either commits, both pass the
+	// precondition in step 2, both RefundSession the pass, and
+	// both write FORGIVEN — a silent double-refund. The lock plus
+	// the SQL guard in step 4 closes that race.
+	reservation, err := uc.reservationRepo.GetByIDForUpdate(ctx, input.ReservationID())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, false, ErrNotFound
@@ -116,6 +117,9 @@ func (uc *ForgiveReservationUseCase) runInTx(ctx context.Context, input ForgiveR
 	if reservation == nil {
 		return nil, false, ErrNotFound
 	}
+
+	// Capture the status snapshot before the in-memory transition.
+	originalStatus := reservation.Status()
 
 	// 2. Pre-condition: only CANCELLED_LATE can be forgiven. The
 	// domain-level check is authoritative; we map its error to the
@@ -138,18 +142,29 @@ func (uc *ForgiveReservationUseCase) runInTx(ctx context.Context, input ForgiveR
 		// reservation. Surfaces refunded=false on the wire so the
 		// admin can investigate.
 	} else if pass != nil && pass.CanRefund() {
+		// Snapshot the pass updated_at before mutating. Same
+		// rationale as in CancelReservationUseCase: the field is
+		// bumped only by the DB trigger on UPDATE, so reading it
+		// here gives us the value to compare against in step 4.
+		passUpdatedAt := pass.UpdatedAt()
+
 		reason := fmt.Sprintf("Reservation %d forgiven by admin", reservation.ID())
 		if _, err := pass.RefundSession(reason, input.Now()); err != nil {
 			return nil, false, fmt.Errorf("refund pass %d: %w", reservation.PassID(), err)
 		}
-		if err := uc.passRepo.Update(ctx, pass); err != nil {
+		if err := uc.passRepo.Update(ctx, pass, passUpdatedAt); err != nil {
 			return nil, false, fmt.Errorf("update pass %d: %w", reservation.PassID(), err)
 		}
 		refunded = true
 	}
 
-	// 4. Persist the new reservation status.
-	if err := uc.reservationRepo.Update(ctx, reservation); err != nil {
+	// 4. Persist the new reservation status. originalStatus guard
+	// rejects a concurrent transition (e.g. a second forgive that
+	// committed between our load and our UPDATE).
+	if err := uc.reservationRepo.Update(ctx, reservation, originalStatus); err != nil {
+		if errors.Is(err, domain.ErrReservationStateChanged) {
+			return nil, false, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
+		}
 		return nil, false, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
 	}
 

@@ -103,21 +103,36 @@ func (repo *PassRepository) GetByIDForUpdate(ctx context.Context, id int) (*doma
 // the pending movements are cleared, making a repeated Update
 // idempotent with respect to the audit log.
 //
+// `expectedUpdatedAt` is an optimistic-lock guard: the row's
+// `updated_at` column must equal this value at write time. When
+// the timestamp has drifted (because another caller mutated the
+// pass between our read and our write — parallel cancel, double
+// admin edit, etc.), RowsAffected is 0 and we return
+// ErrPassStateChanged. The use case captures the snapshot right
+// after the initial GetByID and passes it unchanged.
+//
+// For brand-new passes written via Create, pass time.Time{}
+// (zero). A row that hasn't been UPDATEd yet has the column value
+// set by the DEFAULT NOW() clause on insert, so it will never
+// equal the zero time — but Create does not call Update, so this
+// edge is theoretical. In practice every caller of Update holds a
+// previously-loaded snapshot.
+//
 // If a transaction is already in flight on ctx (the reservation use
 // cases always wrap their work in one), WithinTx joins it instead of
 // opening a nested one, so the whole booking stays atomic.
-func (repo *PassRepository) Update(ctx context.Context, pass *domain.Pass) error {
+func (repo *PassRepository) Update(ctx context.Context, pass *domain.Pass, expectedUpdatedAt time.Time) error {
 	return NewTransactor(repo.db).WithinTx(ctx, func(txCtx context.Context) error {
 		const query = `
 			UPDATE passes
 			SET num_of_sessions = $1, remaining_sessions = $2, price = $3,
 			    pass_type = $4, expires_at = $5, is_paid = $6
-			WHERE id = $7
+			WHERE id = $7 AND updated_at = $8
 		`
 		queryResult, err := runner(txCtx, repo.db).ExecContext(txCtx, query,
 			pass.NumOfSessions(), pass.RemainingSessions(), pass.Price(),
 			string(pass.Type()), nullTimePtr(pass.ExpiresAt()), pass.IsPaid(),
-			pass.ID(),
+			pass.ID(), expectedUpdatedAt,
 		)
 		if err != nil {
 			return fmt.Errorf("update pass: %w", err)
@@ -127,7 +142,10 @@ func (repo *PassRepository) Update(ctx context.Context, pass *domain.Pass) error
 			return fmt.Errorf("update pass: rows affected: %w", err)
 		}
 		if rowsAffected == 0 {
-			return ErrPassNotFound
+			// Either the row vanished or its updated_at drifted.
+			// Disambiguate via a follow-up read so callers can
+			// distinguish "not found" from "concurrent modification".
+			return repo.classifyUpdateMiss(txCtx, pass.ID(), expectedUpdatedAt)
 		}
 
 		for _, movement := range pass.PendingMovements() {
@@ -138,6 +156,30 @@ func (repo *PassRepository) Update(ctx context.Context, pass *domain.Pass) error
 		pass.ClearPendingMovements()
 		return nil
 	})
+}
+
+// classifyUpdateMiss mirrors the same logic in
+// ReservationRepository: after an Update returned 0 rowsAffected,
+// we run a single existence check to distinguish "row vanished"
+// from "row drifted". A zero-value expectedUpdatedAt means the
+// caller skipped the guard (e.g. Create path); in that case the
+// caller passed in a row that never existed, and we return
+// ErrPassNotFound.
+func (repo *PassRepository) classifyUpdateMiss(ctx context.Context, id int, expectedUpdatedAt time.Time) error {
+	if expectedUpdatedAt.IsZero() {
+		return ErrPassNotFound
+	}
+	var exists int
+	err := runner(ctx, repo.db).QueryRowContext(ctx,
+		`SELECT 1 FROM passes WHERE id = $1`, id,
+	).Scan(&exists)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrPassNotFound
+		}
+		return fmt.Errorf("classify pass update miss: %w", err)
+	}
+	return domain.ErrPassStateChanged
 }
 
 // ListAll returns a paginated list of all passes in the system,

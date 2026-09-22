@@ -2,6 +2,7 @@ package pass
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"dogpaw/internal/domain"
@@ -71,7 +72,15 @@ func (uc *SetPassPaidUseCase) Execute(ctx context.Context, input SetPassPaidInpu
 		return SetPassPaidOutput{}, err
 	}
 
-	if err := uc.repo.Update(ctx, pass); err != nil {
+	// Snapshot the pass updated_at for the SQL guard. ApplyPatch
+	// does not touch updatedAt, so this value is unchanged from
+	// the initial GetByID.
+	passUpdatedAt := pass.UpdatedAt()
+
+	if err := uc.repo.Update(ctx, pass, passUpdatedAt); err != nil {
+		if errors.Is(err, domain.ErrPassStateChanged) {
+			return SetPassPaidOutput{}, fmt.Errorf("update pass %d: %w", input.ID(), err)
+		}
 		return SetPassPaidOutput{}, fmt.Errorf("update pass %d: %w", input.ID(), err)
 	}
 

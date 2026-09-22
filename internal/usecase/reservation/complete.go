@@ -111,8 +111,10 @@ func (uc *CompleteReservationUseCase) Execute(ctx context.Context, input Complet
 }
 
 func (uc *CompleteReservationUseCase) runInTx(ctx context.Context, input CompleteReservationInput, now time.Time) (*domain.Reservation, error) {
-	// 1. Load reservation.
-	reservation, err := uc.reservationRepo.GetByID(ctx, input.ReservationID())
+	// 1. Load reservation. FOR UPDATE serializes a double-click on
+	// "Complete" — both reads would otherwise pass the IsCompleted
+	// check independently.
+	reservation, err := uc.reservationRepo.GetByIDForUpdate(ctx, input.ReservationID())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrInvalidReservation
@@ -164,6 +166,9 @@ func (uc *CompleteReservationUseCase) runInTx(ctx context.Context, input Complet
 		return nil, ErrInvalidDog
 	}
 
+	// Snapshot for the SQL guard.
+	originalStatus := reservation.Status()
+
 	// 5. Apply the status transition. The domain enforces
 	// StatusConfirmed; any other state returns an error. We
 	// translate that to ErrNotCompletable (409 not_completable).
@@ -173,7 +178,10 @@ func (uc *CompleteReservationUseCase) runInTx(ctx context.Context, input Complet
 
 	// 6. Persist the new status. No pass refund: the session was
 	// consumed at registration and the activity has been delivered.
-	if err := uc.reservationRepo.Update(ctx, reservation); err != nil {
+	if err := uc.reservationRepo.Update(ctx, reservation, originalStatus); err != nil {
+		if errors.Is(err, domain.ErrReservationStateChanged) {
+			return nil, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
+		}
 		return nil, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
 	}
 

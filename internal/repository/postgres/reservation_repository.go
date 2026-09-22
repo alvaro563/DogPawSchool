@@ -97,17 +97,58 @@ func (repo *ReservationRepository) GetByID(ctx context.Context, id int) (*domain
 	return reservation, nil
 }
 
-// Update writes the mutable fields of a reservation. The only field
-// that changes over a reservation's lifetime is its status (e.g.,
-// Confirmed → CancelledLate → Forgiven), so this update is narrow on
-// purpose. Returns ErrReservationNotFound if no row matches.
-func (repo *ReservationRepository) Update(ctx context.Context, reservation *domain.Reservation) error {
+// GetByIDForUpdate fetches a single reservation by id and locks the
+// row with FOR UPDATE until the transaction commits. Returns
+// ErrReservationNotFound when no row matches.
+//
+// Callers that intend to transition the reservation's status MUST
+// use this method instead of GetByID to prevent concurrent state
+// transitions (e.g. double-click on cancel, parallel confirm +
+// reject). The lock is released at the end of the surrounding
+// transaction; if the caller is NOT inside one, the lock has no
+// scope and the call behaves like GetByID.
+func (repo *ReservationRepository) GetByIDForUpdate(ctx context.Context, id int) (*domain.Reservation, error) {
+	query := reservationSelectClause + ` WHERE id = $1 FOR UPDATE`
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, id)
+	reservation, err := scanReservation(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrReservationNotFound
+		}
+		return nil, err
+	}
+	return reservation, nil
+}
+
+// Update writes the reservation's new status AND enforces the
+// expected current status as a SQL guard. The WHERE clause pins the
+// row's status to `expectedStatus` so a concurrent state transition
+// (cancel-then-forgive, confirm-then-reject, double-click on cancel,
+// etc.) makes RowsAffected return 0; we then surface
+// domain.ErrReservationStateChanged instead of silently overwriting
+// the other caller's transition.
+//
+// Callers MUST capture the status they observed at read time and
+// pass it unchanged here — typically:
+//
+//	originalStatus := reservation.Status()
+//	// ... mutate in memory ...
+//	if err := reservationRepo.Update(ctx, reservation, originalStatus); err != nil {
+//	    return ErrReservationStateChanged (or wrap and re-raise)
+//	}
+//
+// The only field that changes over a reservation's lifetime is its
+// status (e.g., Confirmed → CancelledLate → Forgiven), so this
+// update is narrow on purpose.
+func (repo *ReservationRepository) Update(ctx context.Context, reservation *domain.Reservation, expectedStatus domain.ReservationStatus) error {
 	const query = `
 		UPDATE reservations
 		SET status = $1
-		WHERE id = $2
+		WHERE id = $2 AND status = $3
 	`
-	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, string(reservation.Status()), reservation.ID())
+	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query,
+		string(reservation.Status()), reservation.ID(), string(expectedStatus),
+	)
 	if err != nil {
 		return fmt.Errorf("update reservation: %w", err)
 	}
@@ -116,9 +157,36 @@ func (repo *ReservationRepository) Update(ctx context.Context, reservation *doma
 		return fmt.Errorf("update reservation: rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return ErrReservationNotFound
+		// Either the row no longer exists or its status has drifted
+		// from `expectedStatus`. Disambiguate with a follow-up read:
+		// - missing row → ErrReservationNotFound (the original
+		//   contract).
+		// - status drifted → ErrReservationStateChanged (the new
+		//   contract; another caller won the state-transition race).
+		return repo.classifyUpdateMiss(ctx, reservation.ID(), expectedStatus)
 	}
 	return nil
+}
+
+// classifyUpdateMiss runs a single-row existence + status check after
+// an Update returned 0 rowsAffected. It lets the caller distinguish
+// "row vanished" from "status drifted" without leaking the
+// rowsAffected == 0 ambiguity to every use case.
+//
+// The cost is a second round-trip on the unhappy path only. The
+// happy path (rowsAffected == 1) never reaches here.
+func (repo *ReservationRepository) classifyUpdateMiss(ctx context.Context, id int, expectedStatus domain.ReservationStatus) error {
+	var status string
+	err := runner(ctx, repo.db).QueryRowContext(ctx,
+		`SELECT status FROM reservations WHERE id = $1`, id,
+	).Scan(&status)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrReservationNotFound
+		}
+		return fmt.Errorf("classify reservation update miss: %w", err)
+	}
+	return domain.ErrReservationStateChanged
 }
 
 // ListByActivity returns every reservation for the given activity,

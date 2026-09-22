@@ -113,7 +113,7 @@ func TestRegisterReservationUseCase_Success(t *testing.T) {
 			assert.Equal(t, 30, id)
 			return pass, nil
 		},
-		update: func(_ context.Context, p *domain.Pass) error {
+		update: func(_ context.Context, p *domain.Pass, _ time.Time) error {
 			assert.Equal(t, 4, p.RemainingSessions(), "pass should be decremented by 1")
 			return nil
 		},
@@ -446,7 +446,7 @@ func TestRegisterReservationUseCase_TransactorRollsBackOnRepoError(t *testing.T)
 		getByID: func(context.Context, int) (*domain.Pass, error) {
 			return pass, nil
 		},
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			return errors.New("add pass movement: movement insert failed")
 		},
 	}
@@ -558,7 +558,7 @@ func TestRegisterReservationUseCase_AbsoluteConflictBlocks(t *testing.T) {
 		return 0, nil
 	}
 	var passUpdated bool
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}
@@ -583,7 +583,7 @@ func TestRegisterReservationUseCase_MediumConflictCreatesPending(t *testing.T) {
 		return 99, nil
 	}
 	var passUpdated bool
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}
@@ -697,7 +697,7 @@ func TestRegisterReservationUseCase_ActivityClosedBlocksBooking(t *testing.T) {
 	// Guard rails: the pass must NOT have been decremented and the
 	// reservation must NOT have been written.
 	var passUpdated, reservationCreated bool
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}
@@ -744,7 +744,7 @@ func TestRegisterReservationUseCase_IndividualClassForeignDogBlocked(t *testing.
 		},
 	}
 	var passUpdated, reservationCreated bool
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}
@@ -830,7 +830,7 @@ func TestRegisterReservationUseCase_InactiveDogBlocked(t *testing.T) {
 		},
 	}
 	var passUpdated, reservationCreated bool
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}
@@ -904,7 +904,7 @@ func TestRegisterReservationUseCase_SexNeutered_IntactVsIntact_Blocks(t *testing
 		createCalled = true
 		return 0, nil
 	}
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}
@@ -1187,7 +1187,7 @@ func TestRegisterReservationUseCase_AdminOverrideBypassesSizeMismatch(t *testing
 		getByID: func(_ context.Context, id int) (*domain.Pass, error) {
 			return validPass(30, userID, 5), nil
 		},
-		update: func(_ context.Context, _ *domain.Pass) error { return nil },
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error { return nil },
 	}
 	reservationRepo := &mockReservationRepository{
 		listByActivity: func(_ context.Context, _ int) ([]*domain.Reservation, error) {
@@ -1221,7 +1221,7 @@ func TestRegisterReservationUseCase_BidirectionalConflict(t *testing.T) {
 		capturedStatus = r.Status()
 		return 99, nil
 	}
-	passRepo.update = func(context.Context, *domain.Pass) error { return nil }
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error { return nil }
 
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
 	output, err := uc.Execute(context.Background(), validRegisterInput())
@@ -1247,7 +1247,7 @@ func TestRegisterReservationUseCase_MixedSeverityAbsoluteWins(t *testing.T) {
 		t.Fatal("reservation Create must not be called on ABSOLUTA conflict")
 		return 0, nil
 	}
-	passRepo.update = func(context.Context, *domain.Pass) error { return nil }
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error { return nil }
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
 	_, err := uc.Execute(context.Background(), validRegisterInput())
 	require.Error(t, err)
@@ -1263,7 +1263,7 @@ func TestRegisterReservationUseCase_GetByIDsErrorWrapped(t *testing.T) {
 	dogRepo.getByIDs = func(context.Context, []int) ([]*domain.Dog, error) {
 		return nil, errors.New("db connection lost")
 	}
-	passRepo.update = func(context.Context, *domain.Pass) error { return nil }
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error { return nil }
 	uc := newRegisterUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
 	_, err := uc.Execute(context.Background(), validRegisterInput())
 	require.Error(t, err)

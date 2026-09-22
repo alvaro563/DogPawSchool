@@ -2116,6 +2116,51 @@ func TestReservationForgive_NotLateCancelledReturns409(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"error":"not_late_cancelled"`)
 }
 
+// TestReservationCancel_StateChangedReturns409 pins the wire code
+// for the new SQL guard. The cancel use case wraps
+// domain.ErrReservationStateChanged; the handler surfaces it as
+// 409 reservation_state_changed. The client is expected to refetch
+// the reservation and decide whether to retry.
+func TestReservationCancel_StateChangedReturns409(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationCanceler{
+		fn: func(context.Context, reservationuc.CancelReservationInput) (reservationuc.CancelReservationOutput, error) {
+			return reservationuc.CancelReservationOutput{}, domain.ErrReservationStateChanged
+		},
+	}
+	h := newReservationHandlerCancel(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/users/1/reservations/99/cancel", "", withUserID(1))
+	c.Params = gin.Params{{Key: "user_id", Value: "1"}, {Key: "id", Value: "99"}}
+
+	h.Cancel(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"reservation_state_changed"`)
+}
+
+// TestReservationForgive_PassStateChangedReturns409 verifies that
+// the pass-level optimistic-lock guard surfaces as the dedicated
+// wire code, distinct from the reservation-level one. Both come
+// back as 409 (state conflict) but the wire error lets the client
+// tell the user "the pass was modified" vs "the reservation was
+// modified".
+func TestReservationForgive_PassStateChangedReturns409(t *testing.T) {
+	t.Parallel()
+	stub := &stubReservationForgiver{
+		fn: func(context.Context, reservationuc.ForgiveReservationInput) (reservationuc.ForgiveReservationOutput, error) {
+			return reservationuc.ForgiveReservationOutput{}, domain.ErrPassStateChanged
+		},
+	}
+	h := newReservationHandlerForgive(stub)
+	c, w := setupAuthCtx(http.MethodPost, "/api/v1/reservations/99/forgive", "", withUserID(1))
+	c.Params = gin.Params{{Key: "id", Value: "99"}}
+
+	h.Forgive(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"pass_state_changed"`)
+}
+
 // TestReservationForgive_InvalidIDReturns400 covers the input-
 // validation branch: non-numeric / zero / negative reservation_id.
 func TestReservationForgive_InvalidIDReturns400(t *testing.T) {

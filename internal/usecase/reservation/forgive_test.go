@@ -87,13 +87,13 @@ func TestForgiveReservationUseCase_Success(t *testing.T) {
 
 	_, resRepo, passRepo := forgiveFlowStubs(reservation, pass)
 	var passUpdated bool
-	passRepo.update = func(_ context.Context, p *domain.Pass) error {
+	passRepo.update = func(_ context.Context, p *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		assert.Equal(t, 6, p.RemainingSessions(), "session must be refunded (5 -> 6)")
 		return nil
 	}
 	var resUpdated bool
-	resRepo.update = func(_ context.Context, r *domain.Reservation) error {
+	resRepo.update = func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 		resUpdated = true
 		assert.Equal(t, domain.StatusForgiven, r.Status())
 		return nil
@@ -117,7 +117,7 @@ func TestForgiveReservationUseCase_RefundsEvenAfterInsufficientBalance(t *testin
 
 	_, resRepo, passRepo := forgiveFlowStubs(reservation, pass)
 	var passUpdateCalls int
-	passRepo.update = func(_ context.Context, p *domain.Pass) error {
+	passRepo.update = func(_ context.Context, p *domain.Pass, _ time.Time) error {
 		passUpdateCalls++
 		return nil
 	}
@@ -156,7 +156,7 @@ func TestForgiveReservationUseCase_NotLateCancelled_TableDriven(t *testing.T) {
 		getByID: func(_ context.Context, id int) (*domain.Pass, error) {
 			return pass, nil
 		},
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			passUpdated = true
 			return nil
 		},
@@ -233,7 +233,7 @@ func TestForgiveReservationUseCase_TransactorRollsBackOnMovementFailure(t *testi
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error { return errors.New("update failed") },
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error { return errors.New("update failed") },
 	}
 	// Replace the default stub transactor with one that simply runs
 	// the closure and surfaces any error it returns (no real DB).

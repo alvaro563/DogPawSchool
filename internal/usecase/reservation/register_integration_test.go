@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1050,7 +1051,7 @@ func TestForgiveIntegration_SuccessRefundsPass(t *testing.T) {
 	require.NoError(t, err)
 	_, err = loaded.ConsumeSession("test-consume", now)
 	require.NoError(t, err)
-	require.NoError(t, passRepo.Update(context.Background(), loaded))
+	require.NoError(t, passRepo.Update(context.Background(), loaded, loaded.UpdatedAt()))
 	gotPass, err := passRepo.GetByID(context.Background(), pass.ID())
 	require.NoError(t, err)
 	require.Equal(t, 9, gotPass.RemainingSessions(), "precondition: 1 session consumed by the original booking")
@@ -1342,4 +1343,148 @@ func TestRegisterReservationUseCase_Integration_ActivityClosedBlocked(t *testing
 	persistedPass, err := postgres.NewPassRepository(testDB).GetByID(context.Background(), pass.ID())
 	require.NoError(t, err)
 	assert.Equal(t, 10, persistedPass.RemainingSessions())
+}
+
+// ── Concurrency: SQL guard regressions against real Postgres ─────
+//
+// These tests run against the testcontainers Postgres in TestMain.
+// They exercise the new optimistic-lock + status-guard pair against
+// real DB round-trips, where the race actually manifests. Mocks
+// can't reproduce this because they don't model MVCC + FOR UPDATE
+// semantics.
+
+// TestCancelReservation_Integration_ConcurrentDoubleCancelDoesNotDoubleRefund
+// is the regression test for the original bug: a double-click on
+// "Cancel" must NOT refund the pass twice. The flow:
+//
+//  1. Seed a CONFIRMED reservation R with pass P (5 sessions).
+//  2. Launch two goroutines that both run cancelUC.Execute(R).
+//  3. Wait for both. Exactly ONE must succeed; the other must
+//     surface ErrAlreadyCancelled OR
+//     domain.ErrReservationStateChanged.
+//  4. The pass must be refunded exactly ONCE (5 → 6, not 7).
+//  5. The pass_movements audit table must have exactly one row
+//     with amount=+1 for this reservation.
+func TestCancelReservation_Integration_ConcurrentDoubleCancelDoesNotDoubleRefund(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "double-cancel-owner@test.com")
+	activity := seedIntegrationActivity(t, 5, now.Add(48*time.Hour))
+	dog := seedIntegrationDog(t, user.ID(), "Luna", nil, nil)
+	pass := seedIntegrationPass(t, user.ID(), 5)
+	// The seeded reservation "consumed" one session — drop the
+	// pass to 4/5 so the cancel has something to refund. The
+	// expected post-state is 5/5 (one refund, not two).
+	passRepo := postgres.NewPassRepository(testDB)
+	loadedPass, err := passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	_, err = loadedPass.ConsumeSession("seeded-reservation", now)
+	require.NoError(t, err)
+	require.NoError(t, passRepo.Update(context.Background(), loadedPass, loadedPass.UpdatedAt()))
+	reservation := seedIntegrationReservation(t, activity.ID(), dog.ID(), pass.ID(), domain.StatusConfirmed, now)
+
+	cancelUC := newIntegrationCancelUC()
+
+	var wg sync.WaitGroup
+	results := make([]error, 2)
+	start := make(chan struct{})
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			_, err := cancelUC.Execute(context.Background(), MustNewCancelReservationInput(user.ID(), reservation.ID(), func() time.Time { return now }))
+			results[idx] = err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	t.Logf("cancel result 0: %v (isNil=%v)", results[0], results[0] == nil)
+
+	// At least one must succeed.
+	successes := 0
+	for i, e := range results {
+		t.Logf("loop iter %d: e=%v isNil=%v", i, e, e == nil)
+		if e == nil {
+			successes++
+		}
+	}
+	assert.Equal(t, 1, successes,
+		"exactly one cancel must succeed (results[0]: %v, results[1]: %v)", results[0], results[1])
+
+	// The other must be a state-conflict (ErrAlreadyCancelled from the
+	// in-memory IsConfirmed check, OR ErrReservationStateChanged from
+	// the SQL guard — both are correct rejections of the second
+	// cancel).
+	for _, e := range results {
+		if e == nil {
+			continue
+		}
+		assert.True(t,
+			errors.Is(e, ErrAlreadyCancelled) || errors.Is(e, domain.ErrReservationStateChanged),
+			"second cancel must reject via ErrAlreadyCancelled or ErrReservationStateChanged, got %v", e)
+	}
+
+	// Pass refunded exactly once: remaining goes from 5 to 6, not 7.
+	persistedPass, err := passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 5, persistedPass.RemainingSessions(),
+		"pass must be refunded exactly once (4 -> 5, not 6)")
+
+	// Audit table has exactly one refund movement for this pass
+	// since the test start. Direct DB query — there is no
+	// repository method for listing movements by pass_id at the
+	// use case layer, so we go through the underlying DB.
+	var movementCount int
+	require.NoError(t,
+		testDB.QueryRow(
+			`SELECT COUNT(*) FROM pass_movements WHERE pass_id = $1 AND amount = 1`,
+			pass.ID(),
+		).Scan(&movementCount))
+	assert.Equal(t, 1, movementCount,
+		"pass_movements must contain exactly one refund entry, got %d", movementCount)
+}
+
+// TestPassUpdate_Integration_StateGuardRejectsConcurrent verifies
+// the optimistic-lock guard at the pass layer: a write against a
+// stale UpdatedAt snapshot surfaces ErrPassStateChanged. The two
+// goroutines load the same pass, both call Update with the same
+// (now-stale) UpdatedAt — the second one to commit sees a drift and
+// rolls back the transaction (the classify miss returns
+// ErrPassStateChanged).
+func TestPassUpdate_Integration_StateGuardRejectsConcurrent(t *testing.T) {
+	cleanTables(t, testDB)
+
+	now := integrationNow
+	user := seedIntegrationUser(t, "pass-guard-owner@test.com")
+	pass := seedIntegrationPass(t, user.ID(), 5)
+
+	passRepo := postgres.NewPassRepository(testDB)
+
+	// Both goroutines read the pass and capture the same UpdatedAt.
+	loaded1, err := passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	snapshot := loaded1.UpdatedAt()
+
+	// Goroutine A: mutate + write using the snapshot.
+	loaded1.ConsumeSession("goroutine A", now)
+	require.NoError(t, passRepo.Update(context.Background(), loaded1, snapshot))
+
+	// Goroutine B: still holds the stale snapshot. The Update must
+	// fail because the DB's updated_at has been bumped by goroutine
+	// A's commit.
+	loaded2, err := passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	loaded2.ConsumeSession("goroutine B", now)
+	err = passRepo.Update(context.Background(), loaded2, snapshot)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrPassStateChanged),
+		"stale-snapshot update must surface ErrPassStateChanged, got %v", err)
+
+	// Pass counter reflects only goroutine A's mutation (5 -> 4).
+	persistedPass, err := passRepo.GetByID(context.Background(), pass.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 4, persistedPass.RemainingSessions())
 }

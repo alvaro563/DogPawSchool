@@ -2,10 +2,12 @@ package pass
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"dogpaw/internal/domain"
 )
@@ -23,7 +25,7 @@ func TestModifyPassUseCase_Success_AppliesAllFields(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return original, nil
 		},
-		update: func(ctx context.Context, pass *domain.Pass) error {
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
 			saved = pass
 			return nil
 		},
@@ -56,7 +58,7 @@ func TestModifyPassUseCase_Success_EmptyPatchIsNoOp(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return original, nil
 		},
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			t.Fatal("update should not be called on empty patch")
 			return nil
 		},
@@ -75,7 +77,7 @@ func TestModifyPassUseCase_NotFound(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return nil, nil
 		},
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			t.Fatal("update should not be called when pass is missing")
 			return nil
 		},
@@ -101,7 +103,7 @@ func TestModifyPassUseCase_PatchValidationErrors(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return original, nil
 		},
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			t.Fatal("update should not be called on patch validation error")
 			return nil
 		},
@@ -142,7 +144,7 @@ func TestModifyPassUseCase_NonEditableFieldsUnchanged(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return original, nil
 		},
-		update: func(ctx context.Context, pass *domain.Pass) error {
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
 			return nil
 		},
 	}
@@ -181,7 +183,7 @@ func TestModifyPassUseCase_RepoError_OnUpdate(t *testing.T) {
 		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
 			return newTestPass(1), nil
 		},
-		update: func(ctx context.Context, pass *domain.Pass) error {
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
 			return sentinelErr
 		},
 	}
@@ -192,4 +194,30 @@ func TestModifyPassUseCase_RepoError_OnUpdate(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
 	assert.Contains(t, err.Error(), "update pass 1")
+}
+
+// TestModifyPassUseCase_PassStateChangedWrapsAndSurfaces verifies
+// that when the optimistic-lock guard on the pass row fires
+// (concurrent admin modify / set_paid / cancel between our read and
+// our write), the use case wraps the sentinel so the handler layer
+// can match it via errors.Is. The wrap is
+// `fmt.Errorf("update pass %d: %w", id, err)` — the `%w` keeps the
+// sentinel chain intact.
+func TestModifyPassUseCase_PassStateChangedWrapsAndSurfaces(t *testing.T) {
+	t.Parallel()
+	repo := &mockPassRepository{
+		getByID: func(ctx context.Context, id int) (*domain.Pass, error) {
+			return newTestPass(1), nil
+		},
+		update: func(ctx context.Context, pass *domain.Pass, _ time.Time) error {
+			return domain.ErrPassStateChanged
+		},
+	}
+	uc := NewModifyPassUseCase(repo)
+	newPrice := 200
+	in := MustNewModifyPassInput(1, domain.PassPatch{Price: &newPrice})
+	_, err := uc.Execute(context.Background(), in)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrPassStateChanged),
+		"modify must wrap ErrPassStateChanged so writeError can match it via errors.Is")
 }

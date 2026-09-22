@@ -358,8 +358,16 @@ func (uc *RegisterReservationUseCase) runInTx(ctx context.Context, input Registe
 		return 0, domain.StatusConfirmed, nil, fmt.Errorf("consume pass %d: %w", input.PassID(), err)
 	}
 
-	// 6. Persist the pass: counter + audit row, atomically.
-	if err := uc.passRepo.Update(ctx, pass); err != nil {
+	// 6. Persist the pass: counter + audit row, atomically. The
+	// FOR UPDATE above already serialises concurrent consumers,
+	// but we still pass pass.UpdatedAt() as the optimistic-lock
+	// guard so the SQL layer refuses to overwrite a concurrent
+	// modification by an admin path (modify/set_paid) that took a
+	// different lock.
+	if err := uc.passRepo.Update(ctx, pass, pass.UpdatedAt()); err != nil {
+		if errors.Is(err, domain.ErrPassStateChanged) {
+			return 0, domain.StatusConfirmed, nil, fmt.Errorf("update pass %d: %w", input.PassID(), err)
+		}
 		return 0, domain.StatusConfirmed, nil, fmt.Errorf("update pass %d: %w", input.PassID(), err)
 	}
 

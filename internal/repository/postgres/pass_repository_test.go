@@ -58,7 +58,7 @@ func TestPassRepository_UpdateWithMovement(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, movement)
 
-	err = repo.Update(context.Background(), pass)
+	err = repo.Update(context.Background(), pass, pass.UpdatedAt())
 	require.NoError(t, err)
 
 	got, err := repo.GetByID(context.Background(), pass.ID())
@@ -158,7 +158,7 @@ func TestConcurrency_PassSession(t *testing.T) {
 				if _, err := p.ConsumeSession("concurrent test", now); err != nil {
 					return fmt.Errorf("consume session: %w", err)
 				}
-				return passRepo.Update(txCtx, p)
+				return passRepo.Update(txCtx, p, p.UpdatedAt())
 			})
 			if errors.Is(err, errPassExhausted) {
 				failures.Add(1)

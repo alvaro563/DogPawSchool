@@ -136,8 +136,13 @@ func (uc *CancelReservationUseCase) Execute(ctx context.Context, input CancelRes
 }
 
 func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelReservationInput, now time.Time) (*domain.Reservation, error) {
-	// 1. Reservation must exist.
-	reservation, err := uc.reservationRepo.GetByID(ctx, input.ReservationID())
+	// 1. Reservation must exist. We use FOR UPDATE so a concurrent
+	// cancel-then-cancel sequence serializes on this row: the second
+	// cancel waits for the first to commit, then sees the new
+	// status (CANCELLED_IN_TIME / LATE) and is rejected by the SQL
+	// guard in step 8. Without the lock, both cancels read the
+	// status as CONFIRMED concurrently and both proceed to refund.
+	reservation, err := uc.reservationRepo.GetByIDForUpdate(ctx, input.ReservationID())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrInvalidReservation
@@ -152,6 +157,11 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 	if !reservation.IsConfirmed() {
 		return nil, ErrAlreadyCancelled
 	}
+
+	// Capture the status we just read. This is the snapshot we will
+	// pass to Update so the SQL guard can detect a concurrent
+	// transition that races past the in-memory check.
+	originalStatus := reservation.Status()
 
 	// 3. Activity: needed for cancellation window + the "no cancel
 	// after the fact" guard.
@@ -187,8 +197,13 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 		return nil, ErrInvalidDog
 	}
 
-	// 5. Pass ownership.
-	pass, err := uc.passRepo.GetByID(ctx, reservation.PassID())
+	// 5. Pass ownership. FOR UPDATE on the pass row serializes
+	// against concurrent register/forgive/reject flows that also
+	// need the row lock; without it, two parallel cancel/refund
+	// flows can read the same pass.RemainingSessions() and both
+	// RefundSession + Update, producing a double-refund or a
+	// counter/audit-log drift.
+	pass, err := uc.passRepo.GetByIDForUpdate(ctx, reservation.PassID())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrInvalidPass
@@ -201,6 +216,15 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 	if !input.AdminOverride() && pass.UserID() != input.UserID() {
 		return nil, ErrInvalidPass
 	}
+
+	// Snapshot the pass row's updated_at right after the FOR UPDATE
+	// read. ConsumeSession/RefundSession do NOT touch this field;
+	// it is bumped only by the DB trigger on UPDATE. The value we
+	// hold now is the only correct snapshot — if we took it after
+	// RefundSession the in-memory value would still be the same
+	// (the trigger hasn't fired yet), so the read order doesn't
+	// matter, but the explicit comment makes the contract obvious.
+	passUpdatedAt := pass.UpdatedAt()
 
 	// 6. Apply the status change. The domain decides in-time vs
 	// late.
@@ -218,13 +242,20 @@ func (uc *CancelReservationUseCase) runInTx(ctx context.Context, input CancelRes
 		if _, err := pass.RefundSession(reason, now); err != nil {
 			return nil, fmt.Errorf("refund pass %d: %w", reservation.PassID(), err)
 		}
-		if err := uc.passRepo.Update(ctx, pass); err != nil {
+		if err := uc.passRepo.Update(ctx, pass, passUpdatedAt); err != nil {
 			return nil, fmt.Errorf("update pass %d: %w", reservation.PassID(), err)
 		}
 	}
 
-	// 8. Persist the status change.
-	if err := uc.reservationRepo.Update(ctx, reservation); err != nil {
+	// 8. Persist the status change. The originalStatus guard
+	// prevents a concurrent transition (e.g. confirm+reject race,
+	// second cancel) from silently overwriting this write.
+	if err := uc.reservationRepo.Update(ctx, reservation, originalStatus); err != nil {
+		if errors.Is(err, domain.ErrReservationStateChanged) {
+			// Wrap so the handler can still match the sentinel via
+			// errors.Is while the log carries the reservation id.
+			return nil, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
+		}
 		return nil, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
 	}
 

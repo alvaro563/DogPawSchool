@@ -107,7 +107,7 @@ func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(_ context.Context, id int) (*domain.Pass, error) { return pass, nil },
-		update: func(_ context.Context, p *domain.Pass) error {
+		update: func(_ context.Context, p *domain.Pass, _ time.Time) error {
 			assert.Equal(t, originalPassRemaining+1, p.RemainingSessions(),
 				"pass should be refunded (remaining + 1)")
 			return nil
@@ -115,9 +115,11 @@ func TestCancelReservationUseCase_SuccessInTime(t *testing.T) {
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(_ context.Context, id int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, expected domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusCancelledInTime, r.Status(),
 				"reservation should be CANCELLED_IN_TIME")
+			assert.Equal(t, domain.StatusConfirmed, expected,
+				"the SQL guard should pin the original CONFIRMED status")
 			return nil
 		},
 	}
@@ -157,14 +159,14 @@ func TestCancelReservationUseCase_SuccessLateDoesNotRefund(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Pass, error) { return pass, nil },
-		update: func(_ context.Context, _ *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			t.Fatal("pass Update should not be called for a late cancel")
 			return nil
 		},
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(_ context.Context, _ int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusCancelledLate, r.Status())
 			return nil
 		},
@@ -243,7 +245,7 @@ func TestCancelReservationUseCase_ActivityInPast(t *testing.T) {
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(context.Context, *domain.Reservation) error {
+		update: func(context.Context, *domain.Reservation, domain.ReservationStatus) error {
 			t.Fatal("reservation Update should not be called when activity is in the past")
 			return nil
 		},
@@ -365,13 +367,13 @@ func TestCancelReservationUseCase_TransactorRollsBackOnMovementFailure(t *testin
 	// Update. The reservation must not be touched afterwards.
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			return errors.New("add pass movement: movement insert failed")
 		},
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(context.Context, *domain.Reservation) error {
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error {
 			t.Fatal("reservation Update should not be called after the pass Update fails")
 			return nil
 		},
@@ -421,14 +423,14 @@ func TestCancelReservationUseCase_InTimeButPassNotRefundable(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			t.Fatal("pass Update should not be called when CanRefund() is false")
 			return nil
 		},
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusCancelledInTime, r.Status())
 			return nil
 		},
@@ -501,11 +503,11 @@ func TestCancelAdmin_SuccessInTime(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error { return nil },
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error { return nil },
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusCancelledInTime, r.Status())
 			return nil
 		},
@@ -538,14 +540,14 @@ func TestCancelAdmin_SuccessLateDoesNotRefund(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			t.Fatal("pass Update should not be called on late cancel")
 			return nil
 		},
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusCancelledLate, r.Status())
 			return nil
 		},
@@ -574,11 +576,11 @@ func TestCancelAdmin_DogOwnedByAnotherUserPasses(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error { return nil },
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error { return nil },
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(context.Context, *domain.Reservation) error { return nil },
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error { return nil },
 	}
 	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
 	_, err := uc.Execute(context.Background(), validAdminCancelInput())
@@ -601,11 +603,11 @@ func TestCancelAdmin_PassOwnedByAnotherUserPasses(t *testing.T) {
 	}
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error { return nil },
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error { return nil },
 	}
 	reservationRepo := &mockReservationRepository{
 		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
-		update: func(context.Context, *domain.Reservation) error { return nil },
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error { return nil },
 	}
 	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
 	_, err := uc.Execute(context.Background(), validAdminCancelInput())
@@ -675,4 +677,47 @@ func TestCancelAdmin_ReservationNotFound(t *testing.T) {
 	uc := newCancelUseCase(activityRepo, nil, nil, reservationRepo, nil)
 	_, err := uc.Execute(context.Background(), validAdminCancelInput())
 	assert.ErrorIs(t, err, ErrInvalidReservation)
+}
+
+// TestCancelReservationUseCase_StateGuardRejectsConcurrentCancel
+// exercises the new SQL guard path: when the reservation repo's
+// Update returns ErrReservationStateChanged (simulating a row whose
+// status was mutated by a concurrent caller between our read and our
+// write), the cancel use case must wrap the error so the handler
+// can match it via errors.Is. The same wrap shows up in forgive /
+// reject / confirm / complete / mark_no_show; cancel is the
+// representative case here.
+//
+// Without the wrap, writeError in the handler layer would not map
+// the error to 409 reservation_state_changed — it would fall through
+// to the generic 500 branch.
+func TestCancelReservationUseCase_StateGuardRejectsConcurrentCancel(t *testing.T) {
+	t.Parallel()
+	activity := farFutureActivity(10)
+	dog := validDog(20, 1)
+	pass := validPass(30, 1, 5)
+	reservation := validConfirmedReservation(99, 10, 20, 30)
+
+	activityRepo := &stubActivityRepository{
+		getByID: func(context.Context, int) (*domain.Activity, error) { return activity, nil },
+	}
+	dogRepo := &stubDogRepository{
+		getByID: func(context.Context, int) (*domain.Dog, error) { return dog, nil },
+	}
+	passRepo := &stubPassRepository{
+		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
+	}
+	reservationRepo := &mockReservationRepository{
+		getByID: func(context.Context, int) (*domain.Reservation, error) { return reservation, nil },
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error {
+			return domain.ErrReservationStateChanged
+		},
+	}
+	uc := newCancelUseCase(activityRepo, dogRepo, passRepo, reservationRepo, nil)
+	_, err := uc.Execute(context.Background(), validCancelInput())
+	require.Error(t, err)
+	// The wrap is fmt.Errorf("update reservation %d: %w", ..., err),
+	// so errors.Is must unwrap to ErrReservationStateChanged.
+	assert.True(t, errors.Is(err, domain.ErrReservationStateChanged),
+		"cancel must wrap ErrReservationStateChanged so writeError can match it via errors.Is")
 }

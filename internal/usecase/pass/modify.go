@@ -78,7 +78,15 @@ func (uc *ModifyPassUseCase) Execute(ctx context.Context, input ModifyPassInput)
 		return ModifyPassOutput{Pass: pass}, nil
 	}
 
-	if err := uc.repo.Update(ctx, pass); err != nil {
+	// Snapshot the pass updated_at right after the read. ApplyPatch
+	// does NOT touch updatedAt (it's bumped only by the DB trigger),
+	// so this is the value we compare against in the SQL guard.
+	passUpdatedAt := pass.UpdatedAt()
+
+	if err := uc.repo.Update(ctx, pass, passUpdatedAt); err != nil {
+		if errors.Is(err, domain.ErrPassStateChanged) {
+			return ModifyPassOutput{}, fmt.Errorf("update pass %d: %w", input.ID(), err)
+		}
 		return ModifyPassOutput{}, fmt.Errorf("update pass %d: %w", input.ID(), err)
 	}
 	// Re-fetch to surface the post-update updatedAt (set by the DB

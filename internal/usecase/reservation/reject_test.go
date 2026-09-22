@@ -24,7 +24,7 @@ func TestRejectPendingReservationUseCase_SuccessRefundsPass(t *testing.T) {
 			assert.Equal(t, 42, id)
 			return pending, nil
 		},
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			reservationUpdated = true
 			assert.Equal(t, domain.StatusCancelledInTime, r.Status())
 			return nil
@@ -35,7 +35,7 @@ func TestRejectPendingReservationUseCase_SuccessRefundsPass(t *testing.T) {
 			assert.Equal(t, 30, id)
 			return pass, nil
 		},
-		update: func(_ context.Context, p *domain.Pass) error {
+		update: func(_ context.Context, p *domain.Pass, _ time.Time) error {
 			passUpdated = true
 			assert.Equal(t, 5, p.RemainingSessions(), "rejecting refunds the consumed session")
 			return nil
@@ -68,7 +68,7 @@ func TestRejectPendingReservationUseCase_NotPending(t *testing.T) {
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return confirmed, nil
 		},
-		update: func(context.Context, *domain.Reservation) error {
+		update: func(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error {
 			t.Fatal("update must not be called for a non-pending reservation")
 			return nil
 		},
@@ -91,7 +91,7 @@ func TestRejectPendingReservationUseCase_MissingPassStillRejects(t *testing.T) {
 		getByID: func(context.Context, int) (*domain.Reservation, error) {
 			return pending, nil
 		},
-		update: func(_ context.Context, r *domain.Reservation) error {
+		update: func(_ context.Context, r *domain.Reservation, _ domain.ReservationStatus) error {
 			assert.Equal(t, domain.StatusCancelledInTime, r.Status())
 			return nil
 		},

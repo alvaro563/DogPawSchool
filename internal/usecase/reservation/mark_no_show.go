@@ -111,8 +111,10 @@ func (uc *MarkReservationNoShowUseCase) Execute(ctx context.Context, input MarkR
 }
 
 func (uc *MarkReservationNoShowUseCase) runInTx(ctx context.Context, input MarkReservationNoShowInput, now time.Time) (*domain.Reservation, error) {
-	// 1. Load reservation.
-	reservation, err := uc.reservationRepo.GetByID(ctx, input.ReservationID())
+	// 1. Load reservation. FOR UPDATE serializes double-click on
+	// "No-show" — both reads would otherwise pass the
+	// IsConfirmed check independently.
+	reservation, err := uc.reservationRepo.GetByIDForUpdate(ctx, input.ReservationID())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, ErrInvalidReservation
@@ -163,6 +165,9 @@ func (uc *MarkReservationNoShowUseCase) runInTx(ctx context.Context, input MarkR
 		return nil, ErrInvalidDog
 	}
 
+	// Snapshot for the SQL guard.
+	originalStatus := reservation.Status()
+
 	// 5. Apply the status transition. The domain enforces
 	// StatusConfirmed; any other state returns an error. We
 	// translate that to ErrNotCancellable (409 not_cancellable).
@@ -172,7 +177,10 @@ func (uc *MarkReservationNoShowUseCase) runInTx(ctx context.Context, input MarkR
 
 	// 6. Persist the new status. No pass refund, no pass movement:
 	// the slot is past and the session is already consumed.
-	if err := uc.reservationRepo.Update(ctx, reservation); err != nil {
+	if err := uc.reservationRepo.Update(ctx, reservation, originalStatus); err != nil {
+		if errors.Is(err, domain.ErrReservationStateChanged) {
+			return nil, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
+		}
 		return nil, fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
 	}
 

@@ -62,6 +62,10 @@ export function getReservationErrorMessage(err: ApiError, fallback: string): str
       return 'Este perro está desactivado y no puede apuntarse a actividades.';
     case 'activity_closed':
       return 'Esta actividad está cerrada y no admite más reservas.';
+    case 'reservation_state_changed':
+      return 'La reserva cambió de estado mientras se procesaba la operación. Recarga la página y vuelve a intentarlo.';
+    case 'pass_state_changed':
+      return 'El bono se modificó mientras se procesaba la operación. Recarga la página y vuelve a intentarlo.';
     case 'validation':
       if (body?.field) return `Error en ${body.field}: ${details ?? 'valor inválido'}`;
       return details ?? 'Datos inválidos.';

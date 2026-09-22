@@ -1165,6 +1165,20 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "not_late_cancelled"})
 		return
 	}
+	if errors.Is(err, domain.ErrReservationStateChanged) {
+		// 409: a concurrent caller mutated the reservation between
+		// our read and our write (double-click on cancel, parallel
+		// confirm+reject, etc.). The right client response is to
+		// refetch the reservation and decide whether to retry.
+		c.JSON(http.StatusConflict, errorResponse{Error: "reservation_state_changed"})
+		return
+	}
+	if errors.Is(err, domain.ErrPassStateChanged) {
+		// 409: a concurrent caller mutated the pass between our
+		// read and our write. Same refetch-and-retry posture.
+		c.JSON(http.StatusConflict, errorResponse{Error: "pass_state_changed"})
+		return
+	}
 	if errors.Is(err, reservationuc.ErrIndividualClassDogMismatch) {
 		// 403 (not 409): the requester has no authorization over
 		// this specific activity slot. The activity exists and is

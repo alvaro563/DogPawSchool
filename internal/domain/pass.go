@@ -321,7 +321,21 @@ type PassRepository interface {
 	// Persisting both together is deliberate: it is the only thing
 	// stopping remaining_sessions and the pass_movements audit log
 	// from drifting apart when a caller forgets one of the two.
-	Update(ctx context.Context, pass *Pass) error
+	//
+	// `expectedUpdatedAt` is an optimistic-lock guard: the row's
+	// `updated_at` column must match this value at write time. When
+	// the row's timestamp has drifted (because another caller
+	// mutated the pass between our read and our write), RowsAffected
+	// is 0 and the call returns ErrPassStateChanged. Use cases
+	// capture the snapshot right after the load and pass it
+	// unchanged. For brand-new passes with no prior read (e.g.
+	// Create flows), pass time.Time{} (zero value) to skip the
+	// guard: a zero `updated_at` column only exists on a row we just
+	// INSERTed via Create, so the check `updated_at = '0001-01-01
+	// 00:00:00+00:00'` would not match a concurrent insert unless
+	// the caller explicitly wants that. In practice Create callers
+	// never call Update — the guard is for the post-load path.
+	Update(ctx context.Context, pass *Pass, expectedUpdatedAt time.Time) error
 
 	GetByID(ctx context.Context, id int) (*Pass, error)
 	GetByIDForUpdate(ctx context.Context, id int) (*Pass, error)

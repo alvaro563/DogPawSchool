@@ -148,8 +148,11 @@ type stubResRepoForClose struct {
 func (s *stubResRepoForClose) Create(_ context.Context, _ *domain.Reservation) (int, error) {
 	return 0, nil
 }
-func (s *stubResRepoForClose) Update(_ context.Context, _ *domain.Reservation) error { return nil }
+func (s *stubResRepoForClose) Update(_ context.Context, _ *domain.Reservation, _ domain.ReservationStatus) error { return nil }
 func (s *stubResRepoForClose) GetByID(_ context.Context, _ int) (*domain.Reservation, error) {
+	return nil, nil
+}
+func (s *stubResRepoForClose) GetByIDForUpdate(_ context.Context, _ int) (*domain.Reservation, error) {
 	return nil, nil
 }
 func (s *stubResRepoForClose) ListByActivity(ctx context.Context, activityID int) ([]*domain.Reservation, error) {

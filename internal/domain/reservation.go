@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -228,8 +229,23 @@ func (reservation *Reservation) WasCancelledLate() bool {
 // HTTP endpoints.
 type ReservationRepository interface {
 	Create(ctx context.Context, reservation *Reservation) (int, error)
-	Update(ctx context.Context, reservation *Reservation) error
+
+	// Update writes the reservation's new status AND enforces the
+	// expected current status as a SQL guard. When the row's
+	// status has drifted from `expectedStatus` (because another
+	// caller mutated it between our read and our write), RowsAffected
+	// is 0 and we return ErrReservationStateChanged.
+	Update(ctx context.Context, reservation *Reservation, expectedStatus ReservationStatus) error
+
 	GetByID(ctx context.Context, id int) (*Reservation, error)
+
+	// GetByIDForUpdate fetches a single reservation and locks the
+	// row with FOR UPDATE until the transaction commits. Returns
+	// ErrReservationNotFound when no row matches. Callers that
+	// intend to transition the reservation's status MUST use this
+	// method to prevent concurrent state transitions.
+	GetByIDForUpdate(ctx context.Context, id int) (*Reservation, error)
+
 	ListByActivity(ctx context.Context, activityID int) ([]*Reservation, error)
 	ListByDog(ctx context.Context, dogID int) ([]*Reservation, error)
 	ListByPass(ctx context.Context, passID int) ([]*Reservation, error)
@@ -330,3 +346,14 @@ type ReservationRepository interface {
 	// the page-load query count at O(1) regardless of row count.
 	ListPendingReasonsByReservations(ctx context.Context, reservationIDs []int) (map[int][]PendingReason, error)
 }
+
+// ErrReservationStateChanged is returned by
+// ReservationRepository.Update when the row's current status no
+// longer matches the precondition the use case checked at read
+// time. The reservation was concurrently mutated by another caller
+// (double-click on cancel, simultaneous confirm + reject, etc.) or
+// no longer exists. The use case treats this as "someone else won
+// the race" and surfaces it to the handler, which maps to 409
+// reservation_state_changed. The right client-side response is to
+// refetch the reservation state and decide whether to retry.
+var ErrReservationStateChanged = errors.New("reservation state changed during update")

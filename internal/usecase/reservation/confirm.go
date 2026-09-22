@@ -60,7 +60,10 @@ func NewConfirmPendingReservationUseCase(
 func (uc *ConfirmPendingReservationUseCase) Execute(ctx context.Context, input ConfirmPendingReservationInput) (ConfirmPendingReservationOutput, error) {
 	var output ConfirmPendingReservationOutput
 	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		reservation, err := uc.reservationRepo.GetByID(txCtx, input.ReservationID())
+		// FOR UPDATE on the reservation row serializes against a
+		// concurrent admin reject on the same id (both pre-checks
+		// IsPending — without the lock, both pass and both write).
+		reservation, err := uc.reservationRepo.GetByIDForUpdate(txCtx, input.ReservationID())
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
 				return ErrNotFound
@@ -73,10 +76,17 @@ func (uc *ConfirmPendingReservationUseCase) Execute(ctx context.Context, input C
 		if !reservation.IsPending() {
 			return fmt.Errorf("%w: current status is %s", ErrNotPending, reservation.Status())
 		}
+
+		// Snapshot for the SQL guard.
+		originalStatus := reservation.Status()
+
 		if err := reservation.ConfirmPending(); err != nil {
 			return fmt.Errorf("%w: %v", ErrNotPending, err)
 		}
-		if err := uc.reservationRepo.Update(txCtx, reservation); err != nil {
+		if err := uc.reservationRepo.Update(txCtx, reservation, originalStatus); err != nil {
+			if errors.Is(err, domain.ErrReservationStateChanged) {
+				return fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
+			}
 			return fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
 		}
 		output = ConfirmPendingReservationOutput{Reservation: reservation}

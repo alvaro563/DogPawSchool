@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -17,7 +18,7 @@ import (
 type mockPassRepository struct {
 	create      func(ctx context.Context, pass *domain.Pass) (int, error)
 	getByID     func(ctx context.Context, id int) (*domain.Pass, error)
-	update      func(ctx context.Context, pass *domain.Pass) error
+	update      func(ctx context.Context, pass *domain.Pass, expectedUpdatedAt time.Time) error
 	listAll     func(ctx context.Context, limit, offset int) ([]*domain.Pass, error)
 	listByOwner func(ctx context.Context, userID, limit, offset int) ([]*domain.Pass, error)
 	listByPaid  func(ctx context.Context, isPaid bool, limit, offset int) ([]*domain.Pass, error)
@@ -45,9 +46,9 @@ func (m *mockPassRepository) GetByIDForUpdate(ctx context.Context, id int) (*dom
 	return nil, nil
 }
 
-func (m *mockPassRepository) Update(ctx context.Context, pass *domain.Pass) error {
+func (m *mockPassRepository) Update(ctx context.Context, pass *domain.Pass, expectedUpdatedAt time.Time) error {
 	if m.update != nil {
-		return m.update(ctx, pass)
+		return m.update(ctx, pass, expectedUpdatedAt)
 	}
 	return nil
 }

@@ -72,7 +72,7 @@ func NewRejectPendingReservationUseCase(
 func (uc *RejectPendingReservationUseCase) Execute(ctx context.Context, input RejectPendingReservationInput) (RejectPendingReservationOutput, error) {
 	var output RejectPendingReservationOutput
 	err := uc.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		reservation, err := uc.reservationRepo.GetByID(txCtx, input.ReservationID())
+		reservation, err := uc.reservationRepo.GetByIDForUpdate(txCtx, input.ReservationID())
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
 				return ErrNotFound
@@ -85,6 +85,12 @@ func (uc *RejectPendingReservationUseCase) Execute(ctx context.Context, input Re
 		if !reservation.IsPending() {
 			return fmt.Errorf("%w: current status is %s", ErrNotPending, reservation.Status())
 		}
+
+		// Snapshot before the in-memory transition. The SQL guard
+		// in the final Update rejects a concurrent confirm/reject
+		// race.
+		originalStatus := reservation.Status()
+
 		if err := reservation.RejectPending(); err != nil {
 			return fmt.Errorf("%w: %v", ErrNotPending, err)
 		}
@@ -97,16 +103,22 @@ func (uc *RejectPendingReservationUseCase) Execute(ctx context.Context, input Re
 				return fmt.Errorf("get pass %d: %w", reservation.PassID(), err)
 			}
 		} else if pass != nil && reservation.WasCancelledInTime() && pass.CanRefund() {
+			// Snapshot the pass updated_at before mutating.
+			passUpdatedAt := pass.UpdatedAt()
+
 			reason := fmt.Sprintf("Reservation %d rejected by admin", reservation.ID())
 			if _, err := pass.RefundSession(reason, input.Now()); err != nil {
 				return fmt.Errorf("refund pass %d: %w", reservation.PassID(), err)
 			}
-			if err := uc.passRepo.Update(txCtx, pass); err != nil {
+			if err := uc.passRepo.Update(txCtx, pass, passUpdatedAt); err != nil {
 				return fmt.Errorf("update pass %d: %w", reservation.PassID(), err)
 			}
 		}
 
-		if err := uc.reservationRepo.Update(txCtx, reservation); err != nil {
+		if err := uc.reservationRepo.Update(txCtx, reservation, originalStatus); err != nil {
+			if errors.Is(err, domain.ErrReservationStateChanged) {
+				return fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
+			}
 			return fmt.Errorf("update reservation %d: %w", input.ReservationID(), err)
 		}
 		output = RejectPendingReservationOutput{Reservation: reservation}

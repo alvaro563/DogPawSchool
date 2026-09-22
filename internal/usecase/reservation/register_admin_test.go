@@ -96,7 +96,7 @@ func TestAdminRegister_Success(t *testing.T) {
 			assert.Equal(t, 30, id)
 			return pass, nil
 		},
-		update: func(_ context.Context, p *domain.Pass) error {
+		update: func(_ context.Context, p *domain.Pass, _ time.Time) error {
 			assert.Equal(t, 4, p.RemainingSessions(), "pass should be decremented by 1")
 			return nil
 		},
@@ -349,7 +349,7 @@ func TestAdminRegister_PassSessionConsumed(t *testing.T) {
 	var updatedPass *domain.Pass
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(_ context.Context, p *domain.Pass) error {
+		update: func(_ context.Context, p *domain.Pass, _ time.Time) error {
 			updatedPass = p
 			return nil
 		},
@@ -391,7 +391,7 @@ func TestAdminRegister_DogAndPassOwnerMismatch(t *testing.T) {
 			return 0, nil
 		},
 	}
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}
@@ -548,7 +548,7 @@ func TestAdminRegister_PassUpdateErrorWrapped(t *testing.T) {
 	pass := validPass(30, 99, 5)
 	passRepo := &stubPassRepository{
 		getByID: func(context.Context, int) (*domain.Pass, error) { return pass, nil },
-		update: func(context.Context, *domain.Pass) error {
+		update: func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 			return errors.New("movement insert failed")
 		},
 	}
@@ -822,7 +822,7 @@ func TestAdminRegister_ActivityClosedBlocksEvenUnderOverride(t *testing.T) {
 		},
 	}
 	var passUpdated, reservationCreated bool
-	passRepo.update = func(context.Context, *domain.Pass) error {
+	passRepo.update = func(_ context.Context, _ *domain.Pass, _ time.Time) error {
 		passUpdated = true
 		return nil
 	}

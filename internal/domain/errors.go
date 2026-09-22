@@ -53,4 +53,13 @@ var (
 	// ErrInvitationInvalid is returned when an invitation cannot be
 	// used: it may be expired, already accepted, or revoked.
 	ErrInvitationInvalid = errors.New("invitation is invalid or expired")
+
+	// ErrPassStateChanged is returned by PassRepository.Update when
+	// the row's updated_at has drifted from the snapshot the use
+	// case captured at read time. The pass was concurrently
+	// modified by another caller (parallel cancel, double admin
+	// edit, etc.) or the row no longer exists. The use case treats
+	// this as "someone else won the race" and surfaces it to the
+	// handler, which maps to 409 pass_state_changed.
+	ErrPassStateChanged = errors.New("pass state changed during update")
 )
