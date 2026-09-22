@@ -1469,7 +1469,7 @@ func TestPassUpdate_Integration_StateGuardRejectsConcurrent(t *testing.T) {
 	snapshot := loaded1.UpdatedAt()
 
 	// Goroutine A: mutate + write using the snapshot.
-	loaded1.ConsumeSession("goroutine A", now)
+	_, _ = loaded1.ConsumeSession("goroutine A", now)
 	require.NoError(t, passRepo.Update(context.Background(), loaded1, snapshot))
 
 	// Goroutine B: still holds the stale snapshot. The Update must
@@ -1477,7 +1477,7 @@ func TestPassUpdate_Integration_StateGuardRejectsConcurrent(t *testing.T) {
 	// A's commit.
 	loaded2, err := passRepo.GetByID(context.Background(), pass.ID())
 	require.NoError(t, err)
-	loaded2.ConsumeSession("goroutine B", now)
+	_, _ = loaded2.ConsumeSession("goroutine B", now)
 	err = passRepo.Update(context.Background(), loaded2, snapshot)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrPassStateChanged),
