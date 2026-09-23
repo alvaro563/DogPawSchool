@@ -60,7 +60,20 @@ func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func()
 	}
 
 	r := gin.New()
-	r.Use(gin.Recovery(), requestLogger())
+	r.Use(
+		gin.Recovery(),
+		requestLogger(),
+		// Security headers (CSP, X-Frame-Options, Permissions-Policy,
+		// HSTS, ...) apply to every response including short-circuits
+		// from rate limit and 404. Install before CORS so even
+		// preflight-less OPTIONS responses get the headers.
+		handler.SecurityHeadersMiddleware(handler.SecurityHeadersConfig{
+			Strict:     cfg.Env == "production",
+			TLSEnabled: cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
+		}),
+		// 1 MiB cap on mutating request bodies. GETs are skipped.
+		handler.BodyLimitMiddleware(),
+	)
 
 	if len(cfg.TrustedProxies) > 0 {
 		if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
@@ -73,10 +86,27 @@ func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func()
 	corsConfig := cors.DefaultConfig()
 	if len(cfg.CORSOrigins) > 0 {
 		corsConfig.AllowOrigins = cfg.CORSOrigins
+	} else if cfg.Env != "production" {
+		// Dev/staging default: allow the Vite dev origin. This
+		// matches what `frontend/.env` sets as VITE_API_PROXY_TARGET's
+		// sibling origin (the SPA at localhost:5173). Operators
+		// with a non-standard dev setup should set CORS_ORIGINS
+		// explicitly — we log a warning so they notice.
+		corsConfig.AllowOrigins = []string{"http://localhost:5173"}
+		slog.Warn("CORS_ORIGINS not set; defaulting to http://localhost:5173 for dev")
 	} else {
-		corsConfig.AllowAllOrigins = true
+		// Production: LoadConfig should have already errored.
+		// This branch is defensive — the gin engine is never
+		// built if CORS_ORIGINS is empty.
+		corsConfig.AllowOrigins = []string{"http://invalid"}
 	}
-	corsConfig.AllowHeaders = append(corsConfig.AllowHeaders, "Authorization")
+	// Cookies travel cross-origin because the SPA and the API
+	// live on different origins in any non-trivial deploy.
+	// AllowCredentials=true requires a non-wildcard AllowOrigins:
+	// a wildcard (*) origin with credentials is rejected by every
+	// browser per the CORS spec. Our explicit list above always
+	// contains an exact origin, so this is safe.
+	corsConfig.AllowCredentials = true
 	corsConfig.AllowMethods = []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"}
 	r.Use(cors.New(corsConfig))
 
@@ -107,7 +137,14 @@ func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func()
 	)
 
 	r.GET("/health", healthHandler(db))
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Swagger UI is a developer convenience. In production it leaks
+	// every endpoint, every parameter, every response schema to
+	// anyone who can reach the API. Gate it behind cfg.Env !=
+	// "production"; staging deployments can keep it open.
+	if cfg.Env != "production" {
+		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	}
 
 	repo := postgres.NewDogRepository(db)
 	incompatRepo := postgres.NewIncompatibilityRepository(db)
@@ -262,35 +299,73 @@ func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func()
 	invRepo := postgres.NewInvitationRepository(db)
 	createInvUC := invitationuc.NewCreateInvitationUseCase(invRepo)
 	jwtSecret := cfg.JWTSecret
-	jwtTokenGen := crypto.NewJWTTokenGenerator(jwtSecret, 24*time.Hour)
+	// Two token generators sharing one secret. The "kind" claim
+	// tells AuthRequired which one is which.
+	accessTokenGen := crypto.NewJWTTokenGenerator(jwtSecret, cfg.JWTAccessTTL, crypto.KindAccess)
+	refreshTokenGen := crypto.NewJWTTokenGenerator(jwtSecret, cfg.JWTRefreshTTL, crypto.KindRefresh)
+	refreshParser := authuc.NewJWTTokenParser(jwtSecret, crypto.KindRefresh)
+
 	registerAuthUC := authuc.NewRegisterWithInvitationUseCase(
-		transactor, invRepo, userRepo, crypto.NewDefaultBcryptHasher(), jwtTokenGen,
+		transactor, invRepo, userRepo, crypto.NewDefaultBcryptHasher(),
+		accessTokenGen, refreshTokenGen,
 	)
 	loginAuthUC := authuc.NewLoginUseCase(
 		userRepo,
 		crypto.NewDefaultBcryptHasher(),
-		jwtTokenGen,
+		accessTokenGen,
+		refreshTokenGen,
 		loginLockout,
 	)
 	changePasswordUC := authuc.NewChangePasswordUseCase(
 		userRepo,
 		crypto.NewDefaultBcryptHasher(),
 		crypto.NewDefaultBcryptHasher(),
+		accessTokenGen,
+		refreshTokenGen,
+	)
+	refreshUC := authuc.NewRefreshUseCase(
+		userRepo,
+		refreshTokenGen,
+		accessTokenGen,
+		refreshParser,
 	)
 	invH := handler.NewInvitationHandler(createInvUC)
-	authH := handler.NewAuthHandler(registerAuthUC, loginAuthUC, changePasswordUC)
+	authH := handler.NewAuthHandler(
+		registerAuthUC,
+		loginAuthUC,
+		changePasswordUC,
+		refreshUC,
+		handler.CookieConfig{
+			Secure:     cfg.CookieSecure,
+			AccessTTL:  cfg.JWTAccessTTL,
+			RefreshTTL: cfg.JWTRefreshTTL,
+		},
+	)
 
 	v1 := r.Group("/api/v1")
 	{
 		// ── Public ──
 		v1.POST("/auth/register", rateLimitMiddleware(registerIPLimiter), authH.RegisterWithInvitation)
 		v1.POST("/auth/login", rateLimitMiddleware(loginIPLimiter), authH.Login)
+		// /auth/refresh and /auth/logout are "public" in the sense
+		// that they don't require the access_token cookie, but
+		// they have their own gate (the refresh cookie for
+		// refresh, idempotent for logout). Rate-limited so an
+		// attacker can't probe refresh tokens.
+		v1.POST("/auth/refresh", rateLimitMiddleware(loginIPLimiter), authH.Refresh)
+		v1.POST("/auth/logout", authH.Logout)
 
 		// ── Any authenticated user (ownership check inside handlers) ──
 		anyUser := v1.Group("")
 		anyUser.Use(handler.AuthRequired(jwtSecret, userRepo))
 		{
 			anyUser.PATCH("/auth/password", authH.ChangePassword)
+
+			// GET /users/me returns the user identified by the
+			// access_token cookie. Used by the SPA on first
+			// load to decide whether to render the auth shell
+			// or kick back to /auth/login.
+			anyUser.GET("/users/me", userH.GetMe)
 
 			anyUser.GET("/users/:user_id", userH.GetByID)
 

@@ -65,6 +65,25 @@ go run ./cmd/api
 
 Postgres is bound to `127.0.0.1:5432` only — no public surface.
 
+### 4. Run the frontend
+
+```sh
+cd frontend
+cp .env.example .env       # VITE_API_PROXY_TARGET=http://localhost:8080 by default
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173/`. The Vite dev server proxies every
+`/api/*` request to the Go backend on `localhost:8080` (configured via
+`VITE_API_PROXY_TARGET`). Cookies travel same-origin so they survive
+the round-trip without CORS preflight.
+
+If you see "No se pudo conectar con el servidor" on the login form,
+the API is not running or `VITE_API_PROXY_TARGET` points to the wrong
+host. Check the Vite dev-server terminal — proxy errors are logged
+there.
+
 The API logs a single config banner on startup:
 
 ```
@@ -131,9 +150,30 @@ on a production box, something is wrong with your deployment.
 - [ ] TLS configured (reverse proxy or `TLS_KEY_FILE` / `TLS_CERT_FILE`)
 - [ ] `TRUSTED_PROXIES` set if behind a load balancer (only affects `c.ClientIP()` logged by `requestLogger`; the rate limit middleware uses `RemoteAddr` directly)
 - [ ] IP rate limits tuned for expected traffic (`LOGIN_IP_*`, `REGISTER_IP_*`); account lockout defaults (`LOCKOUT_*`) are sane but adjustable
-- [ ] `CORS_ORIGINS` set to the exact frontend origin
+- [ ] `CORS_ORIGINS` set to the exact frontend origin (REQUIRED in production; LoadConfig fails fast if missing)
+- [ ] `JWT_ACCESS_TTL` (default 1h) and `JWT_REFRESH_TTL` (default 24h) match the desired UX
+- [ ] `COOKIE_SECURE=true` (default in production — set false only for HTTP-only deploys)
+- [ ] `/swagger` is unreachable in production (the route is gated to `ENV != "production"`)
+- [ ] Reverse proxy / CDN configured to forward the `Set-Cookie` and `Cookie` headers (Caddy/Cloudflare do this by default; nginx needs `proxy_pass_header Set-Cookie` only in special cases)
 - [ ] `docker-compose.yml` not used as-is in production; use a
       managed Postgres instance or a properly secured cluster
+
+### Authentication model
+
+The API uses two HttpOnly cookies:
+
+- `access_token` — short-lived (1h default), `SameSite=Lax`, used by every authenticated request.
+- `refresh_token` — longer-lived (24h default), `SameSite=Strict`, used only by `POST /api/v1/auth/refresh`.
+
+The SPA never sees the JWT. The http-client uses `credentials: 'include'` so cookies travel automatically, and a single-flight `tryRefresh()` interceptor handles token renewals transparently.
+
+`POST /api/v1/auth/logout` clears both cookies. There is no server-side revocation list — the JWTs remain technically valid until they expire, but the cookie clear forces the browser to stop sending them. (For strict server-side revocation, bump `token_version` server-side, which is what `PATCH /api/v1/auth/password` already does on password change.)
+
+`GET /api/v1/users/me` returns the user identified by the access cookie, used on first SPA load to decide whether to render the auth shell or kick to `/auth/login`.
+
+### CSRF posture
+
+`SameSite=Lax` on access tokens prevents cross-site POST from sending the cookie; `SameSite=Strict` on refresh tokens prevents it even on top-level navigations. There is no explicit CSRF token because the cookie policy already blocks the vectors. If a stricter posture is required later (e.g. a browser that ignores SameSite), add a double-submit cookie for state-changing endpoints.
 
 ### Generating secrets
 

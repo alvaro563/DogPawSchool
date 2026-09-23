@@ -47,9 +47,9 @@ func TestNewDog(t *testing.T) {
 			wantInErr string
 		}{
 			{"negative_id", -1, "n", "b", "p", 24, domain.SexMale, 10, 1, "id must not be negative"},
-			{"empty_name", 1, "", "b", "p", 24, domain.SexMale, 10, 1, "name must not be empty"},
-			{"empty_breed", 1, "n", "", "p", 24, domain.SexMale, 10, 1, "breed must not be empty"},
-			{"empty_passport", 1, "n", "b", "", 24, domain.SexMale, 10, 1, "passport must not be empty"},
+		{"empty_name", 1, "", "b", "p", 24, domain.SexMale, 10, 1, "name must be 1..100 chars"},
+		{"empty_breed", 1, "n", "", "p", 24, domain.SexMale, 10, 1, "breed must be 1..100 chars"},
+		{"empty_passport", 1, "n", "b", "", 24, domain.SexMale, 10, 1, "passport must be 1..100 chars"},
 			{"negative_age", 1, "n", "b", "p", -1, domain.SexMale, 10, 1, "ageInMonths must be greater than 0"},
 			{"zero_age", 1, "n", "b", "p", 0, domain.SexMale, 10, 1, "ageInMonths must be greater than 0"},
 			{"negative_weight", 1, "n", "b", "p", 24, domain.SexMale, -1, 1, "weightKg must be greater than 0"},

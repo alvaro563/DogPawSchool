@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -131,10 +132,13 @@ func (repo *InvitationRepository) ListPending(ctx context.Context, limit, offset
 }
 
 // ListByEmail returns all invitations for the given email, ordered by
-// created_at ascending. Returns a non-nil empty slice on no rows.
+// created_at ascending. Case-insensitive via lower(email) on both
+// sides (the functional index idx_invitations_email_lower from
+// migration 000017 keeps this fast). Returns a non-nil empty slice on
+// no rows.
 func (repo *InvitationRepository) ListByEmail(ctx context.Context, email string) ([]*domain.Invitation, error) {
-	query := invitationSelectClause + ` WHERE email = $1 ORDER BY created_at ASC`
-	return repo.queryInvitations(ctx, query, email)
+	query := invitationSelectClause + ` WHERE lower(email) = $1 ORDER BY created_at ASC`
+	return repo.queryInvitations(ctx, query, strings.ToLower(strings.TrimSpace(email)))
 }
 
 // queryInvitations is the shared row-iteration loop for ListPending

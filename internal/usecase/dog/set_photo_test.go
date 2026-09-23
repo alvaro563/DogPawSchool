@@ -66,7 +66,7 @@ func TestSetDogPhotoUseCase_Execute(t *testing.T) {
 	t.Run("clear_photo_url", func(t *testing.T) {
 		loadedDog, _ := domain.NewDog(7, "Toby", "Beagle", "ES-2", 36,
 			domain.SexMale, 12.0, 1)
-		loadedDog.SetPhotoURL("https://old.com/toby.jpg")
+		_ = loadedDog.SetPhotoURL("https://old.com/toby.jpg")
 		mock := &mockDogRepository{
 			getByID: func(ctx context.Context, id int) (*domain.Dog, error) {
 				return loadedDog, nil

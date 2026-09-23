@@ -3,7 +3,6 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { PawPrint, AlertCircle } from 'lucide-react';
 import { registerSchema, type RegisterInput } from '@/domain/schemas/auth-schema';
 import { AuthRepositoryImpl } from '@/infrastructure/repositories/auth-repository.impl';
-import storageToken from '@/infrastructure/storage/token';
 import { userStorage } from '@/infrastructure/storage/user';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
@@ -129,7 +128,8 @@ export function RegisterForm() {
       const input: RegisterInput = { token: searchToken!, name: name.trim(), password };
       const response = await authRepo.registerWithInvitation(input);
 
-      storageToken.set(response.token);
+      // Tokens travel in HttpOnly cookies set by the server. The
+      // SPA receives only the user profile.
       userStorage.set(response.user);
       navigate({ to: response.user.role === 'ADMIN' ? '/admin' : '/calendar' });
     } catch (err) {

@@ -40,3 +40,9 @@ var ErrUserInactive = errors.New("user is inactive")
 // ErrSamePassword is returned by ChangePasswordUseCase when the new
 // password equals the current one. Handlers map this to 409 Conflict.
 var ErrSamePassword = errors.New("new password matches the old one")
+
+// ErrRefreshTokenInvalid is returned by RefreshUseCase when the
+// supplied refresh token is malformed, expired, signed with the
+// wrong key, or has the wrong kind claim (e.g. an access token
+// presented as refresh). Handlers map this to 401.
+var ErrRefreshTokenInvalid = errors.New("refresh token invalid")

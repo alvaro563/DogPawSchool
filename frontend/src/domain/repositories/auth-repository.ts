@@ -1,9 +1,14 @@
 import type { LoginInput, RegisterInput } from '@/domain/schemas/auth-schema';
 import type { User } from '@/domain/entities/user';
 
+// AuthResponse is the shape returned by the backend's login and
+// register endpoints AFTER the token moved to an HttpOnly cookie.
+// The `token` field is retained for type compatibility but is
+// always an empty string — the SPA never sees the JWT.
 export interface AuthResponse {
   token: string;
   user: User;
+  expires_in?: number;
 }
 
 // ChangePasswordInput is the user-facing payload for PATCH /auth/password.

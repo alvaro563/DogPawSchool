@@ -73,8 +73,15 @@ export function LoginForm() {
     return false;
   }
 
-  function getServerErrorMessage(status: number): string {
-    switch (status) {
+  function getServerErrorMessage(apiErr: ApiError): string {
+    // status === undefined means the fetch never reached the
+    // server (network failure, CORS rejection, CSP block). The
+    // http-client surfaces this as a sentinel ApiError so we can
+    // distinguish it from a server-side rejection.
+    if (apiErr.status === undefined) {
+      return 'No se pudo conectar con el servidor. ¿Está el API en marcha?';
+    }
+    switch (apiErr.status) {
       case 401:
         return 'Credenciales incorrectas. Verifica tu email y contraseña.';
       case 429:
@@ -96,20 +103,16 @@ export function LoginForm() {
 
     setIsSubmitting(true);
     try {
-      const input: LoginInput = { email: email.trim(), password };
-      await login(input);
-      const userRaw = localStorage.getItem('auth_user');
-      if (userRaw) {
-        const user = JSON.parse(userRaw) as { role: string };
-        navigate({ to: user.role === 'ADMIN' ? '/admin' : '/calendar' });
-      }
+      const input: LoginInput = { email: email.trim().toLowerCase(), password };
+      const user = await login(input);
+      navigate({ to: user.role === 'ADMIN' ? '/admin' : '/calendar' });
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr.status === 429 && apiErr.retryAfterSeconds != null) {
         setRetryAfterSeconds(apiErr.retryAfterSeconds);
         setServerError('');
       } else {
-        setServerError(getServerErrorMessage(apiErr.status));
+        setServerError(getServerErrorMessage(apiErr));
       }
     } finally {
       setIsSubmitting(false);

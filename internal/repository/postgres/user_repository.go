@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -78,12 +79,13 @@ func (repo *UserRepository) GetByIDs(ctx context.Context, ids []int) ([]*domain.
 	return repo.queryUsers(ctx, query, ids)
 }
 
-// GetByEmail fetches a single user by email (case-sensitive — the DB
-// has no functional index on email). Returns domain.ErrNotFound when no
-// row matches.
+// GetByEmail fetches a single user by email. Case-insensitive: the
+// email is lower-cased before the query (matching the functional
+// UNIQUE index idx_users_email_lower created in migration 000017).
+// Returns domain.ErrNotFound when no row matches.
 func (repo *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
-	query := userSelectClause + ` WHERE email = $1`
-	row := runner(ctx, repo.db).QueryRowContext(ctx, query, email)
+	query := userSelectClause + ` WHERE lower(email) = $1`
+	row := runner(ctx, repo.db).QueryRowContext(ctx, query, strings.ToLower(strings.TrimSpace(email)))
 	user, err := scanUser(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

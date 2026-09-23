@@ -154,9 +154,9 @@ func TestRegisterWithInvitation_ConcurrentTokenUse(t *testing.T) {
 	userRepo := postgres.NewUserRepository(testDB)
 	transactor := postgres.NewTransactor(testDB)
 	hasher := crypto.NewDefaultBcryptHasher()
-	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess)
 
-	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher, tokenGen)
+	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher, tokenGen, tokenGen)
 
 	const goroutines = 20
 	var (
@@ -233,9 +233,9 @@ func TestRegisterWithInvitation_Integration(t *testing.T) {
 	userRepo := postgres.NewUserRepository(testDB)
 	transactor := postgres.NewTransactor(testDB)
 	hasher := crypto.NewDefaultBcryptHasher()
-	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess)
 
-	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher, tokenGen)
+	uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, hasher, tokenGen, tokenGen)
 	in := MustNewRegisterWithInvitationInput(token, "Client Name", password, func() time.Time { return now })
 
 	out, err := uc.Execute(context.Background(), in)

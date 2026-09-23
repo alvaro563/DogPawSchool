@@ -40,6 +40,9 @@ type Config struct {
 	Env             string
 	Port            int
 	JWTSecret       string
+	JWTAccessTTL    time.Duration
+	JWTRefreshTTL   time.Duration
+	CookieSecure    bool
 	CORSOrigins     []string
 	TLSKeyFile      string
 	TLSCertFile     string
@@ -137,10 +140,13 @@ func (dbConfig DBConfig) DSN() string {
 //   DB_CONN_MAX_LIFETIME (5m)
 //   DB_PING_TIMEOUT      (30s)
 //   SHUTDOWN_TIMEOUT     (15s)
-//   CORS_ORIGINS                 (none)
+//   CORS_ORIGINS                 (REQUIRED in production; permissive in development)
 //   TRUSTED_PROXIES              (none)
 //   TLS_KEY_FILE                 (none)
 //   TLS_CERT_FILE                (none)
+//   JWT_ACCESS_TTL               (1h)
+//   JWT_REFRESH_TTL              (24h)
+//   COOKIE_SECURE                (true when TLS or production; false in development)
 //   LOGIN_IP_RATE_PER_MINUTE     (20)
 //   LOGIN_IP_BURST               (10)
 //   REGISTER_IP_RATE_PER_MINUTE  (5)
@@ -180,6 +186,9 @@ func LoadConfig() (Config, error) {
 		Env:             env,
 		Port:            getEnvInt("PORT", 8080),
 		JWTSecret:       jwtSecret,
+		JWTAccessTTL:    getEnvDuration("JWT_ACCESS_TTL", 1*time.Hour),
+		JWTRefreshTTL:   getEnvDuration("JWT_REFRESH_TTL", 24*time.Hour),
+		CookieSecure:    resolveCookieSecure(env, os.Getenv("COOKIE_SECURE")),
 		CORSOrigins:     parseCSV(os.Getenv("CORS_ORIGINS")),
 		TLSKeyFile:      os.Getenv("TLS_KEY_FILE"),
 		TLSCertFile:     os.Getenv("TLS_CERT_FILE"),
@@ -220,7 +229,33 @@ func LoadConfig() (Config, error) {
 	if cfg.DB.Name == "" {
 		return Config{}, fmt.Errorf("DB_NAME is required")
 	}
+	// CORS_ORIGINS is mandatory in production. An empty allow-list
+	// with AllowCredentials=true makes cookies unreceivable by any
+	// browser (every browser rejects wildcard credentials), so the
+	// failure mode is "nobody can log in" — better to fail loud at
+	// startup than to discover it after the deploy.
+	if env == "production" && len(cfg.CORSOrigins) == 0 {
+		return Config{}, fmt.Errorf("CORS_ORIGINS is required in production (comma-separated list of allowed origins)")
+	}
 	return cfg, nil
+}
+
+// resolveCookieSecure decides whether session cookies carry the
+// Secure attribute. Explicit COOKIE_SECURE env wins. Otherwise:
+//   - production: true (HTTP-only deploys are forbidden; if the
+//     operator runs without TLS they should set COOKIE_SECURE=false
+//     and accept the XSS-over-HTTP downgrade).
+//   - development/staging: false (browsers refuse Secure on http://).
+func resolveCookieSecure(env, raw string) bool {
+	if raw != "" {
+		switch raw {
+		case "true", "1", "yes":
+			return true
+		case "false", "0", "no":
+			return false
+		}
+	}
+	return env == "production"
 }
 
 // loadEnv validates ENV is one of the closed set of accepted modes.

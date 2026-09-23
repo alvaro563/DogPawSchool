@@ -3,7 +3,50 @@ package domain
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 )
+
+// Field length caps for dog attributes. These mirror the limits the
+// frontend enforces in the schema (src/domain/schemas/dog-schema.ts)
+// and the body-size middleware (1 MB) — the domain enforces them
+// here as a last line of defense, so an out-of-band caller cannot
+// stuff multi-megabyte strings into the database via direct repo
+// writes (admin scripts, internal tools, future endpoints).
+const (
+	maxDogNameLen        = 100
+	maxDogBreedLen       = 100
+	maxDogPassportLen    = 100
+	maxDogPhotoURLLen    = 2048 // standard practical URL ceiling
+	maxDogNotesLen       = 2000
+	maxPendingReasonCode = 64
+)
+
+// validatePhotoURL accepts only absolute http(s) URLs within the
+// length cap. Empty string is allowed (= "no photo") and skips
+// validation. Anything else returns a validation error pointing at
+// the offending field. The url.Parse error string is intentionally
+// not propagated — callers do not need to know whether the URL
+// failed because of scheme, host, or whitespace; only that it did.
+func validatePhotoURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	if len(raw) > maxDogPhotoURLLen {
+		return &DogValidationError{Field: "photo_url"}
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return &DogValidationError{Field: "photo_url"}
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return &DogValidationError{Field: "photo_url"}
+	}
+	if strings.TrimSpace(raw) != raw {
+		return &DogValidationError{Field: "photo_url"}
+	}
+	return nil
+}
 
 // Sex identifies the biological sex of a dog.
 type Sex string
@@ -132,14 +175,17 @@ func NewDog(id int, name, breed, passport string, ageInMonths int, sex Sex, weig
 	if id < 0 {
 		return nil, fmt.Errorf("dog: id must not be negative")
 	}
-	if name == "" {
-		return nil, fmt.Errorf("dog: name must not be empty")
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > maxDogNameLen {
+		return nil, fmt.Errorf("dog: name must be 1..%d chars", maxDogNameLen)
 	}
-	if breed == "" {
-		return nil, fmt.Errorf("dog: breed must not be empty")
+	breed = strings.TrimSpace(breed)
+	if breed == "" || len(breed) > maxDogBreedLen {
+		return nil, fmt.Errorf("dog: breed must be 1..%d chars", maxDogBreedLen)
 	}
-	if passport == "" {
-		return nil, fmt.Errorf("dog: passport must not be empty")
+	passport = strings.TrimSpace(passport)
+	if passport == "" || len(passport) > maxDogPassportLen {
+		return nil, fmt.Errorf("dog: passport must be 1..%d chars", maxDogPassportLen)
 	}
 	if ageInMonths <= 0 {
 		return nil, fmt.Errorf("dog: ageInMonths must be greater than 0")
@@ -480,22 +526,25 @@ func (dog *Dog) RemoveTrait(id int) (bool, error) {
 // patch. Each field has its own validation. An empty patch is a no-op.
 func (dog *Dog) ApplyPatch(patch DogPatch) error {
 	if patch.Name != nil {
-		if *patch.Name == "" {
+		trimmed := strings.TrimSpace(*patch.Name)
+		if trimmed == "" || len(trimmed) > maxDogNameLen {
 			return &DogValidationError{Field: "name"}
 		}
-		dog.name = *patch.Name
+		dog.name = trimmed
 	}
 	if patch.Breed != nil {
-		if *patch.Breed == "" {
+		trimmed := strings.TrimSpace(*patch.Breed)
+		if trimmed == "" || len(trimmed) > maxDogBreedLen {
 			return &DogValidationError{Field: "breed"}
 		}
-		dog.breed = *patch.Breed
+		dog.breed = trimmed
 	}
 	if patch.Passport != nil {
-		if *patch.Passport == "" {
+		trimmed := strings.TrimSpace(*patch.Passport)
+		if trimmed == "" || len(trimmed) > maxDogPassportLen {
 			return &DogValidationError{Field: "passport"}
 		}
-		dog.passport = *patch.Passport
+		dog.passport = trimmed
 	}
 	if patch.AgeInMonths != nil {
 		if *patch.AgeInMonths <= 0 {
@@ -524,12 +573,21 @@ func (dog *Dog) ApplyPatch(patch DogPatch) error {
 		}
 	}
 	if patch.PhotoURL != nil {
+		if err := validatePhotoURL(*patch.PhotoURL); err != nil {
+			return err
+		}
 		dog.photoURL = *patch.PhotoURL
 	}
 	if patch.MedicalNotes != nil {
+		if len(*patch.MedicalNotes) > maxDogNotesLen {
+			return &DogValidationError{Field: "medical_notes"}
+		}
 		dog.medicalNotes = *patch.MedicalNotes
 	}
 	if patch.EducatorNotes != nil {
+		if len(*patch.EducatorNotes) > maxDogNotesLen {
+			return &DogValidationError{Field: "educator_notes"}
+		}
 		dog.educatorNotes = *patch.EducatorNotes
 	}
 	if patch.IsActive != nil {
@@ -558,8 +616,17 @@ func (dog *Dog) SetHeat(heat bool) error {
 	return nil
 }
 
-// SetPhotoURL sets the profile photo URL. An empty string clears the photo.
-func (dog *Dog) SetPhotoURL(url string) { dog.photoURL = url }
+// SetPhotoURL sets the profile photo URL. An empty string clears the
+// photo. Non-empty values are validated against the http(s) scheme
+// + max length cap (see validatePhotoURL); on failure the photo is
+// left untouched and a *DogValidationError is returned.
+func (dog *Dog) SetPhotoURL(raw string) error {
+	if err := validatePhotoURL(raw); err != nil {
+		return err
+	}
+	dog.photoURL = raw
+	return nil
+}
 
 // Activate marks the dog as active.
 func (dog *Dog) Activate() { dog.isActive = true }

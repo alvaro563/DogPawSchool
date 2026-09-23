@@ -71,10 +71,15 @@ func MustNewLoginInput(email, password, remoteIP string, now func() time.Time) L
 	return in
 }
 
-// LoginOutput is the result of a successful authentication.
+// LoginOutput is the result of a successful authentication. Both
+// tokens (access + refresh) are produced; the handler maps them to
+// Set-Cookie headers. Splitting access/refresh at the use-case
+// level lets us keep the handler cookie-agnostic and makes the
+// TTL policy explicit at the composition root.
 type LoginOutput struct {
-	Token string
-	User  *domain.User
+	AccessToken  string
+	RefreshToken string
+	User         *domain.User
 }
 
 // TokenGenerator creates a signed token that proves the bearer is a
@@ -90,30 +95,33 @@ type TokenGenerator interface {
 //  1. Look up the user by email.
 //  2. Verify the password against the stored hash.
 //  3. Check the account is active (CanLogin).
-//  4. Generate a signed token.
+//  4. Generate access + refresh tokens.
 //  5. Record the attempt (success: reset email failures; failure: count).
 //
 // Step 0 short-circuits the bcrypt check (~250ms saved per blocked
 // attempt) and step 5 keeps the counter honest regardless of which
 // step the failure occurred at.
 type LoginUseCase struct {
-	userRepo domain.UserRepository
-	verifier PasswordVerifier
-	tokenGen TokenGenerator
-	lockout  domain.AccountLoginLimiter
+	userRepo    domain.UserRepository
+	verifier    PasswordVerifier
+	accessGen   TokenGenerator
+	refreshGen  TokenGenerator
+	lockout     domain.AccountLoginLimiter
 }
 
 func NewLoginUseCase(
 	userRepo domain.UserRepository,
 	verifier PasswordVerifier,
-	tokenGen TokenGenerator,
+	accessGen TokenGenerator,
+	refreshGen TokenGenerator,
 	lockout domain.AccountLoginLimiter,
 ) *LoginUseCase {
 	return &LoginUseCase{
-		userRepo: userRepo,
-		verifier: verifier,
-		tokenGen: tokenGen,
-		lockout:  lockout,
+		userRepo:   userRepo,
+		verifier:   verifier,
+		accessGen:  accessGen,
+		refreshGen: refreshGen,
+		lockout:    lockout,
 	}
 }
 
@@ -147,9 +155,13 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (LoginOut
 		return LoginOutput{}, ErrInvalidCredentials
 	}
 
-	token, err := uc.tokenGen.Generate(user)
+	access, err := uc.accessGen.Generate(user)
 	if err != nil {
-		return LoginOutput{}, fmt.Errorf("generate token: %w", err)
+		return LoginOutput{}, fmt.Errorf("generate access token: %w", err)
+	}
+	refresh, err := uc.refreshGen.Generate(user)
+	if err != nil {
+		return LoginOutput{}, fmt.Errorf("generate refresh token: %w", err)
 	}
 
 	if err := uc.lockout.Record(ctx, input.Email(), input.RemoteIP(), true); err != nil {
@@ -163,5 +175,5 @@ func (uc *LoginUseCase) Execute(ctx context.Context, input LoginInput) (LoginOut
 		_ = err
 	}
 
-	return LoginOutput{Token: token, User: user}, nil
+	return LoginOutput{AccessToken: access, RefreshToken: refresh, User: user}, nil
 }

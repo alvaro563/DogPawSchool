@@ -10,7 +10,6 @@ import {
 import type { User, UserRole } from '@/domain/entities/user';
 import type { LoginInput } from '@/domain/schemas/auth-schema';
 import { AuthRepositoryImpl } from '@/infrastructure/repositories/auth-repository.impl';
-import storageToken from '@/infrastructure/storage/token';
 import { userStorage } from '@/infrastructure/storage/user';
 
 interface AuthState {
@@ -18,8 +17,8 @@ interface AuthState {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isLoading: boolean;
-  login: (input: LoginInput) => Promise<void>;
-  logout: () => void;
+  login: (input: LoginInput) => Promise<User>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -30,24 +29,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Bootstrap: ask the server who I am. The access_token cookie
+  // travels automatically. If 401, no session — render the auth
+  // shell. If 200, hydrate the user from the response body.
+  //
+  // The previous design read localStorage here. localStorage is
+  // XSS-readable; that was the root cause of the session-security
+  // audit. The new design relies on the HttpOnly cookie + a single
+  // /users/me round-trip on first load.
   useEffect(() => {
-    const token = storageToken.get();
-    const savedUser = userStorage.get();
-    if (token && savedUser) {
-      setUser(savedUser);
-    }
-    setIsLoading(false);
+    let cancelled = false;
+    (async () => {
+      // Try the cached user first to avoid a blank flash. If the
+      // cookie is still valid the server will accept this; if not,
+      // /users/me returns 401 and we clear the cache.
+      const cached = userStorage.get();
+      if (cached) {
+        setUser(cached);
+      }
+      try {
+        const { user: fresh } = await authRepository.me();
+        if (!cancelled) {
+          userStorage.set(fresh);
+          setUser(fresh);
+        }
+      } catch {
+        if (!cancelled) {
+          userStorage.remove();
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const login = useCallback(async (input: LoginInput) => {
+  const login = useCallback(async (input: LoginInput): Promise<User> => {
+    // Login sets the HttpOnly cookies in the browser; the SPA
+    // receives only the user profile.
     const response = await authRepository.login(input);
-    storageToken.set(response.token);
     userStorage.set(response.user);
     setUser(response.user);
+    return response.user;
   }, []);
 
-  const logout = useCallback(() => {
-    storageToken.remove();
+  // logout hits POST /auth/logout (server clears cookies) and
+  // always clears local state, even if the server call fails —
+  // a failed logout must not leave the SPA believing the user is
+  // still authenticated.
+  const logout = useCallback(async () => {
+    try {
+      await authRepository.logout();
+    } catch {
+      // Server unreachable: the cookies may already be expired or
+      // never set; clear local state anyway.
+    }
     userStorage.remove();
     setUser(null);
   }, []);

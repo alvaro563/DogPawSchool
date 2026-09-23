@@ -35,6 +35,11 @@ type User struct {
 }
 
 // NewUser creates a User. New users start as is_active=true.
+//
+// Email is normalised to lowercase BEFORE validation so that
+// "Ana@x.com" and "ana@x.com" cannot represent two distinct
+// accounts. The DB enforces this invariant with the functional
+// UNIQUE index idx_users_email_lower (migration 000017).
 func NewUser(id int, name, email, password string, role UserRole) (*User, error) {
 	if id < 0 {
 		return nil, fmt.Errorf("user: id must not be negative")
@@ -42,6 +47,7 @@ func NewUser(id int, name, email, password string, role UserRole) (*User, error)
 	if name == "" {
 		return nil, fmt.Errorf("user: name must not be empty")
 	}
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, fmt.Errorf("user: email must not be empty")
 	}
@@ -156,7 +162,7 @@ func (user *User) ApplyPatch(patch UserPatch) error {
 		user.name = trimmed
 	}
 	if patch.Email != nil {
-		trimmed := strings.TrimSpace(*patch.Email)
+		trimmed := strings.ToLower(strings.TrimSpace(*patch.Email))
 		if trimmed == "" {
 			return &UserValidationError{Field: "email"}
 		}

@@ -160,13 +160,13 @@ func TestLogin_Success(t *testing.T) {
 		},
 	}
 
-	uc := NewLoginUseCase(userRepo, verifier, tokenGen, &noopAccountLimiter{})
+	uc := NewLoginUseCase(userRepo, verifier, tokenGen, &stubTokenGenerator{}, &noopAccountLimiter{})
 	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	out, err := uc.Execute(context.Background(), in)
 	require.NoError(t, err)
 
-	assert.Equal(t, "jwt-header.payload.signature", out.Token)
+	assert.Equal(t, "jwt-header.payload.signature", out.AccessToken)
 	assert.Equal(t, activeUser, out.User)
 	assert.Equal(t, activeUser, capturedUser, "token generator must receive the authenticated user")
 }
@@ -179,7 +179,7 @@ func TestLogin_EmailNotFound(t *testing.T) {
 			return nil, domain.ErrNotFound
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &noopAccountLimiter{})
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &stubTokenGenerator{}, &noopAccountLimiter{})
 	in := MustNewLoginInput("unknown@dogpaw.com", "any-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
@@ -199,7 +199,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 			return errors.New("bcrypt compare: mismatch")
 		},
 	}
-	uc := NewLoginUseCase(userRepo, verifier, &stubTokenGenerator{}, &noopAccountLimiter{})
+	uc := NewLoginUseCase(userRepo, verifier, &stubTokenGenerator{}, &stubTokenGenerator{}, &noopAccountLimiter{})
 	in := MustNewLoginInput("alice@dogpaw.com", "wrong-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
@@ -214,7 +214,7 @@ func TestLogin_InactiveUser(t *testing.T) {
 			return loginInactiveUser(), nil
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &noopAccountLimiter{})
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &stubTokenGenerator{}, &noopAccountLimiter{})
 	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
@@ -235,7 +235,7 @@ func TestLogin_TokenGeneratorFailure(t *testing.T) {
 			return "", tokenErr
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, tokenGen, &noopAccountLimiter{})
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, tokenGen, &stubTokenGenerator{}, &noopAccountLimiter{})
 	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
@@ -252,7 +252,7 @@ func TestLogin_RepositoryError(t *testing.T) {
 			return nil, repoErr
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &noopAccountLimiter{})
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &stubTokenGenerator{}, &noopAccountLimiter{})
 	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
@@ -283,7 +283,7 @@ func TestLogin_LockoutRejectsBeforeBcrypt(t *testing.T) {
 			}
 		},
 	}
-	uc := NewLoginUseCase(&mockUserRepository{}, verifier, &stubTokenGenerator{}, limiter)
+	uc := NewLoginUseCase(&mockUserRepository{}, verifier, &stubTokenGenerator{}, &stubTokenGenerator{}, limiter)
 	in := MustNewLoginInput("alice@dogpaw.com", "any-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
@@ -324,7 +324,7 @@ func TestLogin_RecordOnEveryOutcome(t *testing.T) {
 		verifier := &stubPasswordVerifier{
 			verify: func(_, _ string) error { return errors.New("mismatch") },
 		}
-		uc := NewLoginUseCase(userRepo, verifier, &stubTokenGenerator{}, limiter)
+		uc := NewLoginUseCase(userRepo, verifier, &stubTokenGenerator{}, &stubTokenGenerator{}, limiter)
 		_, _ = uc.Execute(context.Background(),
 			MustNewLoginInput("alice@dogpaw.com", "wrong", "10.0.0.99", fixedNowFunc()))
 		require.Len(t, calls, 1)
@@ -354,7 +354,7 @@ func TestLogin_RecordOnEveryOutcome(t *testing.T) {
 				return loginActiveUser(), nil
 			},
 		}
-		uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, limiter)
+		uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &stubTokenGenerator{}, limiter)
 		_, err := uc.Execute(context.Background(),
 			MustNewLoginInput("alice@dogpaw.com", "right", "10.0.0.99", fixedNowFunc()))
 		require.NoError(t, err)

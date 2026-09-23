@@ -118,7 +118,7 @@ func TestChangePassword_Success(t *testing.T) {
 		},
 	}
 
-	uc := NewChangePasswordUseCase(userRepo, verifier, hasher)
+	uc := NewChangePasswordUseCase(userRepo, verifier, hasher, &stubTokenGenerator{}, &stubTokenGenerator{})
 	in := MustNewChangePasswordInput(42, "old-password", "new-secure-password", func() time.Time { return changePasswordFixedNow() })
 
 	_, err := uc.Execute(context.Background(), in)
@@ -133,7 +133,7 @@ func TestChangePassword_UserNotFound(t *testing.T) {
 			return nil, domain.ErrNotFound
 		},
 	}
-	uc := NewChangePasswordUseCase(userRepo, &stubPasswordVerifier{}, &stubHasher{})
+	uc := NewChangePasswordUseCase(userRepo, &stubPasswordVerifier{}, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 	in := MustNewChangePasswordInput(99, "old", "new-secure-password", func() time.Time { return changePasswordFixedNow() })
 
 	_, err := uc.Execute(context.Background(), in)
@@ -156,7 +156,7 @@ func TestChangePassword_WrongOldPassword(t *testing.T) {
 			return nil
 		},
 	}
-	uc := NewChangePasswordUseCase(userRepo, verifier, &stubHasher{})
+	uc := NewChangePasswordUseCase(userRepo, verifier, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 	in := MustNewChangePasswordInput(42, "wrong-old-password", "new-secure-password", func() time.Time { return changePasswordFixedNow() })
 
 	_, err := uc.Execute(context.Background(), in)
@@ -178,7 +178,7 @@ func TestChangePassword_SamePassword(t *testing.T) {
 			return nil
 		},
 	}
-	uc := NewChangePasswordUseCase(userRepo, verifier, &stubHasher{})
+	uc := NewChangePasswordUseCase(userRepo, verifier, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 	in := MustNewChangePasswordInput(42, "old-password", "same-as-old-password", func() time.Time { return changePasswordFixedNow() })
 
 	_, err := uc.Execute(context.Background(), in)
@@ -193,7 +193,7 @@ func TestChangePassword_InactiveUser(t *testing.T) {
 			return changePasswordInactiveUser(), nil
 		},
 	}
-	uc := NewChangePasswordUseCase(userRepo, &stubPasswordVerifier{}, &stubHasher{})
+	uc := NewChangePasswordUseCase(userRepo, &stubPasswordVerifier{}, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 	in := MustNewChangePasswordInput(42, "old-password", "new-secure-password", func() time.Time { return changePasswordFixedNow() })
 
 	_, err := uc.Execute(context.Background(), in)
@@ -222,7 +222,7 @@ func TestChangePassword_HasherFailure(t *testing.T) {
 			return "", hashErr
 		},
 	}
-	uc := NewChangePasswordUseCase(userRepo, verifier, hasher)
+	uc := NewChangePasswordUseCase(userRepo, verifier, hasher, &stubTokenGenerator{}, &stubTokenGenerator{})
 	in := MustNewChangePasswordInput(42, "old-password", "new-secure-password", func() time.Time { return changePasswordFixedNow() })
 
 	_, err := uc.Execute(context.Background(), in)
@@ -250,7 +250,7 @@ func TestChangePassword_RepositoryFailure(t *testing.T) {
 			return nil
 		},
 	}
-	uc := NewChangePasswordUseCase(userRepo, verifier, &stubHasher{})
+	uc := NewChangePasswordUseCase(userRepo, verifier, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 	in := MustNewChangePasswordInput(42, "old-password", "new-secure-password", func() time.Time { return changePasswordFixedNow() })
 
 	_, err := uc.Execute(context.Background(), in)

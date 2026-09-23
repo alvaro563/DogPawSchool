@@ -531,7 +531,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/login": {
             "post": {
-                "description": "Authenticates a user with email and password. On success it returns a signed JWT (HS256) and the user profile. The token expires after 24 hours and carries the user ID (sub) and role (role) claims. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned.",
+                "description": "Authenticates a user with email and password. On success it sets two HttpOnly cookies (access_token SameSite=Lax, refresh_token SameSite=Strict) and returns the user profile with the access TTL. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned. The SPA never sees the raw JWT.",
                 "consumes": [
                     "application/json"
                 ],
@@ -541,7 +541,7 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Authenticate user and return a JWT token",
+                "summary": "Authenticate user with email and password",
                 "parameters": [
                     {
                         "description": "Login credentials",
@@ -587,6 +587,23 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/auth/logout": {
+            "post": {
+                "description": "Clears the access_token and refresh_token cookies. Idempotent — calling it twice returns 204 both times. Does NOT invalidate server-side state (the tokens remain technically valid until they expire); the cookie clearance forces the browser to stop sending them.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Clear session cookies",
+                "responses": {
+                    "204": {
+                        "description": "Logged out (cookies cleared)"
+                    }
+                }
+            }
+        },
         "/api/v1/auth/password": {
             "patch": {
                 "security": [
@@ -594,7 +611,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Verifies the current password and replaces it with a new one. Requires a valid Bearer JWT in the Authorization header. The new password must be at least 8 characters and different from the current one.",
+                "description": "Verifies the current password and replaces it with a new one. Requires a valid access_token cookie. The new password must be at least 8 characters and different from the current one. On success the user's token_version is bumped — all existing tokens (including the current one) are invalidated. Fresh cookies are issued so the SPA stays authenticated.",
                 "consumes": [
                     "application/json"
                 ],
@@ -650,9 +667,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/auth/refresh": {
+            "post": {
+                "description": "Exchanges a valid refresh_token cookie for a new pair of access_token + refresh_token cookies. Use this when the access_token has expired but the refresh_token is still valid (within 24 hours). Returns 401 if the refresh token is missing, malformed, expired, or revoked (e.g. the user changed their password). Rate limited by IP.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Refresh the session cookies",
+                "responses": {
+                    "200": {
+                        "description": "Cookies refreshed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.loginResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Refresh token missing, invalid, or expired",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many refresh attempts. Retry-After header indicates seconds.",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/register": {
             "post": {
-                "description": "Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 8 characters. Returns the created user profile without the password hash. IP rate limited by middleware (separate bucket from login).",
+                "description": "Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 8 characters. On success the response sets two HttpOnly cookies (access_token, refresh_token). The SPA never sees the raw JWT. IP rate limited by middleware (separate bucket from login).",
                 "consumes": [
                     "application/json"
                 ],
@@ -3040,6 +3095,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the public profile of the user identified by the access_token cookie. Used by the SPA on first page load to decide whether to render the authenticated shell or kick the user back to /auth/login.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get the authenticated user",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.userDTO"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid access token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User no longer exists",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/users/{user_id}": {
             "get": {
                 "security": [
@@ -4644,8 +4742,8 @@ const docTemplate = `{
         "handler.loginResponse": {
             "type": "object",
             "properties": {
-                "token": {
-                    "type": "string"
+                "expires_in": {
+                    "type": "integer"
                 },
                 "user": {
                     "$ref": "#/definitions/handler.userDTO"
@@ -5182,9 +5280,6 @@ const docTemplate = `{
         "handler.registerWithInvitationResponse": {
             "type": "object",
             "properties": {
-                "token": {
-                    "type": "string"
-                },
                 "user": {
                     "$ref": "#/definitions/handler.userDTO"
                 }

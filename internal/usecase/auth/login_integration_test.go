@@ -50,20 +50,20 @@ func TestLogin_Integration_Success(t *testing.T) {
 	seeded := seedActiveUser(t, testDB, "alice@dogpaw.com", plainPassword, domain.RoleRegular)
 
 	verifier := crypto.NewDefaultBcryptHasher()
-	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess)
 	userRepo := postgres.NewUserRepository(testDB)
 	lockout := postgres.NewLoginAttemptRepository(testDB, 5, 15*time.Minute, 10, 5*time.Minute)
-	uc := NewLoginUseCase(userRepo, verifier, tokenGen, lockout)
+	uc := NewLoginUseCase(userRepo, verifier, tokenGen, tokenGen, lockout)
 	in := MustNewLoginInput("alice@dogpaw.com", plainPassword, "127.0.0.1", nil)
 
 	out, err := uc.Execute(context.Background(), in)
 	require.NoError(t, err)
-	require.NotEmpty(t, out.Token, "token must not be empty")
+	require.NotEmpty(t, out.AccessToken, "token must not be empty")
 	require.NotNil(t, out.User)
 	assert.Equal(t, seeded.ID(), out.User.ID())
 	assert.Equal(t, "alice@dogpaw.com", out.User.Email())
 
-	claims, err := crypto.ParseToken(out.Token, []byte("test-secret-32-bytes-of-entropy!!"))
+	claims, err := crypto.ParseToken(out.AccessToken, []byte("test-secret-32-bytes-of-entropy!!"), crypto.KindAccess)
 	require.NoError(t, err, "token must be parseable")
 	assert.Equal(t, seeded.ID(), claims.UserID)
 	assert.Equal(t, "REGULAR", claims.Role)
@@ -76,10 +76,10 @@ func TestLogin_Integration_EmailNotFound(t *testing.T) {
 	cleanTables(t, testDB)
 
 	verifier := crypto.NewDefaultBcryptHasher()
-	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess)
 	userRepo := postgres.NewUserRepository(testDB)
 	lockout := postgres.NewLoginAttemptRepository(testDB, 5, 15*time.Minute, 10, 5*time.Minute)
-	uc := NewLoginUseCase(userRepo, verifier, tokenGen, lockout)
+	uc := NewLoginUseCase(userRepo, verifier, tokenGen, tokenGen, lockout)
 	in := MustNewLoginInput("nonexistent@dogpaw.com", "any-password", "127.0.0.1", nil)
 
 	_, err := uc.Execute(context.Background(), in)
@@ -95,10 +95,10 @@ func TestLogin_Integration_WrongPassword(t *testing.T) {
 	seedActiveUser(t, testDB, "bob@dogpaw.com", "correct-password", domain.RoleRegular)
 
 	verifier := crypto.NewDefaultBcryptHasher()
-	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess)
 	userRepo := postgres.NewUserRepository(testDB)
 	lockout := postgres.NewLoginAttemptRepository(testDB, 5, 15*time.Minute, 10, 5*time.Minute)
-	uc := NewLoginUseCase(userRepo, verifier, tokenGen, lockout)
+	uc := NewLoginUseCase(userRepo, verifier, tokenGen, tokenGen, lockout)
 	in := MustNewLoginInput("bob@dogpaw.com", "wrong-password", "127.0.0.1", nil)
 
 	_, err := uc.Execute(context.Background(), in)
@@ -114,10 +114,10 @@ func TestLogin_Integration_InactiveUser(t *testing.T) {
 	seedInactiveUser(t, testDB, "deactivated@dogpaw.com", "some-password", domain.RoleRegular)
 
 	verifier := crypto.NewDefaultBcryptHasher()
-	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
+	tokenGen := crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess)
 	userRepo := postgres.NewUserRepository(testDB)
 	lockout := postgres.NewLoginAttemptRepository(testDB, 5, 15*time.Minute, 10, 5*time.Minute)
-	uc := NewLoginUseCase(userRepo, verifier, tokenGen, lockout)
+	uc := NewLoginUseCase(userRepo, verifier, tokenGen, tokenGen, lockout)
 	in := MustNewLoginInput("deactivated@dogpaw.com", "some-password", "127.0.0.1", nil)
 
 	_, err := uc.Execute(context.Background(), in)

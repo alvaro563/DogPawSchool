@@ -16,7 +16,7 @@ func TestJWTTokenGenerator_Generate(t *testing.T) {
 
 	secret := "super-secret-key-for-testing"
 	ttl := 24 * time.Hour
-	generator := NewJWTTokenGenerator(secret, ttl)
+	generator := NewJWTTokenGenerator(secret, ttl, KindAccess)
 
 	user, err := domain.NewUser(7, "Alice", "alice@dogpaw.com", "hashed-pw-60chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", domain.RoleAdmin)
 	require.NoError(t, err)
@@ -56,8 +56,8 @@ func TestJWTTokenGenerator_DifferentSecrets(t *testing.T) {
 	user, err := domain.NewUser(1, "Bob", "bob@dogpaw.com", "hashed-pw-60chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", domain.RoleRegular)
 	require.NoError(t, err)
 
-	generatorA := NewJWTTokenGenerator("secret-a", 1*time.Hour)
-	generatorB := NewJWTTokenGenerator("secret-b", 1*time.Hour)
+	generatorA := NewJWTTokenGenerator("secret-a", 1*time.Hour, KindAccess)
+	generatorB := NewJWTTokenGenerator("secret-b", 1*time.Hour, KindAccess)
 
 	tokenA, err := generatorA.Generate(user)
 	require.NoError(t, err)
@@ -73,7 +73,7 @@ func TestJWTTokenGenerator_Generate_InvalidUser(t *testing.T) {
 
 	// User with empty name is invalid for NewUser, so we can't create one.
 	// Instead verify the generator handles a valid user gracefully.
-	generator := NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour)
+	generator := NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, KindAccess)
 
 	_, err := domain.NewUser(0, "", "x@y.com", "pw", domain.RoleRegular)
 	require.Error(t, err, "user with empty name should fail validation")

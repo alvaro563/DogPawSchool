@@ -39,8 +39,30 @@ func (s *stubPasswordChanger) Execute(ctx context.Context, in authuc.ChangePassw
 	return s.fn(ctx, in)
 }
 
-func newTestAuthHandler(registerer UserRegisterer, logger UserLogger, passwordChanger PasswordChanger) *AuthHandler {
-	return NewAuthHandler(registerer, logger, passwordChanger)
+func newTestAuthHandler(registerer UserRegisterer, logger UserLogger, passwordChanger PasswordChanger, refreshers ...*stubTokenRefresher) *AuthHandler {
+	refresher := &stubTokenRefresher{}
+	if len(refreshers) > 0 {
+		refresher = refreshers[0]
+	}
+	return NewAuthHandler(
+		registerer, logger, passwordChanger,
+		refresher,
+		CookieConfig{Secure: false, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour},
+	)
+}
+
+// stubTokenRefresher returns a valid output on any input. Used only
+// in tests that exercise Login/Register/Logout flows — those do not
+// exercise the refresh path.
+type stubTokenRefresher struct {
+	fn func(ctx context.Context, refreshToken string) (authuc.RefreshOutput, error)
+}
+
+func (s *stubTokenRefresher) Execute(ctx context.Context, refreshToken string) (authuc.RefreshOutput, error) {
+	if s.fn != nil {
+		return s.fn(ctx, refreshToken)
+	}
+	return authuc.RefreshOutput{}, errors.New("stubTokenRefresher: not used in this test")
 }
 
 func validRegisterWithInvitationBody() string {
@@ -74,7 +96,7 @@ func TestRegisterWithInvitation_Success(t *testing.T) {
 		fn: func(_ context.Context, in authuc.RegisterWithInvitationInput) (authuc.RegisterWithInvitationOutput, error) {
 			assert.Equal(t, "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", in.Token())
 			assert.Equal(t, "Alice", in.Name())
-			return authuc.RegisterWithInvitationOutput{User: u, Token: "jwt-token"}, nil
+			return authuc.RegisterWithInvitationOutput{User: u, AccessToken: "jwt-token", RefreshToken: "jwt-refresh"}, nil
 		},
 	}, nil, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/auth/register", validRegisterWithInvitationBody())
@@ -84,12 +106,18 @@ func TestRegisterWithInvitation_Success(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 	var body registerWithInvitationResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "jwt-token", body.Token)
 	assert.Equal(t, 1, body.User.ID)
 	assert.Equal(t, "Alice", body.User.Name)
 	assert.Equal(t, "alice@example.com", body.User.Email)
 	assert.Equal(t, "REGULAR", body.User.Role)
 	assert.True(t, body.User.IsActive)
+	// Tokens travel in Set-Cookie headers, never in the body.
+	var regCookies []string
+	for _, ck := range w.Result().Cookies() {
+		regCookies = append(regCookies, ck.Name+"="+ck.Value)
+	}
+	assert.Contains(t, regCookies, "access_token=jwt-token")
+	assert.Contains(t, regCookies, "refresh_token=jwt-refresh")
 	assert.NotContains(t, w.Body.String(), "password", "password must never appear in the response")
 }
 
@@ -138,6 +166,58 @@ func TestRegisterWithInvitation_EmptyName(t *testing.T) {
 	h.RegisterWithInvitation(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestLogout_ClearsBothCookies(t *testing.T) {
+	t.Parallel()
+	h := newTestAuthHandler(nil, &stubUserLogger{}, nil)
+	c, w := setupCtx(http.MethodPost, "/api/v1/auth/logout", "")
+
+	h.Logout(c)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	// Both cookies must be expired (MaxAge=-1).
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == CookieAccess || ck.Name == CookieRefresh {
+			assert.Equal(t, -1, ck.MaxAge,
+				"cookie %s must be expired on logout", ck.Name)
+		}
+	}
+}
+
+func TestRefresh_NoCookie(t *testing.T) {
+	t.Parallel()
+	h := newTestAuthHandler(nil, nil, nil, &stubTokenRefresher{})
+	c, w := setupCtx(http.MethodPost, "/api/v1/auth/refresh", "")
+	h.Refresh(c)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestRefresh_HappyPath_IssuesNewCookies(t *testing.T) {
+	t.Parallel()
+	user := newLoggedInUser()
+	h := newTestAuthHandler(nil, nil, nil, &stubTokenRefresher{
+		fn: func(_ context.Context, refreshToken string) (authuc.RefreshOutput, error) {
+			assert.NotEmpty(t, refreshToken, "handler must forward the cookie value")
+			return authuc.RefreshOutput{
+				AccessToken:  "new-access",
+				RefreshToken: "new-refresh",
+				User:         user,
+			}, nil
+		},
+	})
+	c, w := setupCtx(http.MethodPost, "/api/v1/auth/refresh", "")
+	c.Request.AddCookie(&http.Cookie{Name: CookieRefresh, Value: "old-refresh"})
+
+	h.Refresh(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var cookies []string
+	for _, ck := range w.Result().Cookies() {
+		cookies = append(cookies, ck.Name+"="+ck.Value)
+	}
+	assert.Contains(t, cookies, "access_token=new-access")
+	assert.Contains(t, cookies, "refresh_token=new-refresh")
 }
 
 func TestRegisterWithInvitation_ShortPassword(t *testing.T) {
@@ -206,7 +286,7 @@ func TestLogin_Success(t *testing.T) {
 	h := newTestAuthHandler(nil, &stubUserLogger{
 		fn: func(_ context.Context, in authuc.LoginInput) (authuc.LoginOutput, error) {
 			assert.Equal(t, "alice@dogpaw.com", in.Email())
-			return authuc.LoginOutput{Token: "jwt-header.payload.signature", User: u}, nil
+			return authuc.LoginOutput{AccessToken: "jwt-header.payload.signature", RefreshToken: "jwt-refresh", User: u}, nil
 		},
 	}, nil)
 	c, w := setupCtx(http.MethodPost, "/api/v1/auth/login", validLoginBody())
@@ -216,9 +296,15 @@ func TestLogin_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var body loginResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "jwt-header.payload.signature", body.Token)
 	assert.Equal(t, 42, body.User.ID)
 	assert.Equal(t, "Alice", body.User.Name)
+	// Tokens travel in Set-Cookie headers, never in the body.
+	var loginCookies []string
+	for _, ck := range w.Result().Cookies() {
+		loginCookies = append(loginCookies, ck.Name+"="+ck.Value)
+	}
+	assert.Contains(t, loginCookies, "access_token=jwt-header.payload.signature")
+	assert.Contains(t, loginCookies, "refresh_token=jwt-refresh")
 	assert.NotContains(t, w.Body.String(), "password", "password hash must never appear in the response")
 }
 

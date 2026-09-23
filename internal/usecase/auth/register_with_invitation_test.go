@@ -298,7 +298,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 				return 1, nil
 			},
 		}
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("valid-token-123", "Ana Such", validPassword(), fixed)
 
 		out, err := uc.Execute(context.Background(), in)
@@ -309,7 +309,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 		assert.Equal(t, "ana@dogpaw.es", out.User.Email())
 		assert.Equal(t, domain.RoleRegular, out.User.Role())
 		assert.True(t, out.User.IsActive())
-		assert.Equal(t, "signed-token", out.Token, "token should come from the TokenGenerator")
+		assert.Equal(t, "signed-token", out.AccessToken, "token should come from the TokenGenerator")
 		require.NotNil(t, capturedUser)
 		assert.NotEqual(t, validPassword(), capturedUser.Password(), "password should be hashed")
 		require.NotNil(t, capturedInv)
@@ -322,7 +322,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 				return nil, domain.ErrNotFound
 			},
 		}
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("nonexistent", "Ana", validPassword(), fixed)
 
 		_, err := uc.Execute(context.Background(), in)
@@ -337,7 +337,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 				return inv, nil
 			},
 		}
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("expired-token", "Ana", validPassword(), fixed)
 
 		_, err := uc.Execute(context.Background(), in)
@@ -352,7 +352,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 				return inv, nil
 			},
 		}
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("tok", "Ana", validPassword(), fixed)
 
 		_, err := uc.Execute(context.Background(), in)
@@ -367,7 +367,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 				return inv, nil
 			},
 		}
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, &mockUserRepository{}, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("tok", "Ana", validPassword(), fixed)
 
 		_, err := uc.Execute(context.Background(), in)
@@ -388,7 +388,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 				return 0, repoErr
 			},
 		}
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("tok", "Ana", validPassword(), fixed)
 
 		_, err := uc.Execute(context.Background(), in)
@@ -415,7 +415,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 			},
 		}
 		plaintext := validPassword()
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("tok", "Ana", plaintext, fixed)
 
 		_, err := uc.Execute(context.Background(), in)
@@ -439,7 +439,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 			},
 		}
 		hasher := &stubHasher{hash: func(string) (string, error) { return "", hashErr }}
-		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, hasher, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(&stubTransactor{}, invRepo, userRepo, hasher, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("tok", "Ana", validPassword(), fixed)
 
 		_, err := uc.Execute(context.Background(), in)
@@ -473,7 +473,7 @@ func TestRegisterWithInvitationUseCase_Execute(t *testing.T) {
 				return nil
 			},
 		}
-		uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{})
+		uc := NewRegisterWithInvitationUseCase(transactor, invRepo, userRepo, &stubHasher{}, &stubTokenGenerator{}, &stubTokenGenerator{})
 		in := MustNewRegisterWithInvitationInput("tok", "Ana", validPassword(), fixed)
 
 		_, err := uc.Execute(context.Background(), in)

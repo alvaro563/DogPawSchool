@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content Security Policy is delivered via HTTP response
+      headers only — by the Vite dev server in development, by
+      the Go SecurityHeadersMiddleware on every /api/* response,
+      and by the production reverse proxy on the SPA itself.
+      We do NOT use a meta CSP here because meta CSP cannot be
+      made dynamic per-deploy (it would need to allow whatever
+      origin the SPA lives at, which differs in dev vs prod),
+      and having both a meta CSP and an HTTP header CSP that
+      differ would let an attacker bypass one by reading the
+      other. Single source of truth: HTTP header.
+    -->
     <title>Dog Paw by Ana Such</title>
   </head>
   <body>

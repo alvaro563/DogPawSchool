@@ -82,7 +82,11 @@ export function ChangePasswordForm({ onClose }: ChangePasswordFormProps) {
         'Contraseña actualizada',
         'Vuelve a iniciar sesión con la nueva contraseña.',
       );
-      logout();
+      // Fire-and-forget: the hook's logout POSTs /auth/logout
+      // (server clears cookies) and clears local state. We do
+      // not block the navigation on the network call because the
+      // local state is cleared regardless.
+      void logout();
       navigate({ to: '/auth/login' });
     },
     onError: (err: unknown) => {

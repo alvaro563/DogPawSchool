@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router';
 import { Menu } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
@@ -14,10 +14,25 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 
 function AuthenticatedLayout() {
-  const { isLoading, isAdmin } = useAuth();
+  const { isLoading, isAuthenticated, isAdmin } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navigate = useNavigate();
 
-  if (isLoading) {
+  // Once the auth hook finishes bootstrapping (it asks /users/me
+  // on mount) and we discover there is no session, redirect to
+  // the login page. The previous design read localStorage here;
+  // with cookie-based auth the SPA cannot read the token directly,
+  // so we rely on the server telling us via /users/me. If that
+  // call 401s (cookie expired, token_version bumped, etc.), the
+  // hook clears the local cache and sets user=null, and this
+  // effect fires once isLoading flips to false.
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      navigate({ to: '/auth/login' });
+    }
+  }, [isLoading, isAuthenticated, navigate]);
+
+  if (isLoading || !isAuthenticated) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -74,18 +89,11 @@ function GlobalModals() {
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: () => {
-    const token = localStorage.getItem('auth_token');
-    const userRaw = localStorage.getItem('auth_user');
-
-    if (!token || !userRaw) {
-      throw redirect({ to: '/auth/login' });
-    }
-
-    try {
-      JSON.parse(userRaw);
-    } catch {
-      throw redirect({ to: '/auth/login' });
-    }
+    // Cookie-based auth: we cannot synchronously check the session
+    // here (the token is HttpOnly and the SPA cannot read it). Let
+    // the AuthProvider's /users/me bootstrap resolve the truth.
+    // Individual handlers will 401 any actual expired session and
+    // the http-client refresh interceptor will handle renewals.
   },
   component: AuthenticatedLayout,
 });

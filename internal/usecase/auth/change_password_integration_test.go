@@ -28,14 +28,18 @@ func TestChangePassword_Integration_Success(t *testing.T) {
 	userRepo := postgres.NewUserRepository(testDB)
 
 	lockout := postgres.NewLoginAttemptRepository(testDB, 5, 15*time.Minute, 10, 5*time.Minute)
-	loginUC := NewLoginUseCase(userRepo, verifier, crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour), lockout)
-	changeUC := NewChangePasswordUseCase(userRepo, verifier, hasher)
+	loginUC := NewLoginUseCase(userRepo, verifier, crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess),
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 24*time.Hour, crypto.KindRefresh),
+		lockout)
+	changeUC := NewChangePasswordUseCase(userRepo, verifier, hasher,
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess),
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 24*time.Hour, crypto.KindRefresh))
 
 	// Step 1: Login with old password works
 	loginIn := MustNewLoginInput("charlie@dogpaw.com", oldPassword, "127.0.0.1", nil)
 	loginOut, err := loginUC.Execute(context.Background(), loginIn)
 	require.NoError(t, err, "login with old password must succeed")
-	require.NotEmpty(t, loginOut.Token)
+	require.NotEmpty(t, loginOut.AccessToken)
 
 	// Step 2: Change password
 	changeIn := MustNewChangePasswordInput(seeded.ID(), oldPassword, newPassword, nil)
@@ -49,9 +53,9 @@ func TestChangePassword_Integration_Success(t *testing.T) {
 	// Step 4: Login with new password works
 	loginOut2, err := loginUC.Execute(context.Background(), MustNewLoginInput("charlie@dogpaw.com", newPassword, "127.0.0.1", nil))
 	require.NoError(t, err, "login with new password must succeed")
-	require.NotEmpty(t, loginOut2.Token)
+	require.NotEmpty(t, loginOut2.AccessToken)
 
-	claims, err := crypto.ParseToken(loginOut2.Token, []byte("test-secret-32-bytes-of-entropy!!"))
+	claims, err := crypto.ParseToken(loginOut2.AccessToken, []byte("test-secret-32-bytes-of-entropy!!"), crypto.KindAccess)
 	require.NoError(t, err)
 	assert.Equal(t, seeded.ID(), claims.UserID)
 }
@@ -65,7 +69,9 @@ func TestChangePassword_Integration_UserNotFound(t *testing.T) {
 	verifier := crypto.NewDefaultBcryptHasher()
 	hasher := crypto.NewDefaultBcryptHasher()
 	userRepo := postgres.NewUserRepository(testDB)
-	uc := NewChangePasswordUseCase(userRepo, verifier, hasher)
+	uc := NewChangePasswordUseCase(userRepo, verifier, hasher,
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess),
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 24*time.Hour, crypto.KindRefresh))
 	in := MustNewChangePasswordInput(9999, "old", "new-secure-password", nil)
 
 	_, err := uc.Execute(context.Background(), in)
@@ -83,7 +89,9 @@ func TestChangePassword_Integration_WrongOldPassword(t *testing.T) {
 	verifier := crypto.NewDefaultBcryptHasher()
 	hasher := crypto.NewDefaultBcryptHasher()
 	userRepo := postgres.NewUserRepository(testDB)
-	uc := NewChangePasswordUseCase(userRepo, verifier, hasher)
+	uc := NewChangePasswordUseCase(userRepo, verifier, hasher,
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess),
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 24*time.Hour, crypto.KindRefresh))
 	in := MustNewChangePasswordInput(seeded.ID(), "wrong-old-password", "new-secure-password", nil)
 
 	_, err := uc.Execute(context.Background(), in)
@@ -101,7 +109,9 @@ func TestChangePassword_Integration_SamePassword(t *testing.T) {
 	verifier := crypto.NewDefaultBcryptHasher()
 	hasher := crypto.NewDefaultBcryptHasher()
 	userRepo := postgres.NewUserRepository(testDB)
-	uc := NewChangePasswordUseCase(userRepo, verifier, hasher)
+	uc := NewChangePasswordUseCase(userRepo, verifier, hasher,
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess),
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 24*time.Hour, crypto.KindRefresh))
 	in := MustNewChangePasswordInput(seeded.ID(), "current-password-123", "current-password-123", nil)
 
 	_, err := uc.Execute(context.Background(), in)
@@ -119,7 +129,9 @@ func TestChangePassword_Integration_InactiveUser(t *testing.T) {
 	verifier := crypto.NewDefaultBcryptHasher()
 	hasher := crypto.NewDefaultBcryptHasher()
 	userRepo := postgres.NewUserRepository(testDB)
-	uc := NewChangePasswordUseCase(userRepo, verifier, hasher)
+	uc := NewChangePasswordUseCase(userRepo, verifier, hasher,
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour, crypto.KindAccess),
+		crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 24*time.Hour, crypto.KindRefresh))
 	in := MustNewChangePasswordInput(1, "some-password", "new-secure-password", nil)
 
 	_, err := uc.Execute(context.Background(), in)

@@ -64,13 +64,13 @@ func MustNewRegisterWithInvitationInput(token, name, password string, now func()
 }
 
 // RegisterWithInvitationOutput is the result of a successful
-// registration via invitation. Token carries a signed JWT so the
-// client can be logged in immediately after registering without a
-// second POST /auth/login round trip — Phase 1 of the invitation
-// flow.
+// registration via invitation. Two tokens (access + refresh) are
+// emitted so the SPA is logged in immediately without a follow-up
+// POST /auth/login. The handler maps them to Set-Cookie headers.
 type RegisterWithInvitationOutput struct {
-	User  *domain.User
-	Token string
+	User         *domain.User
+	AccessToken  string
+	RefreshToken string
 }
 
 // RegisterWithInvitationUseCase registers a new user from a pending
@@ -86,7 +86,8 @@ type RegisterWithInvitationUseCase struct {
 	invitationRepo domain.InvitationRepository
 	userRepo       domain.UserRepository
 	hasher         PasswordHasher
-	tokenGen       TokenGenerator
+	accessGen      TokenGenerator
+	refreshGen     TokenGenerator
 }
 
 func NewRegisterWithInvitationUseCase(
@@ -94,14 +95,16 @@ func NewRegisterWithInvitationUseCase(
 	invitationRepo domain.InvitationRepository,
 	userRepo domain.UserRepository,
 	hasher PasswordHasher,
-	tokenGen TokenGenerator,
+	accessGen TokenGenerator,
+	refreshGen TokenGenerator,
 ) *RegisterWithInvitationUseCase {
 	return &RegisterWithInvitationUseCase{
 		transactor:     transactor,
 		invitationRepo: invitationRepo,
 		userRepo:       userRepo,
 		hasher:         hasher,
-		tokenGen:       tokenGen,
+		accessGen:      accessGen,
+		refreshGen:     refreshGen,
 	}
 }
 
@@ -168,12 +171,16 @@ func (uc *RegisterWithInvitationUseCase) Execute(ctx context.Context, input Regi
 	// 3. Issue a JWT so the client is auto-logged-in. Same generator
 	// the LoginUseCase uses, so the token's TTL and signing
 	// parameters are consistent across auth paths.
-	token, err := uc.tokenGen.Generate(user)
+	access, err := uc.accessGen.Generate(user)
 	if err != nil {
-		return RegisterWithInvitationOutput{}, fmt.Errorf("generate token: %w", err)
+		return RegisterWithInvitationOutput{}, fmt.Errorf("generate access token: %w", err)
+	}
+	refresh, err := uc.refreshGen.Generate(user)
+	if err != nil {
+		return RegisterWithInvitationOutput{}, fmt.Errorf("generate refresh token: %w", err)
 	}
 
-	return RegisterWithInvitationOutput{User: user, Token: token}, nil
+	return RegisterWithInvitationOutput{User: user, AccessToken: access, RefreshToken: refresh}, nil
 }
 
 // hashRegistrationToken returns the hex-encoded SHA-256 of the raw token.

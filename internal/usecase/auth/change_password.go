@@ -61,9 +61,16 @@ func MustNewChangePasswordInput(userID int, oldPassword, newPassword string, now
 	return in
 }
 
-// ChangePasswordOutput is the (empty) result of a successful password
-// change. The handler translates this to a 200 with a message.
-type ChangePasswordOutput struct{}
+// ChangePasswordOutput carries the post-mutation state plus a fresh
+// pair of tokens. The handler uses the tokens to re-issue cookies so
+// the SPA stays logged in (the old access cookie is technically
+// valid by signature but will fail AuthRequired's token_version
+// check on the very next request, so re-issuing is required to
+// avoid a jarring logout).
+type ChangePasswordOutput struct {
+	AccessToken  string
+	RefreshToken string
+}
 
 // ChangePasswordUseCase verifies the current password and replaces it
 // with a new one. The flow is:
@@ -73,23 +80,31 @@ type ChangePasswordOutput struct{}
 //  3. Check the account is active (CanLogin).
 //  4. Reject if the new password equals the old one.
 //  5. Hash the new password.
-//  6. Update the user's password and bump updatedAt.
+//  6. Update the user's password and bump updatedAt + token_version.
 //  7. Persist via repository.
+//  8. Emit a fresh access+refresh pair (token_version bumped in step 6
+//     invalidated all outstanding tokens, so re-issuing is required).
 type ChangePasswordUseCase struct {
-	userRepo domain.UserRepository
-	verifier PasswordVerifier
-	hasher   PasswordHasher
+	userRepo   domain.UserRepository
+	verifier   PasswordVerifier
+	hasher     PasswordHasher
+	accessGen  TokenGenerator
+	refreshGen TokenGenerator
 }
 
 func NewChangePasswordUseCase(
 	userRepo domain.UserRepository,
 	verifier PasswordVerifier,
 	hasher PasswordHasher,
+	accessGen TokenGenerator,
+	refreshGen TokenGenerator,
 ) *ChangePasswordUseCase {
 	return &ChangePasswordUseCase{
-		userRepo: userRepo,
-		verifier: verifier,
-		hasher:   hasher,
+		userRepo:   userRepo,
+		verifier:   verifier,
+		hasher:     hasher,
+		accessGen:  accessGen,
+		refreshGen: refreshGen,
 	}
 }
 
@@ -127,5 +142,14 @@ func (uc *ChangePasswordUseCase) Execute(ctx context.Context, input ChangePasswo
 		return ChangePasswordOutput{}, fmt.Errorf("update user: %w", err)
 	}
 
-	return ChangePasswordOutput{}, nil
+	access, err := uc.accessGen.Generate(user)
+	if err != nil {
+		return ChangePasswordOutput{}, fmt.Errorf("generate access token: %w", err)
+	}
+	refresh, err := uc.refreshGen.Generate(user)
+	if err != nil {
+		return ChangePasswordOutput{}, fmt.Errorf("generate refresh token: %w", err)
+	}
+
+	return ChangePasswordOutput{AccessToken: access, RefreshToken: refresh}, nil
 }

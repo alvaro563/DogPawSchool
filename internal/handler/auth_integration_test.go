@@ -132,13 +132,19 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 
 	userRepo := postgres.NewUserRepository(db)
 	hasher := crypto.NewDefaultBcryptHasher()
-	tokenGen := crypto.NewJWTTokenGenerator(jwtTestSecret, 1*time.Hour)
+	accessGen := crypto.NewJWTTokenGenerator(jwtTestSecret, 1*time.Hour, crypto.KindAccess)
+	refreshGen := crypto.NewJWTTokenGenerator(jwtTestSecret, 24*time.Hour, crypto.KindRefresh)
 
 	// Use cases
-	loginUC := authuc.NewLoginUseCase(userRepo, hasher, tokenGen,
+	loginUC := authuc.NewLoginUseCase(userRepo, hasher, accessGen, refreshGen,
 		postgres.NewLoginAttemptRepository(db, 5, 15*time.Minute, 10, 5*time.Minute))
-	changePasswordUC := authuc.NewChangePasswordUseCase(userRepo, hasher, hasher)
-	authH := NewAuthHandler(nil, loginUC, changePasswordUC)
+	changePasswordUC := authuc.NewChangePasswordUseCase(userRepo, hasher, hasher, accessGen, refreshGen)
+	authH := NewAuthHandler(
+		nil, loginUC, changePasswordUC,
+		authuc.NewRefreshUseCase(userRepo, refreshGen, accessGen,
+			authuc.NewJWTTokenParser(jwtTestSecret, crypto.KindRefresh)),
+		CookieConfig{Secure: false, AccessTTL: time.Hour, RefreshTTL: 24 * time.Hour},
+	)
 
 	dogRepo := postgres.NewDogRepository(db)
 	incompatRepo := postgres.NewIncompatibilityRepository(db)
@@ -380,8 +386,9 @@ func changePasswordHTTP(router *gin.Engine, token, oldPassword, newPassword stri
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/password", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	// Token is now in a cookie, not the Authorization header.
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	}
 	router.ServeHTTP(w, req)
 	return w
@@ -401,18 +408,25 @@ func TestLoginHTTPSuccess(t *testing.T) {
 	w := loginHTTP(router, "http-login@dogpaw.com", "correct-password-123")
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var body map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	// Token is no longer in the body; it travels in Set-Cookie.
+	cookies := w.Result().Cookies()
+	var accessCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == CookieAccess {
+			accessCookie = c
+			break
+		}
+	}
+	require.NotNil(t, accessCookie, "access_token cookie must be set on login")
+	require.NotEmpty(t, accessCookie.Value)
 
-	token, ok := body["token"].(string)
-	require.True(t, ok, "response must contain a token")
-	require.NotEmpty(t, token)
-
-	claims, err := crypto.ParseToken(token, []byte(jwtTestSecret))
+	claims, err := crypto.ParseToken(accessCookie.Value, []byte(jwtTestSecret), crypto.KindAccess)
 	require.NoError(t, err, "token must be parseable")
 	assert.Positive(t, claims.UserID)
 	assert.Equal(t, "REGULAR", claims.Role)
 
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	userMap, ok := body["user"].(map[string]interface{})
 	require.True(t, ok, "response must contain user object")
 	assert.Equal(t, "http-login@dogpaw.com", userMap["email"])
@@ -471,9 +485,16 @@ func TestChangePasswordHTTPSuccess(t *testing.T) {
 	// Step 1: Login to get a token
 	loginW := loginHTTP(router, "pw-change@dogpaw.com", oldPw)
 	require.Equal(t, http.StatusOK, loginW.Code)
-	var loginBody map[string]interface{}
-	require.NoError(t, json.Unmarshal(loginW.Body.Bytes(), &loginBody))
-	token := loginBody["token"].(string)
+	loginCookies := loginW.Result().Cookies()
+	var accessCookie *http.Cookie
+	for _, c := range loginCookies {
+		if c.Name == CookieAccess {
+			accessCookie = c
+			break
+		}
+	}
+	require.NotNil(t, accessCookie, "access_token cookie must be set on login")
+	token := accessCookie.Value
 
 	// Step 2: Change password with valid token
 	w := changePasswordHTTP(router, token, oldPw, newPw)
@@ -489,12 +510,16 @@ func TestChangePasswordHTTPSuccess(t *testing.T) {
 	// Step 4: New password works
 	w3 := loginHTTP(router, "pw-change@dogpaw.com", newPw)
 	require.Equal(t, http.StatusOK, w3.Code)
-	var loginBody3 map[string]interface{}
-	require.NoError(t, json.Unmarshal(w3.Body.Bytes(), &loginBody3))
-	token3 := loginBody3["token"].(string)
-	require.NotEmpty(t, token3)
+	var token3 string
+	for _, c := range w3.Result().Cookies() {
+		if c.Name == CookieAccess {
+			token3 = c.Value
+			break
+		}
+	}
+	require.NotEmpty(t, token3, "login with new password must issue an access cookie")
 
-	claims, err := crypto.ParseToken(token3, []byte(jwtTestSecret))
+	claims, err := crypto.ParseToken(token3, []byte(jwtTestSecret), crypto.KindAccess)
 	require.NoError(t, err)
 	assert.Positive(t, claims.UserID)
 }
@@ -532,9 +557,14 @@ func TestChangePasswordHTTPWrongOldPassword(t *testing.T) {
 
 	loginW := loginHTTP(router, "wrong-old@dogpaw.com", "real-old-password")
 	require.Equal(t, http.StatusOK, loginW.Code)
-	var loginBody map[string]interface{}
-	require.NoError(t, json.Unmarshal(loginW.Body.Bytes(), &loginBody))
-	token := loginBody["token"].(string)
+	var token string
+	for _, c := range loginW.Result().Cookies() {
+		if c.Name == CookieAccess {
+			token = c.Value
+			break
+		}
+	}
+	require.NotEmpty(t, token)
 
 	w := changePasswordHTTP(router, token, "not-the-real-old", "new-password")
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -552,9 +582,14 @@ func TestChangePasswordHTTPSamePassword(t *testing.T) {
 
 	loginW := loginHTTP(router, "same-pw@dogpaw.com", samePw)
 	require.Equal(t, http.StatusOK, loginW.Code)
-	var loginBody map[string]interface{}
-	require.NoError(t, json.Unmarshal(loginW.Body.Bytes(), &loginBody))
-	token := loginBody["token"].(string)
+	var token string
+	for _, c := range loginW.Result().Cookies() {
+		if c.Name == CookieAccess {
+			token = c.Value
+			break
+		}
+	}
+	require.NotEmpty(t, token)
 
 	w := changePasswordHTTP(router, token, samePw, samePw)
 	assert.Equal(t, http.StatusConflict, w.Code)
@@ -582,11 +617,14 @@ func loginAndGetToken(t *testing.T, router *gin.Engine, email, password string) 
 	t.Helper()
 	w := loginHTTP(router, email, password)
 	require.Equal(t, http.StatusOK, w.Code)
-	var body map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	token, _ := body["token"].(string)
-	require.NotEmpty(t, token)
-	return token
+	for _, c := range w.Result().Cookies() {
+		if c.Name == CookieAccess {
+			require.NotEmpty(t, c.Value)
+			return c.Value
+		}
+	}
+	t.Fatalf("loginAndGetToken: no access_token cookie in response")
+	return ""
 }
 
 func TestAuthz_AdminListUsers_Success(t *testing.T) {
@@ -604,7 +642,7 @@ func TestAuthz_AdminListUsers_Success(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -627,7 +665,7 @@ func TestAuthz_RegularUserBlockedFromListUsers(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -649,7 +687,7 @@ func TestAuthz_AdminCanListAllUserEmails(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/emails", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -675,7 +713,7 @@ func TestAuthz_RegularUserBlockedFromListUserEmails(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/emails", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -696,7 +734,7 @@ func TestAuthz_RegularUserBlockedFromCreateDog(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dogs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -718,7 +756,7 @@ func TestAuthz_AdminCanCreateDog(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dogs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
@@ -741,14 +779,14 @@ func TestAuthz_AdminCanListAnyUserDogs(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dogs", strings.NewReader(dogBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: adminToken})
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusCreated, w.Code)
 
 	// Admin lists owner's dogs
 	w2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/dogs/owner/%d", owner.ID()), nil)
-	req2.Header.Set("Authorization", "Bearer "+adminToken)
+	req2.AddCookie(&http.Cookie{Name: CookieAccess, Value: adminToken})
 	router.ServeHTTP(w2, req2)
 	assert.Equal(t, http.StatusOK, w2.Code)
 }
@@ -770,7 +808,7 @@ func TestAuthz_OwnerCanSeeOwnDog(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dogs", strings.NewReader(dogBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: adminToken})
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -781,7 +819,7 @@ func TestAuthz_OwnerCanSeeOwnDog(t *testing.T) {
 	ownerToken := loginAndGetToken(t, router, "owner-see-dog@dogpaw.com", "owner-pw")
 	w2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/dogs/%s", dogID), nil)
-	req2.Header.Set("Authorization", "Bearer "+ownerToken)
+	req2.AddCookie(&http.Cookie{Name: CookieAccess, Value: ownerToken})
 	router.ServeHTTP(w2, req2)
 	assert.Equal(t, http.StatusOK, w2.Code)
 }
@@ -804,7 +842,7 @@ func TestAuthz_OtherUserBlockedFromDog(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dogs", strings.NewReader(dogBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: adminToken})
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusCreated, w.Code)
 	dogID := strings.TrimPrefix(w.Header().Get("Location"), "/api/v1/dogs/")
@@ -813,7 +851,7 @@ func TestAuthz_OtherUserBlockedFromDog(t *testing.T) {
 	otherToken := loginAndGetToken(t, router, "other-user@dogpaw.com", "other-pw")
 	w2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/dogs/%s", dogID), nil)
-	req2.Header.Set("Authorization", "Bearer "+otherToken)
+	req2.AddCookie(&http.Cookie{Name: CookieAccess, Value: otherToken})
 	router.ServeHTTP(w2, req2)
 	assert.Equal(t, http.StatusForbidden, w2.Code)
 }
@@ -830,7 +868,7 @@ func TestAuthz_RegularUserSeeOwnProfile(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/users/%d", user.ID()), nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
@@ -850,7 +888,7 @@ func TestAuthz_RegularUserBlockedFromOtherProfile(t *testing.T) {
 	// Try to access the other user's profile (ID=1)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/users/%d", regular.ID()+1), nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
@@ -869,7 +907,7 @@ func TestAuthz_AdminSeeAnyProfile(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/users/%d", user.ID()), nil)
-	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: adminToken})
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
@@ -943,7 +981,7 @@ func TestActivityRosterHTTP_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet,
 		fmt.Sprintf("/api/v1/activities/%d/roster", activityID), nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code, "roster endpoint must be wired under the admin router group")
@@ -990,7 +1028,7 @@ func TestActivityRosterHTTP_NoAdminPrefix(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/activities/1/roster", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code,
@@ -1081,7 +1119,7 @@ func TestPendingReservationsHTTP_Success(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reservations/pending", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
@@ -1143,7 +1181,7 @@ func TestPendingReservationsHTTP_TrailingSlashRedirects(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reservations/pending/", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: CookieAccess, Value: token})
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusMovedPermanently, w.Code,

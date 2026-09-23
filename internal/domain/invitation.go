@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -53,6 +54,7 @@ func NewInvitation(id, createdBy int, email, token string, role UserRole, status
 	if createdBy <= 0 {
 		return nil, fmt.Errorf("invitation: createdBy must be greater than 0")
 	}
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, fmt.Errorf("invitation: email must not be empty")
 	}
@@ -101,6 +103,7 @@ func NewPendingInvitation(createdBy int, email, token string, role UserRole, exp
 	if createdBy <= 0 {
 		return nil, fmt.Errorf("invitation: createdBy must be greater than 0")
 	}
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, fmt.Errorf("invitation: email must not be empty")
 	}

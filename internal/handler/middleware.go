@@ -3,7 +3,6 @@ package handler
 import (
 	"net"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,29 +10,33 @@ import (
 	"dogpaw/internal/domain"
 )
 
-// AuthRequired returns a Gin middleware that validates a Bearer JWT from
-// the Authorization header. On success it sets "user_id" (int),
-// "user_role" (string), and "token_version" (int) in the Gin context.
-// Additionally, it confirms the user still exists in the database, is
-// active, and that the token's version matches the user's current
-// version (revoked tokens have a stale version after a password change).
-// On any failure it aborts with 401.
+// AuthRequired returns a Gin middleware that validates an access
+// token from the access_token HttpOnly cookie. On success it sets
+// "user_id" (int), "user_role" (string), and "token_version" (int)
+// in the Gin context. Additionally, it confirms the user still
+// exists in the database, is active, and that the token's version
+// matches the user's current version (revoked tokens have a stale
+// version after a password change). On any failure it aborts with
+// 401.
+//
+// Cookie-based (instead of the previous Authorization: Bearer
+// header) so the JWT never sits in JavaScript-accessible storage.
+// The SPA's http-client uses credentials: 'include' so the cookie
+// travels automatically; the SPA itself never reads the token.
+//
+// The "access" kind check prevents an attacker who somehow obtains
+// a refresh token from presenting it as an access token (the kind
+// claim differentiates them).
 func AuthRequired(secret string, userRepo domain.UserRepository) gin.HandlerFunc {
 	secretBytes := []byte(secret)
 	return func(c *gin.Context) {
-		header := c.GetHeader("Authorization")
-		if header == "" {
+		tokenString, err := c.Cookie(CookieAccess)
+		if err != nil || tokenString == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
 			return
 		}
 
-		tokenString, ok := strings.CutPrefix(header, "Bearer ")
-		if !ok || tokenString == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
-			return
-		}
-
-		claims, err := crypto.ParseToken(tokenString, secretBytes)
+		claims, err := crypto.ParseToken(tokenString, secretBytes, crypto.KindAccess)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
 			return

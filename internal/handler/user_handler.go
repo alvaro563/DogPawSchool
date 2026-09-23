@@ -108,6 +108,36 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 	c.JSON(http.StatusOK, toUserDTO(output.User))
 }
 
+// GetMe godoc
+// @Summary      Get the authenticated user
+// @Description  Returns the public profile of the user identified by the access_token cookie. Used by the SPA on first page load to decide whether to render the authenticated shell or kick the user back to /auth/login.
+// @Tags         users
+// @Produce      json
+// @Success      200  {object}  userDTO
+// @Failure      401  {object}  errorResponse  "Missing or invalid access token"
+// @Failure      404  {object}  errorResponse  "User no longer exists"
+// @Failure      500  {object}  errorResponse  "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/users/me [get]
+func (h *UserHandler) GetMe(c *gin.Context) {
+	id := CurrentUserID(c)
+	if id == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+		return
+	}
+	in, err := useruc.NewGetUserInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	output, err := h.get.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toUserDTO(output.User))
+}
+
 // List godoc
 // @Summary      List all users (admin view)
 // @Description  Returns a paginated list of every user in the system. Intended for the admin panel. Limit defaults to 50 and is capped at 100. Offset defaults to 0.

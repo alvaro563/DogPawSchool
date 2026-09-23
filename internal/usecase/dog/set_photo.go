@@ -56,7 +56,9 @@ func (uc *SetDogPhotoUseCase) Execute(ctx context.Context, input SetDogPhotoInpu
 			return fmt.Errorf("set dog photo: %w", err)
 		}
 
-		dog.SetPhotoURL(input.PhotoURL())
+		if err := dog.SetPhotoURL(input.PhotoURL()); err != nil {
+			return err
+		}
 		if err := uc.repo.Update(txCtx, dog); err != nil {
 			return fmt.Errorf("set dog photo: %w", err)
 		}
