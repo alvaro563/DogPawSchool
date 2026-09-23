@@ -45,7 +45,35 @@ type Config struct {
 	TLSCertFile     string
 	TrustedProxies  []string
 	ShutdownTimeout time.Duration
-	DB              DBConfig
+
+	// IP rate limit on /auth/login. Buckets are in-memory, keyed by
+	// TCP peer (RemoteAddr); see rateLimitMiddleware for the trust
+	// model. Defaults are intentionally generous so legitimate
+	// retries across flaky mobile networks aren't punished.
+	LoginIPRateLimitPerMinute int
+	LoginIPBurst              int
+
+	// IP rate limit on /auth/register. Tighter than login because
+	// each registration consumes an admin-issued invitation
+	// token.
+	RegisterIPRateLimitPerMinute int
+	RegisterIPBurst              int
+
+	// Account lockout (Postgres-backed, see AccountLoginLimiter).
+	// Email and IP axes are evaluated independently; either one
+	// can lock out a request.
+	LockoutEmailMaxFailures int
+	LockoutEmailWindow      time.Duration
+	LockoutIPMaxFailures    int
+	LockoutIPWindow         time.Duration
+
+	// LoginAttemptsCleanupInterval drives the background
+	// housekeeping goroutine that deletes login_attempts rows
+	// older than LockoutEmailWindow*2 (or 1h floor). Conservative
+	// default — the table is tiny.
+	LoginAttemptsCleanupInterval time.Duration
+
+	DB DBConfig
 }
 
 type DBConfig struct {
@@ -109,10 +137,19 @@ func (dbConfig DBConfig) DSN() string {
 //   DB_CONN_MAX_LIFETIME (5m)
 //   DB_PING_TIMEOUT      (30s)
 //   SHUTDOWN_TIMEOUT     (15s)
-//   CORS_ORIGINS         (none)
-//   TRUSTED_PROXIES      (none)
-//   TLS_KEY_FILE         (none)
-//   TLS_CERT_FILE        (none)
+//   CORS_ORIGINS                 (none)
+//   TRUSTED_PROXIES              (none)
+//   TLS_KEY_FILE                 (none)
+//   TLS_CERT_FILE                (none)
+//   LOGIN_IP_RATE_PER_MINUTE     (20)
+//   LOGIN_IP_BURST               (10)
+//   REGISTER_IP_RATE_PER_MINUTE  (5)
+//   REGISTER_IP_BURST            (5)
+//   LOCKOUT_EMAIL_MAX_FAILURES   (5)
+//   LOCKOUT_EMAIL_WINDOW         (15m)
+//   LOCKOUT_IP_MAX_FAILURES      (10)
+//   LOCKOUT_IP_WINDOW            (5m)
+//   LOGIN_ATTEMPTS_CLEANUP_INTERVAL (15m)
 //
 // Note: DB_HOST, DB_USER, DB_NAME have no in-code default on purpose.
 // The operator must declare them. A bare "localhost" default is
@@ -148,6 +185,19 @@ func LoadConfig() (Config, error) {
 		TLSCertFile:     os.Getenv("TLS_CERT_FILE"),
 		TrustedProxies:  parseCSV(os.Getenv("TRUSTED_PROXIES")),
 		ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 15*time.Second),
+
+		LoginIPRateLimitPerMinute:    getEnvInt("LOGIN_IP_RATE_PER_MINUTE", 20),
+		LoginIPBurst:                 getEnvInt("LOGIN_IP_BURST", 10),
+		RegisterIPRateLimitPerMinute: getEnvInt("REGISTER_IP_RATE_PER_MINUTE", 5),
+		RegisterIPBurst:              getEnvInt("REGISTER_IP_BURST", 5),
+
+		LockoutEmailMaxFailures: getEnvInt("LOCKOUT_EMAIL_MAX_FAILURES", 5),
+		LockoutEmailWindow:      getEnvDuration("LOCKOUT_EMAIL_WINDOW", 15*time.Minute),
+		LockoutIPMaxFailures:    getEnvInt("LOCKOUT_IP_MAX_FAILURES", 10),
+		LockoutIPWindow:         getEnvDuration("LOCKOUT_IP_WINDOW", 5*time.Minute),
+
+		LoginAttemptsCleanupInterval: getEnvDuration("LOGIN_ATTEMPTS_CLEANUP_INTERVAL", 15*time.Minute),
+
 		DB: DBConfig{
 			Host:            os.Getenv("DB_HOST"),
 			Port:            getEnvInt("DB_PORT", 5432),

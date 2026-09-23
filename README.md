@@ -129,7 +129,8 @@ on a production box, something is wrong with your deployment.
 - [ ] `DB_PASSWORD` ≥ 12 bytes, from a secret manager
 - [ ] `DB_SSLMODE=require` or `verify-full`
 - [ ] TLS configured (reverse proxy or `TLS_KEY_FILE` / `TLS_CERT_FILE`)
-- [ ] `TRUSTED_PROXIES` set if behind a load balancer
+- [ ] `TRUSTED_PROXIES` set if behind a load balancer (only affects `c.ClientIP()` logged by `requestLogger`; the rate limit middleware uses `RemoteAddr` directly)
+- [ ] IP rate limits tuned for expected traffic (`LOGIN_IP_*`, `REGISTER_IP_*`); account lockout defaults (`LOCKOUT_*`) are sane but adjustable
 - [ ] `CORS_ORIGINS` set to the exact frontend origin
 - [ ] `docker-compose.yml` not used as-is in production; use a
       managed Postgres instance or a properly secured cluster

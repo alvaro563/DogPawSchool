@@ -27,11 +27,12 @@ func TestChangePassword_Integration_Success(t *testing.T) {
 	hasher := crypto.NewDefaultBcryptHasher()
 	userRepo := postgres.NewUserRepository(testDB)
 
-	loginUC := NewLoginUseCase(userRepo, verifier, crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour))
+	lockout := postgres.NewLoginAttemptRepository(testDB, 5, 15*time.Minute, 10, 5*time.Minute)
+	loginUC := NewLoginUseCase(userRepo, verifier, crypto.NewJWTTokenGenerator("test-secret-32-bytes-of-entropy!!", 1*time.Hour), lockout)
 	changeUC := NewChangePasswordUseCase(userRepo, verifier, hasher)
 
 	// Step 1: Login with old password works
-	loginIn := MustNewLoginInput("charlie@dogpaw.com", oldPassword, nil)
+	loginIn := MustNewLoginInput("charlie@dogpaw.com", oldPassword, "127.0.0.1", nil)
 	loginOut, err := loginUC.Execute(context.Background(), loginIn)
 	require.NoError(t, err, "login with old password must succeed")
 	require.NotEmpty(t, loginOut.Token)
@@ -42,11 +43,11 @@ func TestChangePassword_Integration_Success(t *testing.T) {
 	require.NoError(t, err, "change password must succeed")
 
 	// Step 3: Login with old password fails
-	_, err = loginUC.Execute(context.Background(), MustNewLoginInput("charlie@dogpaw.com", oldPassword, nil))
+	_, err = loginUC.Execute(context.Background(), MustNewLoginInput("charlie@dogpaw.com", oldPassword, "127.0.0.1", nil))
 	assert.ErrorIs(t, err, ErrInvalidCredentials, "old password must no longer work")
 
 	// Step 4: Login with new password works
-	loginOut2, err := loginUC.Execute(context.Background(), MustNewLoginInput("charlie@dogpaw.com", newPassword, nil))
+	loginOut2, err := loginUC.Execute(context.Background(), MustNewLoginInput("charlie@dogpaw.com", newPassword, "127.0.0.1", nil))
 	require.NoError(t, err, "login with new password must succeed")
 	require.NotEmpty(t, loginOut2.Token)
 

@@ -54,7 +54,7 @@ type loginResponse struct {
 
 // RegisterWithInvitation godoc
 // @Summary      Register a new user with an invitation token
-// @Description  Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 8 characters. Returns the created user profile without the password hash.
+// @Description  Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 8 characters. Returns the created user profile without the password hash. IP rate limited by middleware (separate bucket from login).
 // @Tags         auth
 // @Accept       json
 // @Produce      json
@@ -63,6 +63,7 @@ type loginResponse struct {
 // @Failure      400   {object}  errorResponse                   "Invalid request body, missing fields, or validation error (e.g. short password)"
 // @Failure      404   {object}  errorResponse                   "Token not found"
 // @Failure      409   {object}  errorResponse                   "Token already used, expired, or revoked"
+// @Failure      429   {object}  errorResponse                   "Too many registration attempts from this source. Retry-After header indicates seconds."
 // @Failure      500   {object}  errorResponse                   "Internal server error"
 // @Router       /api/v1/auth/register [post]
 func (h *AuthHandler) RegisterWithInvitation(c *gin.Context) {
@@ -95,7 +96,7 @@ func (h *AuthHandler) RegisterWithInvitation(c *gin.Context) {
 
 // Login godoc
 // @Summary      Authenticate user and return a JWT token
-// @Description  Authenticates a user with email and password. On success it returns a signed JWT (HS256) and the user profile. The token expires after 24 hours and carries the user ID (sub) and role (role) claims.
+// @Description  Authenticates a user with email and password. On success it returns a signed JWT (HS256) and the user profile. The token expires after 24 hours and carries the user ID (sub) and role (role) claims. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned.
 // @Tags         auth
 // @Accept       json
 // @Produce      json
@@ -103,6 +104,7 @@ func (h *AuthHandler) RegisterWithInvitation(c *gin.Context) {
 // @Success      200   {object}  loginResponse  "Login successful"
 // @Failure      400   {object}  errorResponse  "Invalid request body (malformed JSON, missing email, missing password)"
 // @Failure      401   {object}  errorResponse  "Invalid credentials or inactive user"
+// @Failure      429   {object}  errorResponse  "Account temporarily locked — too many failed attempts. Retry-After header indicates seconds until unlock."
 // @Failure      500   {object}  errorResponse  "Internal server error"
 // @Router       /api/v1/auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -115,7 +117,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	in, err := authuc.NewLoginInput(req.Email, req.Password, nil)
+	in, err := authuc.NewLoginInput(req.Email, req.Password, ClientIP(c), nil)
 	if err != nil {
 		writeError(c, err)
 		return

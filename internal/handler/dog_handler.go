@@ -1179,6 +1179,30 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "pass_state_changed"})
 		return
 	}
+	var lockoutErr *domain.ErrAccountLockout
+	if errors.As(err, &lockoutErr) {
+		// 429: too many failed login attempts against this
+		// account or from this source. RetryAfter is the time
+		// until the oldest counted attempt ages out of the
+		// window. The IETF draft-8 Retry-After header is in
+		// seconds (rounded up, with a 1-second floor so the
+		// client doesn't tight-loop on a sub-second wait).
+		secs := int(lockoutErr.RetryAfter.Seconds())
+		if lockoutErr.RetryAfter > 0 && secs < 1 {
+			secs = 1
+		}
+		if secs < 1 {
+			secs = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(secs))
+		c.Header("RateLimit-Reset", strconv.Itoa(secs))
+		c.JSON(http.StatusTooManyRequests, errorResponse{
+			Error: "account_locked",
+			Details: fmt.Sprintf("too many failed attempts (%s); retry in %ds",
+				lockoutErr.Reason, secs),
+		})
+		return
+	}
 	if errors.Is(err, reservationuc.ErrIndividualClassDogMismatch) {
 		// 403 (not 409): the requester has no authorization over
 		// this specific activity slot. The activity exists and is

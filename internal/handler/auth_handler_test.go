@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -445,4 +446,52 @@ func TestChangePassword_InternalError(t *testing.T) {
 	h.ChangePassword(c)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestLogin_LockoutReturns429WithRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	h := newTestAuthHandler(nil, &stubUserLogger{
+		fn: func(_ context.Context, _ authuc.LoginInput) (authuc.LoginOutput, error) {
+			return authuc.LoginOutput{}, &domain.ErrAccountLockout{
+				RetryAfter: 7 * time.Minute,
+				Reason:     domain.LockoutReasonEmail,
+			}
+		},
+	}, nil)
+	c, w := setupCtx(http.MethodPost, "/api/v1/auth/login", validLoginBody())
+	c.Request.RemoteAddr = "203.0.113.7:51234"
+
+	h.Login(c)
+
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.Equal(t, "420", w.Header().Get("Retry-After"),
+		"Retry-After must be ceil(7m) = 420s")
+	assert.Equal(t, "420", w.Header().Get("RateLimit-Reset"))
+
+	var body errorResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "account_locked", body.Error)
+	assert.Contains(t, body.Details, "email")
+}
+
+func TestLogin_LockoutByIPUsesRetryAfterFloor(t *testing.T) {
+	t.Parallel()
+
+	// Sub-second retry-after must be rounded up to 1 (the
+	// minimum integer the IETF draft allows on Retry-After).
+	h := newTestAuthHandler(nil, &stubUserLogger{
+		fn: func(_ context.Context, _ authuc.LoginInput) (authuc.LoginOutput, error) {
+			return authuc.LoginOutput{}, &domain.ErrAccountLockout{
+				RetryAfter: 100 * time.Millisecond,
+				Reason:     domain.LockoutReasonIP,
+			}
+		},
+	}, nil)
+	c, w := setupCtx(http.MethodPost, "/api/v1/auth/login", validLoginBody())
+
+	h.Login(c)
+
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
 }

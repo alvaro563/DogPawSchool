@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { PawPrint, AlertCircle } from 'lucide-react';
 import { registerSchema, type RegisterInput } from '@/domain/schemas/auth-schema';
@@ -23,6 +23,14 @@ interface FieldError {
   password?: string;
 }
 
+function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return '0s';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `${s}s`;
+  return `${m}m ${s.toString().padStart(2, '0')}s`;
+}
+
 function getServerErrorMessage(status: number): string {
   switch (status) {
     case 409:
@@ -31,6 +39,8 @@ function getServerErrorMessage(status: number): string {
       return 'Datos inválidos. Revisa los campos.';
     case 404:
       return 'Enlace inválido.';
+    case 429:
+      return 'Demasiados intentos. Espera antes de intentarlo de nuevo.';
     default:
       return 'Error de conexión. Inténtalo de nuevo.';
   }
@@ -53,6 +63,15 @@ export function RegisterForm() {
   const [fieldErrors, setFieldErrors] = useState<FieldError>({});
   const [serverError, setServerError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (retryAfterSeconds === null || retryAfterSeconds <= 0) return;
+    const id = window.setInterval(() => {
+      setRetryAfterSeconds((s) => (s === null ? null : s - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [retryAfterSeconds]);
 
   if (!searchToken) {
     return (
@@ -101,6 +120,8 @@ export function RegisterForm() {
     e.preventDefault();
     setServerError('');
 
+    if (retryAfterSeconds !== null && retryAfterSeconds > 0) return;
+
     if (!validateClient()) return;
 
     setIsSubmitting(true);
@@ -113,11 +134,24 @@ export function RegisterForm() {
       navigate({ to: response.user.role === 'ADMIN' ? '/admin' : '/calendar' });
     } catch (err) {
       const apiErr = err as ApiError;
-      setServerError(getServerErrorMessage(apiErr.status));
+      if (apiErr.status === 429 && apiErr.retryAfterSeconds != null) {
+        setRetryAfterSeconds(apiErr.retryAfterSeconds);
+        setServerError('');
+      } else {
+        setServerError(getServerErrorMessage(apiErr.status));
+      }
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  const isLockedOut = retryAfterSeconds !== null && retryAfterSeconds > 0;
+  const submitDisabled = isSubmitting || isLockedOut;
+  const submitLabel = isLockedOut
+    ? `Espera ${formatCountdown(retryAfterSeconds)}`
+    : isSubmitting
+      ? null
+      : 'Crear cuenta';
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-background to-muted/30 px-4 py-12 sm:px-6 lg:px-8">
@@ -151,7 +185,7 @@ export function RegisterForm() {
                     setName(e.target.value);
                     if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
                   }}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isLockedOut}
                   data-invalid={!!fieldErrors.name}
                   className={fieldErrors.name ? 'border-destructive' : ''}
                 />
@@ -172,7 +206,7 @@ export function RegisterForm() {
                     setPassword(e.target.value);
                     if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
                   }}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isLockedOut}
                   data-invalid={!!fieldErrors.password}
                   className={fieldErrors.password ? 'border-destructive' : ''}
                 />
@@ -187,11 +221,25 @@ export function RegisterForm() {
               </div>
             )}
 
-            <Button type="submit" className="mt-6 w-full" disabled={isSubmitting} size="lg">
+            {isLockedOut && (
+              <div
+                className="mt-4 flex items-start gap-2 rounded-md bg-amber-100 p-3 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-100"
+                role="status"
+                aria-live="polite"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>
+                  Demasiados intentos desde tu origen. Podrás intentarlo de
+                  nuevo en <strong>{formatCountdown(retryAfterSeconds)}</strong>.
+                </span>
+              </div>
+            )}
+
+            <Button type="submit" className="mt-6 w-full" disabled={submitDisabled} size="lg">
               {isSubmitting ? (
                 <LoadingSpinner size="sm" className="border-t-background" />
               ) : (
-                'Crear cuenta'
+                submitLabel
               )}
             </Button>
           </form>

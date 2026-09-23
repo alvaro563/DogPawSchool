@@ -36,6 +36,37 @@ func (s *stubTokenGenerator) Generate(user *domain.User) (string, error) {
 	return "signed-token", nil
 }
 
+// noopAccountLimiter is the test double for domain.AccountLoginLimiter.
+// The default behaviour (always allow, never error) matches the
+// pre-lockout semantics; tests that exercise the lockout path use
+// the explicit check/record fields.
+type noopAccountLimiter struct {
+	check func(ctx context.Context, email, remoteIP string) error
+	record func(ctx context.Context, email, remoteIP string, success bool) error
+	reset  func(ctx context.Context, email string) error
+}
+
+func (n *noopAccountLimiter) Check(ctx context.Context, email, remoteIP string) error {
+	if n.check != nil {
+		return n.check(ctx, email, remoteIP)
+	}
+	return nil
+}
+
+func (n *noopAccountLimiter) Record(ctx context.Context, email, remoteIP string, success bool) error {
+	if n.record != nil {
+		return n.record(ctx, email, remoteIP, success)
+	}
+	return nil
+}
+
+func (n *noopAccountLimiter) ResetByEmail(ctx context.Context, email string) error {
+	if n.reset != nil {
+		return n.reset(ctx, email)
+	}
+	return nil
+}
+
 // --- Helpers ---
 
 func fixedNowFunc() func() time.Time {
@@ -70,14 +101,14 @@ func TestNewLoginInput(t *testing.T) {
 		{
 			name: "empty_email",
 			factory: func() (LoginInput, error) {
-				return NewLoginInput("", "secret", fixedNowFunc())
+				return NewLoginInput("", "secret", "", fixedNowFunc())
 			},
 			expectedField: "email",
 		},
 		{
 			name: "empty_password",
 			factory: func() (LoginInput, error) {
-				return NewLoginInput("alice@dogpaw.com", "", fixedNowFunc())
+				return NewLoginInput("alice@dogpaw.com", "", "", fixedNowFunc())
 			},
 			expectedField: "password",
 		},
@@ -98,7 +129,7 @@ func TestNewLoginInput(t *testing.T) {
 func TestMustNewLoginInput_panics_on_validation_error(t *testing.T) {
 	t.Parallel()
 	assert.Panics(t, func() {
-		MustNewLoginInput("", "pw", fixedNowFunc())
+		MustNewLoginInput("", "pw", "", fixedNowFunc())
 	})
 }
 
@@ -129,8 +160,8 @@ func TestLogin_Success(t *testing.T) {
 		},
 	}
 
-	uc := NewLoginUseCase(userRepo, verifier, tokenGen)
-	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", fixedNowFunc())
+	uc := NewLoginUseCase(userRepo, verifier, tokenGen, &noopAccountLimiter{})
+	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	out, err := uc.Execute(context.Background(), in)
 	require.NoError(t, err)
@@ -148,8 +179,8 @@ func TestLogin_EmailNotFound(t *testing.T) {
 			return nil, domain.ErrNotFound
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{})
-	in := MustNewLoginInput("unknown@dogpaw.com", "any-password", fixedNowFunc())
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &noopAccountLimiter{})
+	in := MustNewLoginInput("unknown@dogpaw.com", "any-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
@@ -168,8 +199,8 @@ func TestLogin_WrongPassword(t *testing.T) {
 			return errors.New("bcrypt compare: mismatch")
 		},
 	}
-	uc := NewLoginUseCase(userRepo, verifier, &stubTokenGenerator{})
-	in := MustNewLoginInput("alice@dogpaw.com", "wrong-password", fixedNowFunc())
+	uc := NewLoginUseCase(userRepo, verifier, &stubTokenGenerator{}, &noopAccountLimiter{})
+	in := MustNewLoginInput("alice@dogpaw.com", "wrong-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
@@ -183,8 +214,8 @@ func TestLogin_InactiveUser(t *testing.T) {
 			return loginInactiveUser(), nil
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{})
-	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", fixedNowFunc())
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &noopAccountLimiter{})
+	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
@@ -204,8 +235,8 @@ func TestLogin_TokenGeneratorFailure(t *testing.T) {
 			return "", tokenErr
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, tokenGen)
-	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", fixedNowFunc())
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, tokenGen, &noopAccountLimiter{})
+	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
@@ -221,10 +252,114 @@ func TestLogin_RepositoryError(t *testing.T) {
 			return nil, repoErr
 		},
 	}
-	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{})
-	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", fixedNowFunc())
+	uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, &noopAccountLimiter{})
+	in := MustNewLoginInput("alice@dogpaw.com", "correct-password", "", fixedNowFunc())
 
 	_, err := uc.Execute(context.Background(), in)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, repoErr), "must wrap original repository error")
+}
+
+// --- Lockout integration tests (against stub limiter) ---
+
+func TestLogin_LockoutRejectsBeforeBcrypt(t *testing.T) {
+	t.Parallel()
+
+	// Lockout rejects BEFORE the password check. We confirm this
+	// by providing a verifier that records whether it was called:
+	// it must NOT be called.
+	verifierCalled := false
+	verifier := &stubPasswordVerifier{
+		verify: func(_, _ string) error {
+			verifierCalled = true
+			return nil
+		},
+	}
+	limiter := &noopAccountLimiter{
+		check: func(_ context.Context, _, _ string) error {
+			return &domain.ErrAccountLockout{
+				RetryAfter: 5 * time.Minute,
+				Reason:     domain.LockoutReasonEmail,
+			}
+		},
+	}
+	uc := NewLoginUseCase(&mockUserRepository{}, verifier, &stubTokenGenerator{}, limiter)
+	in := MustNewLoginInput("alice@dogpaw.com", "any-password", "", fixedNowFunc())
+
+	_, err := uc.Execute(context.Background(), in)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrAccountLocked), "lockout sentinel must propagate")
+	assert.False(t, verifierCalled, "lockout must short-circuit BEFORE bcrypt verify")
+
+	var lockoutErr *domain.ErrAccountLockout
+	require.True(t, errors.As(err, &lockoutErr))
+	assert.Equal(t, domain.LockoutReasonEmail, lockoutErr.Reason)
+	assert.Equal(t, 5*time.Minute, lockoutErr.RetryAfter)
+}
+
+func TestLogin_RecordOnEveryOutcome(t *testing.T) {
+	t.Parallel()
+
+	calls := []struct {
+		email, ip string
+		success   bool
+	}{}
+	limiter := &noopAccountLimiter{
+		record: func(_ context.Context, email, ip string, success bool) error {
+			calls = append(calls, struct {
+				email, ip string
+				success   bool
+			}{email, ip, success})
+			return nil
+		},
+	}
+
+	t.Run("wrong_password_records_failure", func(t *testing.T) {
+		calls = nil
+		userRepo := &mockUserRepository{
+			getByEmail: func(_ context.Context, _ string) (*domain.User, error) {
+				return loginActiveUser(), nil
+			},
+		}
+		verifier := &stubPasswordVerifier{
+			verify: func(_, _ string) error { return errors.New("mismatch") },
+		}
+		uc := NewLoginUseCase(userRepo, verifier, &stubTokenGenerator{}, limiter)
+		_, _ = uc.Execute(context.Background(),
+			MustNewLoginInput("alice@dogpaw.com", "wrong", "10.0.0.99", fixedNowFunc()))
+		require.Len(t, calls, 1)
+		assert.Equal(t, "alice@dogpaw.com", calls[0].email)
+		assert.Equal(t, "10.0.0.99", calls[0].ip)
+		assert.False(t, calls[0].success)
+	})
+
+	t.Run("success_records_then_resets", func(t *testing.T) {
+		calls = nil
+		resets := 0
+		limiter := &noopAccountLimiter{
+			record: func(_ context.Context, email, ip string, success bool) error {
+				calls = append(calls, struct {
+					email, ip string
+					success   bool
+				}{email, ip, success})
+				return nil
+			},
+			reset: func(_ context.Context, _ string) error {
+				resets++
+				return nil
+			},
+		}
+		userRepo := &mockUserRepository{
+			getByEmail: func(_ context.Context, _ string) (*domain.User, error) {
+				return loginActiveUser(), nil
+			},
+		}
+		uc := NewLoginUseCase(userRepo, &stubPasswordVerifier{}, &stubTokenGenerator{}, limiter)
+		_, err := uc.Execute(context.Background(),
+			MustNewLoginInput("alice@dogpaw.com", "right", "10.0.0.99", fixedNowFunc()))
+		require.NoError(t, err)
+		require.Len(t, calls, 1)
+		assert.True(t, calls[0].success)
+		assert.Equal(t, 1, resets, "successful login must reset the per-email counter")
+	})
 }

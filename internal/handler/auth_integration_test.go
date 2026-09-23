@@ -135,7 +135,8 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 	tokenGen := crypto.NewJWTTokenGenerator(jwtTestSecret, 1*time.Hour)
 
 	// Use cases
-	loginUC := authuc.NewLoginUseCase(userRepo, hasher, tokenGen)
+	loginUC := authuc.NewLoginUseCase(userRepo, hasher, tokenGen,
+		postgres.NewLoginAttemptRepository(db, 5, 15*time.Minute, 10, 5*time.Minute))
 	changePasswordUC := authuc.NewChangePasswordUseCase(userRepo, hasher, hasher)
 	authH := NewAuthHandler(nil, loginUC, changePasswordUC)
 

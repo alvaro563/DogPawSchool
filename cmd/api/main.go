@@ -62,6 +62,10 @@ func run() error {
 	}
 	slog.Info("migrations applied")
 
-	router := newRouter(db, cfg)
+	router, cleanup, err := newRouter(ctx, db, cfg)
+	if err != nil {
+		return fmt.Errorf("build router: %w", err)
+	}
+	defer cleanup()
 	return startServer(ctx, cfg, router)
 }

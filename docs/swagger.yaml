@@ -25,6 +25,12 @@ definitions:
       description:
         example: Paseo grupal por la ribera del río
         type: string
+      dog_id:
+        description: |-
+          DogID is the target dog for INDIVIDUAL_CLASS; omitted from the
+          response when the activity is group / extra (NULL in the DB).
+        example: 7
+        type: integer
       duration_in_hours:
         example: 2
         type: integer
@@ -39,6 +45,12 @@ definitions:
         type: integer
       name:
         example: Paseo Río
+        type: string
+      size_target:
+        description: |-
+          SizeTarget is the optional size restriction for
+          SOCIALIZATION_GROUP / ROUTE. NULL / omitted = all sizes.
+        example: MINI
         type: string
     type: object
   handler.activityResponse:
@@ -58,6 +70,12 @@ definitions:
       description:
         example: Paseo grupal por la ribera del río
         type: string
+      dog_id:
+        description: |-
+          DogID is the target dog for INDIVIDUAL_CLASS; omitted from the
+          response when the activity is group / extra (NULL in the DB).
+        example: 7
+        type: integer
       duration_in_hours:
         example: 2
         type: integer
@@ -72,6 +90,12 @@ definitions:
         type: integer
       name:
         example: Paseo Río
+        type: string
+      size_target:
+        description: |-
+          SizeTarget is the optional size restriction for
+          SOCIALIZATION_GROUP / ROUTE. NULL / omitted = all sizes.
+        example: MINI
         type: string
     type: object
   handler.activityRosterEntryDTO:
@@ -88,6 +112,10 @@ definitions:
       owner_name:
         example: Carlos García
         type: string
+      pending_reasons:
+        items:
+          type: string
+        type: array
       reservation_id:
         example: 42
         type: integer
@@ -104,6 +132,48 @@ definitions:
         items:
           $ref: '#/definitions/handler.activityRosterEntryDTO'
         type: array
+    type: object
+  handler.attendanceEntryDTO:
+    properties:
+      activity_date:
+        type: string
+      activity_id:
+        type: integer
+      activity_name:
+        type: string
+      dog_id:
+        type: integer
+      dog_name:
+        type: string
+      dog_passport:
+        type: string
+      reservation_id:
+        type: integer
+    type: object
+  handler.attendanceResponse:
+    properties:
+      count:
+        type: integer
+      entries:
+        items:
+          $ref: '#/definitions/handler.attendanceEntryDTO'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+    type: object
+  handler.bulkCompleteReservationsResponse:
+    properties:
+      closed:
+        example: true
+        type: boolean
+      completed:
+        example: 5
+        type: integer
+      id:
+        example: 42
+        type: integer
     type: object
   handler.cancelReservationResponse:
     properties:
@@ -195,6 +265,9 @@ definitions:
       educator_notes:
         example: ""
         type: string
+      has_special_condition:
+        example: false
+        type: boolean
       heat:
         example: false
         type: boolean
@@ -250,6 +323,18 @@ definitions:
         type: string
       field:
         example: breed
+        type: string
+    type: object
+  handler.forgiveReservationResponse:
+    properties:
+      id:
+        example: 99
+        type: integer
+      pass_session_refunded:
+        example: true
+        type: boolean
+      status:
+        example: FORGIVEN
         type: string
     type: object
   handler.incompatibilityDTO:
@@ -433,6 +518,15 @@ definitions:
       name:
         example: Paseo Largo
         type: string
+      size_target:
+        description: |-
+          SizeTarget uses a triple-state via *string:
+            nil       = no change
+            pointer to ""  = clear the target (back to all sizes)
+            pointer to "MINI"/"MEDIUM"/"LARGE" = set the target
+          Only valid for SOCIALIZATION_GROUP / ROUTE.
+        example: MEDIUM
+        type: string
     type: object
   handler.modifyDogRequest:
     properties:
@@ -445,6 +539,9 @@ definitions:
       educator_notes:
         example: ""
         type: string
+      has_special_condition:
+        example: true
+        type: boolean
       heat:
         example: false
         type: boolean
@@ -599,6 +696,10 @@ definitions:
       owner_name:
         example: Carlos García
         type: string
+      pending_reasons:
+        items:
+          type: string
+        type: array
       reservation_id:
         example: 42
         type: integer
@@ -627,6 +728,13 @@ definitions:
       description:
         example: Paseo grupal por la ribera del río
         type: string
+      dog_id:
+        description: |-
+          DogID is the target dog for INDIVIDUAL_CLASS; required when
+          activity_type="INDIVIDUAL_CLASS", NULL for group classes and
+          extra events. Omitted / null in the JSON for non-individual.
+        example: 7
+        type: integer
       duration_in_hours:
         example: 2
         type: integer
@@ -638,6 +746,13 @@ definitions:
         type: integer
       name:
         example: Paseo Río
+        type: string
+      size_target:
+        description: |-
+          SizeTarget restricts the booking to a single size bracket
+          (MINI / MEDIUM / LARGE). Only valid for SOCIALIZATION_GROUP and
+          ROUTE. NULL / omitted means "all sizes welcome".
+        example: MINI
         type: string
     type: object
   handler.registerActivityResponse:
@@ -654,6 +769,9 @@ definitions:
       breed:
         example: Labrador
         type: string
+      has_special_condition:
+        example: false
+        type: boolean
       name:
         example: Luna
         type: string
@@ -735,6 +853,14 @@ definitions:
       id:
         example: 99
         type: integer
+      pending_reasons:
+        description: |-
+          PendingReasons carries the user-facing Spanish explanations for
+          each reason the reservation was held in StatusPendingToConfirm.
+          Populated only when Status is "PENDING_TO_CONFIRM" and non-empty.
+        items:
+          type: string
+        type: array
       status:
         example: CONFIRMED
         type: string
@@ -922,9 +1048,10 @@ info:
 paths:
   /api/v1/activities:
     get:
-      description: Returns a paginated list of all activities in the system, most
-        recent first. Optionally filter by date range with from and to query params
-        (RFC3339). Limit defaults to 50 and is capped at 100. Offset defaults to 0.
+      description: Returns a paginated list of activities in the system. Optionally
+        filter by date range (from/to, RFC3339, inclusive on both ends) and by closed
+        state (?closed=true|false). Most recent first. Limit defaults to 50 and is
+        capped at 100. Offset defaults to 0.
       parameters:
       - description: Maximum number of activities to return (default 50, max 100)
         in: query
@@ -934,14 +1061,19 @@ paths:
         in: query
         name: offset
         type: integer
-      - description: Filter activities from this date (RFC3339)
+      - description: Filter activities from this date (RFC3339, inclusive)
         in: query
         name: from
         type: string
-      - description: Filter activities before this date (RFC3339)
+      - description: Filter activities up to this date (RFC3339, inclusive)
         in: query
         name: to
         type: string
+      - description: true = only closed activities, false = only open activities.
+          Omit for both.
+        in: query
+        name: closed
+        type: boolean
       produces:
       - application/json
       responses:
@@ -950,7 +1082,7 @@ paths:
           schema:
             $ref: '#/definitions/handler.listActivitiesResponse'
         "400":
-          description: Invalid date range
+          description: Invalid date range or closed value
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "500":
@@ -959,7 +1091,7 @@ paths:
             $ref: '#/definitions/handler.errorResponse'
       security:
       - BearerAuth: []
-      summary: List all activities
+      summary: List activities (with filters)
       tags:
       - activities
     post:
@@ -1118,6 +1250,51 @@ paths:
       summary: Close an activity
       tags:
       - activities
+  /api/v1/activities/{id}/complete-all:
+    post:
+      description: |-
+        Bulk-completes every CONFIRMED reservation of the
+        activity AND closes the activity in a single
+        transaction. The activity must have finished
+        (date + duration < now). Rejects with 409 if any
+        PENDING_TO_CONFIRM reservation is present (admin
+        must confirm/reject individually first). Idempotent
+        on already-closed activities (returns Closed=true,
+        Completed=0).
+      parameters:
+      - description: Activity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.bulkCompleteReservationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Complete activity and mark all reservations COMPLETED
+      tags:
+      - activities
   /api/v1/activities/{id}/reservations:
     get:
       description: |-
@@ -1232,7 +1409,8 @@ paths:
       - application/json
       description: Authenticates a user with email and password. On success it returns
         a signed JWT (HS256) and the user profile. The token expires after 24 hours
-        and carries the user ID (sub) and role (role) claims.
+        and carries the user ID (sub) and role (role) claims. After too many failed
+        attempts the account is temporarily locked — a 429 with Retry-After is returned.
       parameters:
       - description: Login credentials
         in: body
@@ -1254,6 +1432,11 @@ paths:
             $ref: '#/definitions/handler.errorResponse'
         "401":
           description: Invalid credentials or inactive user
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "429":
+          description: Account temporarily locked — too many failed attempts. Retry-After
+            header indicates seconds until unlock.
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "500":
@@ -1312,7 +1495,7 @@ paths:
       description: Completes user registration using a valid invitation token. The
         token must be in PENDING status and not expired (48h lifetime). The password
         must be at least 8 characters. Returns the created user profile without the
-        password hash.
+        password hash. IP rate limited by middleware (separate bucket from login).
       parameters:
       - description: Registration data
         in: body
@@ -1338,6 +1521,11 @@ paths:
             $ref: '#/definitions/handler.errorResponse'
         "409":
           description: Token already used, expired, or revoked
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "429":
+          description: Too many registration attempts from this source. Retry-After
+            header indicates seconds.
           schema:
             $ref: '#/definitions/handler.errorResponse'
         "500":
@@ -1736,8 +1924,7 @@ paths:
       - reservations
   /api/v1/dogs/active:
     get:
-      description: Returns a paginated list of dogs whose is_active is true. Limit
-        defaults to 50, capped at 100. Offset defaults to 0.
+      description: Enriched variant of /dogs/active that resolves the
       parameters:
       - description: Maximum number of dogs to return (default 50, max 100)
         in: query
@@ -1760,7 +1947,7 @@ paths:
             $ref: '#/definitions/handler.errorResponse'
       security:
       - BearerAuth: []
-      summary: List active dogs
+      summary: List active dogs with their owner's display name
       tags:
       - dogs
   /api/v1/dogs/age/{bracket}:
@@ -2572,6 +2759,11 @@ paths:
         in: query
         name: offset
         type: integer
+      - description: Filter by status (CONFIRMED, PENDING_TO_CONFIRM, COMPLETED, CANCELLED_IN_TIME,
+          CANCELLED_LATE, FORGIVEN, NO_SHOW). Empty = no filter.
+        in: query
+        name: status
+        type: string
       produces:
       - application/json
       responses:
@@ -2579,6 +2771,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handler.listReservationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2669,6 +2865,126 @@ paths:
       summary: Admin-cancel a reservation
       tags:
       - reservations
+  /api/v1/reservations/{id}/forgive:
+    post:
+      description: |-
+        Admin-only. Transitions a CANCELLED_LATE reservation
+        to FORGIVEN and, when the pass has available balance,
+        refunds the consumed session. The only path that
+        converts a late cancellation into a pass refund.
+      parameters:
+      - description: Reservation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reservation forgiven
+          schema:
+            $ref: '#/definitions/handler.forgiveReservationResponse'
+        "400":
+          description: Invalid reservation_id
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "404":
+          description: Reservation not found
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "409":
+          description: Reservation is not in a state that can be forgiven
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Forgive a late-cancelled reservation
+      tags:
+      - reservations
+  /api/v1/reservations/attendance:
+    get:
+      description: Returns all COMPLETED reservations whose activity date is in the
+        optional [from, to] range. Both bounds are RFC3339 timestamps; "to" is inclusive.
+        Date filtering targets the *activity* date (not the booking date). Pagination
+        defaults to 100 rows, capped at 1000 for this endpoint. Status is fixed to
+        COMPLETED.
+      parameters:
+      - description: Activity date lower bound, RFC3339. Inclusive.
+        in: query
+        name: from
+        type: string
+      - description: Activity date upper bound, RFC3339. Inclusive.
+        in: query
+        name: to
+        type: string
+      - description: Max rows (default 100, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: Rows to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.attendanceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Attendance report (JSON)
+      tags:
+      - attendance
+  /api/v1/reservations/attendance.csv:
+    get:
+      description: Same query as the JSON endpoint, but returns a CSV file (UTF-8
+        with BOM, RFC 4180) and uses a higher row cap (50_000) so a year-long report
+        is never truncated. The first row is the Spanish header. Status is fixed to
+        COMPLETED.
+      parameters:
+      - description: Activity date lower bound, RFC3339. Inclusive.
+        in: query
+        name: from
+        type: string
+      - description: Activity date upper bound, RFC3339. Inclusive.
+        in: query
+        name: to
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: text/csv
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Attendance report (CSV download)
+      tags:
+      - attendance
   /api/v1/reservations/pending:
     get:
       description: |-

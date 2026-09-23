@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net"
 	"net/http"
 	"strings"
 
@@ -91,6 +92,29 @@ func CurrentUserRole(c *gin.Context) string {
 // IsAdmin returns true when the authenticated user has the "ADMIN" role.
 func IsAdmin(c *gin.Context) bool {
 	return CurrentUserRole(c) == string(domain.RoleAdmin)
+}
+
+// ClientIP returns the TCP peer of the request as a string with the
+// port stripped. Behind a reverse proxy this is the PROXY's IP, by
+// design — use it as the key for volumetric / lockout rate limits;
+// the upstream proxy is the right place for per-real-client limits
+// (it sees the X-Forwarded-For it inserted).
+//
+// Falls back to c.ClientIP() if RemoteAddr is empty or malformed.
+// Empty string is returned as "" so the caller can decide whether
+// to reject (middleware) or pass through (handler — test fixtures
+// don't always set a peer).
+func ClientIP(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(c.Request.RemoteAddr); err == nil && host != "" {
+		return host
+	}
+	if c.Request.RemoteAddr != "" {
+		return c.Request.RemoteAddr
+	}
+	return c.ClientIP()
 }
 
 // forbidden writes a 403 Forbidden response and aborts the request.

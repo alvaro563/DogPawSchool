@@ -197,7 +197,7 @@ func TestRegisterWithInvitation_ConcurrentTokenUse(t *testing.T) {
 func cleanTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	tables := []string{
-		"pass_movements", "reservations", "invitations",
+		"login_attempts", "pass_movements", "reservations", "invitations",
 		"dog_incompatibilities", "passes", "dogs",
 		"activities", "incompatibilities", "users",
 	}

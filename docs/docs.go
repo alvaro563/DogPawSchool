@@ -22,14 +22,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of all activities in the system, most recent first. Optionally filter by date range with from and to query params (RFC3339). Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
+                "description": "Returns a paginated list of activities in the system. Optionally filter by date range (from/to, RFC3339, inclusive on both ends) and by closed state (?closed=true|false). Most recent first. Limit defaults to 50 and is capped at 100. Offset defaults to 0.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "activities"
                 ],
-                "summary": "List all activities",
+                "summary": "List activities (with filters)",
                 "parameters": [
                     {
                         "type": "integer",
@@ -45,14 +45,20 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter activities from this date (RFC3339)",
+                        "description": "Filter activities from this date (RFC3339, inclusive)",
                         "name": "from",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter activities before this date (RFC3339)",
+                        "description": "Filter activities up to this date (RFC3339, inclusive)",
                         "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true = only closed activities, false = only open activities. Omit for both.",
+                        "name": "closed",
                         "in": "query"
                     }
                 ],
@@ -64,7 +70,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid date range",
+                        "description": "Invalid date range or closed value",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -355,6 +361,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/activities/{id}/complete-all": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Bulk-completes every CONFIRMED reservation of the\nactivity AND closes the activity in a single\ntransaction. The activity must have finished\n(date + duration \u003c now). Rejects with 409 if any\nPENDING_TO_CONFIRM reservation is present (admin\nmust confirm/reject individually first). Idempotent\non already-closed activities (returns Closed=true,\nCompleted=0).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Complete activity and mark all reservations COMPLETED",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.bulkCompleteReservationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/activities/{id}/reservations": {
             "get": {
                 "security": [
@@ -467,7 +531,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/login": {
             "post": {
-                "description": "Authenticates a user with email and password. On success it returns a signed JWT (HS256) and the user profile. The token expires after 24 hours and carries the user ID (sub) and role (role) claims.",
+                "description": "Authenticates a user with email and password. On success it returns a signed JWT (HS256) and the user profile. The token expires after 24 hours and carries the user ID (sub) and role (role) claims. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned.",
                 "consumes": [
                     "application/json"
                 ],
@@ -504,6 +568,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Invalid credentials or inactive user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Account temporarily locked — too many failed attempts. Retry-After header indicates seconds until unlock.",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -582,7 +652,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/register": {
             "post": {
-                "description": "Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 8 characters. Returns the created user profile without the password hash.",
+                "description": "Completes user registration using a valid invitation token. The token must be in PENDING status and not expired (48h lifetime). The password must be at least 8 characters. Returns the created user profile without the password hash. IP rate limited by middleware (separate bucket from login).",
                 "consumes": [
                     "application/json"
                 ],
@@ -625,6 +695,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Token already used, expired, or revoked",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many registration attempts from this source. Retry-After header indicates seconds.",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -745,14 +821,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of dogs whose is_active is true. Limit defaults to 50, capped at 100. Offset defaults to 0.",
+                "description": "Enriched variant of /dogs/active that resolves the",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "dogs"
                 ],
-                "summary": "List active dogs",
+                "summary": "List active dogs with their owner's display name",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2483,6 +2559,12 @@ const docTemplate = `{
                         "description": "Number of reservations to skip for pagination (default 0)",
                         "name": "offset",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by status (CONFIRMED, PENDING_TO_CONFIRM, COMPLETED, CANCELLED_IN_TIME, CANCELLED_LATE, FORGIVEN, NO_SHOW). Empty = no filter.",
+                        "name": "status",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2490,6 +2572,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.listReservationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
                         }
                     },
                     "500": {
@@ -2543,6 +2631,120 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reservations/attendance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all COMPLETED reservations whose activity date is in the optional [from, to] range. Both bounds are RFC3339 timestamps; \"to\" is inclusive. Date filtering targets the *activity* date (not the booking date). Pagination defaults to 100 rows, capped at 1000 for this endpoint. Status is fixed to COMPLETED.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "attendance"
+                ],
+                "summary": "Attendance report (JSON)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Activity date lower bound, RFC3339. Inclusive.",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity date upper bound, RFC3339. Inclusive.",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max rows (default 100, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.attendanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reservations/attendance.csv": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Same query as the JSON endpoint, but returns a CSV file (UTF-8 with BOM, RFC 4180) and uses a higher row cap (50_000) so a year-long report is never truncated. The first row is the Spanish header. Status is fixed to COMPLETED.",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "attendance"
+                ],
+                "summary": "Attendance report (CSV download)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Activity date lower bound, RFC3339. Inclusive.",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity date upper bound, RFC3339. Inclusive.",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "text/csv",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -2691,6 +2893,64 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Already cancelled / activity in past",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reservations/{id}/forgive": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin-only. Transitions a CANCELLED_LATE reservation\nto FORGIVEN and, when the pass has available balance,\nrefunds the consumed session. The only path that\nconverts a late cancellation into a pass refund.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reservations"
+                ],
+                "summary": "Forgive a late-cancelled reservation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Reservation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reservation forgiven",
+                        "schema": {
+                            "$ref": "#/definitions/handler.forgiveReservationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid reservation_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Reservation not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Reservation is not in a state that can be forgiven",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -3742,6 +4002,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Paseo grupal por la ribera del río"
                 },
+                "dog_id": {
+                    "description": "DogID is the target dog for INDIVIDUAL_CLASS; omitted from the\nresponse when the activity is group / extra (NULL in the DB).",
+                    "type": "integer",
+                    "example": 7
+                },
                 "duration_in_hours": {
                     "type": "integer",
                     "example": 2
@@ -3761,6 +4026,11 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Paseo Río"
+                },
+                "size_target": {
+                    "description": "SizeTarget is the optional size restriction for\nSOCIALIZATION_GROUP / ROUTE. NULL / omitted = all sizes.",
+                    "type": "string",
+                    "example": "MINI"
                 }
             }
         },
@@ -3787,6 +4057,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Paseo grupal por la ribera del río"
                 },
+                "dog_id": {
+                    "description": "DogID is the target dog for INDIVIDUAL_CLASS; omitted from the\nresponse when the activity is group / extra (NULL in the DB).",
+                    "type": "integer",
+                    "example": 7
+                },
                 "duration_in_hours": {
                     "type": "integer",
                     "example": 2
@@ -3806,6 +4081,11 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Paseo Río"
+                },
+                "size_target": {
+                    "description": "SizeTarget is the optional size restriction for\nSOCIALIZATION_GROUP / ROUTE. NULL / omitted = all sizes.",
+                    "type": "string",
+                    "example": "MINI"
                 }
             }
         },
@@ -3827,6 +4107,12 @@ const docTemplate = `{
                 "owner_name": {
                     "type": "string",
                     "example": "Carlos García"
+                },
+                "pending_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "reservation_id": {
                     "type": "integer",
@@ -3851,6 +4137,69 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handler.activityRosterEntryDTO"
                     }
+                }
+            }
+        },
+        "handler.attendanceEntryDTO": {
+            "type": "object",
+            "properties": {
+                "activity_date": {
+                    "type": "string"
+                },
+                "activity_id": {
+                    "type": "integer"
+                },
+                "activity_name": {
+                    "type": "string"
+                },
+                "dog_id": {
+                    "type": "integer"
+                },
+                "dog_name": {
+                    "type": "string"
+                },
+                "dog_passport": {
+                    "type": "string"
+                },
+                "reservation_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.attendanceResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.attendanceEntryDTO"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.bulkCompleteReservationsResponse": {
+            "type": "object",
+            "properties": {
+                "closed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "completed": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },
@@ -3986,6 +4335,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": ""
                 },
+                "has_special_condition": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "heat": {
                     "type": "boolean",
                     "example": false
@@ -4062,6 +4415,23 @@ const docTemplate = `{
                 "field": {
                     "type": "string",
                     "example": "breed"
+                }
+            }
+        },
+        "handler.forgiveReservationResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 99
+                },
+                "pass_session_refunded": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "status": {
+                    "type": "string",
+                    "example": "FORGIVEN"
                 }
             }
         },
@@ -4325,6 +4695,11 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Paseo Largo"
+                },
+                "size_target": {
+                    "description": "SizeTarget uses a triple-state via *string:\n  nil       = no change\n  pointer to \"\"  = clear the target (back to all sizes)\n  pointer to \"MINI\"/\"MEDIUM\"/\"LARGE\" = set the target\nOnly valid for SOCIALIZATION_GROUP / ROUTE.",
+                    "type": "string",
+                    "example": "MEDIUM"
                 }
             }
         },
@@ -4342,6 +4717,10 @@ const docTemplate = `{
                 "educator_notes": {
                     "type": "string",
                     "example": ""
+                },
+                "has_special_condition": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "heat": {
                     "type": "boolean",
@@ -4554,6 +4933,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Carlos García"
                 },
+                "pending_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "reservation_id": {
                     "type": "integer",
                     "example": 42
@@ -4595,6 +4980,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Paseo grupal por la ribera del río"
                 },
+                "dog_id": {
+                    "description": "DogID is the target dog for INDIVIDUAL_CLASS; required when\nactivity_type=\"INDIVIDUAL_CLASS\", NULL for group classes and\nextra events. Omitted / null in the JSON for non-individual.",
+                    "type": "integer",
+                    "example": 7
+                },
                 "duration_in_hours": {
                     "type": "integer",
                     "example": 2
@@ -4610,6 +5000,11 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Paseo Río"
+                },
+                "size_target": {
+                    "description": "SizeTarget restricts the booking to a single size bracket\n(MINI / MEDIUM / LARGE). Only valid for SOCIALIZATION_GROUP and\nROUTE. NULL / omitted means \"all sizes welcome\".",
+                    "type": "string",
+                    "example": "MINI"
                 }
             }
         },
@@ -4632,6 +5027,10 @@ const docTemplate = `{
                 "breed": {
                     "type": "string",
                     "example": "Labrador"
+                },
+                "has_special_condition": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "name": {
                     "type": "string",
@@ -4747,6 +5146,13 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 99
+                },
+                "pending_reasons": {
+                    "description": "PendingReasons carries the user-facing Spanish explanations for\neach reason the reservation was held in StatusPendingToConfirm.\nPopulated only when Status is \"PENDING_TO_CONFIRM\" and non-empty.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "status": {
                     "type": "string",

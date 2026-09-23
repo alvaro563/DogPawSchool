@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -52,7 +54,7 @@ func (a dogWithOwnerAdapter) ListActiveWithOwner(ctx context.Context, limit, off
 	return out, nil
 }
 
-func newRouter(db *sql.DB, cfg Config) *gin.Engine {
+func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func(), error) {
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -78,7 +80,31 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	corsConfig.AllowMethods = []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"}
 	r.Use(cors.New(corsConfig))
 
-	authLimiter := newIPRateLimiter(rate.Limit(5.0/60.0), 5)
+	// IP rate limiters per endpoint. Behind a reverse proxy these
+	// keys are the proxy's IP — that's intentional: per-real-client
+	// limits belong upstream (nginx, Caddy, Cloudflare), this layer
+	// is the volumetric fallback when the upstream is misconfigured.
+	// Login and register have independent buckets so an attacker
+	// hammering register cannot starve login.
+	loginIPLimiter := newIPRateLimiter(
+		rate.Limit(float64(cfg.LoginIPRateLimitPerMinute)/60.0),
+		cfg.LoginIPBurst,
+	)
+	registerIPLimiter := newIPRateLimiter(
+		rate.Limit(float64(cfg.RegisterIPRateLimitPerMinute)/60.0),
+		cfg.RegisterIPBurst,
+	)
+
+	// Account lockout (Postgres-backed). Wired into LoginUseCase so
+	// it runs AFTER body parsing — the email is needed to count
+	// failures against a specific account.
+	loginLockout := postgres.NewLoginAttemptRepository(
+		db,
+		cfg.LockoutEmailMaxFailures,
+		cfg.LockoutEmailWindow,
+		cfg.LockoutIPMaxFailures,
+		cfg.LockoutIPWindow,
+	)
 
 	r.GET("/health", healthHandler(db))
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -244,6 +270,7 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		userRepo,
 		crypto.NewDefaultBcryptHasher(),
 		jwtTokenGen,
+		loginLockout,
 	)
 	changePasswordUC := authuc.NewChangePasswordUseCase(
 		userRepo,
@@ -256,8 +283,8 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		// ── Public ──
-		v1.POST("/auth/register", rateLimitMiddleware(authLimiter), authH.RegisterWithInvitation)
-		v1.POST("/auth/login", rateLimitMiddleware(authLimiter), authH.Login)
+		v1.POST("/auth/register", rateLimitMiddleware(registerIPLimiter), authH.RegisterWithInvitation)
+		v1.POST("/auth/login", rateLimitMiddleware(loginIPLimiter), authH.Login)
 
 		// ── Any authenticated user (ownership check inside handlers) ──
 		anyUser := v1.Group("")
@@ -353,7 +380,79 @@ func newRouter(db *sql.DB, cfg Config) *gin.Engine {
 		}
 	}
 
-	return r
+	return r, newRouterCleanup(loginIPLimiter, registerIPLimiter, loginLockout, cfg), nil
+}
+
+// newRouterCleanup wires the per-limiter Stop calls and the
+// background login_attempts housekeeping goroutine. Returned
+// closure is invoked from main on shutdown so the process does
+// not leak goroutines or leave the cleanup channel open.
+func newRouterCleanup(
+	loginIPLimiter *ipRateLimiter,
+	registerIPLimiter *ipRateLimiter,
+	loginLockout *postgres.LoginAttemptRepository,
+	cfg Config,
+) func() {
+	// Channel-based cancellation so the periodic cleanup goroutine
+	// in loginLockout exits deterministically.
+	loginCleanupDone := make(chan struct{})
+	go func() {
+		defer close(loginCleanupDone)
+		// Use a child context detached from main so we are not
+		// racing the signal.NotifyContext cancellation; the
+		// explicit done channel is the signal.
+		interval := cfg.LoginAttemptsCleanupInterval
+		if interval <= 0 {
+			interval = 15 * 24 * time.Hour // effectively disable
+		}
+		// Retain rows for max(LockoutEmailWindow, LockoutIPWindow) * 2
+		// or 1h floor. Past that, no Check can see them.
+		retention := cfg.LockoutEmailWindow
+		if cfg.LockoutIPWindow > retention {
+			retention = cfg.LockoutIPWindow
+		}
+		retention *= 2
+		if retention < time.Hour {
+			retention = time.Hour
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-loginCleanupDone:
+				return
+			case <-ticker.C:
+				cutoff := time.Now().Add(-retention)
+				// Use Background ctx — the goroutine outlives
+				// the request-scoped ctx that initiated it.
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if _, err := loginLockout.DeleteOlderThan(ctx, cutoff); err != nil {
+					slog.Error("login_attempts cleanup", "err", err.Error())
+				}
+				cancel()
+			}
+		}
+	}()
+
+	var cleanupOnce sync.Once
+	return func() {
+		cleanupOnce.Do(func() {
+			// Halt the housekeeping goroutine first so it does
+			// not race with limiter.Stop().
+			loginIPLimiter.Stop()
+			registerIPLimiter.Stop()
+			// Drain the housekeeping goroutine. Bounded wait
+			// because the goroutine is either idle (returning
+			// immediately) or inside a 10s ctx — we cap at
+			// 12s to leave headroom inside SHUTDOWN_TIMEOUT.
+			select {
+			case <-loginCleanupDone:
+			case <-time.After(12 * time.Second):
+				slog.Warn("login_attempts cleanup goroutine did not exit in time")
+			}
+		})
+	}
 }
 
 func healthHandler(db *sql.DB) gin.HandlerFunc {
@@ -396,6 +495,9 @@ type ipRateLimiter struct {
 	limiters map[string]*rateLimiterEntry
 	rate     rate.Limit
 	burst    int
+
+	stopCh chan struct{}
+	stopOnce sync.Once
 }
 
 type rateLimiterEntry struct {
@@ -404,11 +506,45 @@ type rateLimiterEntry struct {
 }
 
 func newIPRateLimiter(r rate.Limit, burst int) *ipRateLimiter {
-	return &ipRateLimiter{
+	l := &ipRateLimiter{
 		limiters: make(map[string]*rateLimiterEntry),
 		rate:     r,
 		burst:    burst,
+		stopCh:   make(chan struct{}),
 	}
+	go l.runCleanup()
+	return l
+}
+
+// runCleanup evicts idle entries every 10 minutes. Idempotent
+// after Stop has been called.
+func (l *ipRateLimiter) runCleanup() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-l.stopCh:
+			return
+		case <-ticker.C:
+			l.mu.Lock()
+			cutoff := time.Now().Add(-10 * time.Minute)
+			for ip, entry := range l.limiters {
+				if entry.lastUsed.Before(cutoff) {
+					delete(l.limiters, ip)
+				}
+			}
+			l.mu.Unlock()
+		}
+	}
+}
+
+// Stop halts the background cleanup goroutine. Safe to call
+// multiple times. Called from the server shutdown sequence so the
+// process does not leak goroutines between test runs.
+func (l *ipRateLimiter) Stop() {
+	l.stopOnce.Do(func() {
+		close(l.stopCh)
+	})
 }
 
 func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
@@ -424,31 +560,58 @@ func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
 	return entry.limiter
 }
 
+// rateLimitMiddleware is the volumetric defense on auth endpoints.
+// It deliberately keys by RemoteAddr (the TCP peer) and NEVER
+// consults c.ClientIP() — Gin's ClientIP falls back to RemoteAddr
+// when TRUSTED_PROXIES is unset, but trusts X-Forwarded-For when
+// the proxy is in the trusted list. Either way, the upstream proxy
+// (nginx, Caddy, Cloudflare) is the right place for per-real-client
+// limits: it sees the X-Forwarded-For it inserted. This middleware
+// is the LAST line of defense when the upstream is misconfigured or
+// saturated.
+//
+// Responses carry the IETF draft-8 headers: Retry-After (seconds),
+// RateLimit-Limit (burst capacity), RateLimit-Remaining (tokens
+// left), RateLimit-Reset (seconds until a token frees up).
 func rateLimitMiddleware(limiter *ipRateLimiter) gin.HandlerFunc {
-	go func() {
-		for range time.Tick(10 * time.Minute) {
-			limiter.mu.Lock()
-			cutoff := time.Now().Add(-10 * time.Minute)
-			for ip, entry := range limiter.limiters {
-				if entry.lastUsed.Before(cutoff) {
-					delete(limiter.limiters, ip)
-				}
-			}
-			limiter.mu.Unlock()
-		}
-	}()
-
+	burstStr := strconv.Itoa(limiter.burst)
 	return func(c *gin.Context) {
-		ip, _, _ := net.SplitHostPort(c.Request.RemoteAddr)
-		if ip == "" {
-			ip = c.ClientIP()
+		ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+		if err != nil || ip == "" {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "invalid_remote_addr",
+			})
+			return
 		}
-		if !limiter.getLimiter(ip).Allow() {
+		reservation := limiter.getLimiter(ip).Reserve()
+		if !reservation.OK() {
+			// Should not happen with sensible config. Refuse hard.
+			c.Header("Retry-After", "60")
+			c.Header("RateLimit-Limit", burstStr)
+			c.Header("RateLimit-Remaining", "0")
+			c.Header("RateLimit-Reset", "60")
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": "rate_limit_exceeded",
 			})
 			return
 		}
+		delay := reservation.Delay()
+		if delay > 0 {
+			reservation.Cancel()
+			secs := int(math.Ceil(delay.Seconds()))
+			if secs < 1 {
+				secs = 1
+			}
+			c.Header("Retry-After", strconv.Itoa(secs))
+			c.Header("RateLimit-Limit", burstStr)
+			c.Header("RateLimit-Remaining", "0")
+			c.Header("RateLimit-Reset", strconv.Itoa(secs))
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error": "rate_limit_exceeded",
+			})
+			return
+		}
+		c.Header("RateLimit-Limit", burstStr)
 		c.Next()
 	}
 }
