@@ -24,6 +24,11 @@ config.local.yaml
 !cmd/api/.env.example
 !frontend/.env.example
 
+# Build de producción del SPA: solo contiene la URL relativa del API
+# (/api/v1, sin secretos). Debe viajar al repo para que el build en
+# Render sea determinista aunque no exista ningún .env en el clone.
+!frontend/.env.production
+
 # docker-compose local env (Postgres password, etc.)
 docker-compose.override.yml
 

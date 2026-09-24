@@ -97,27 +97,37 @@ func IsAdmin(c *gin.Context) bool {
 	return CurrentUserRole(c) == string(domain.RoleAdmin)
 }
 
-// ClientIP returns the TCP peer of the request as a string with the
-// port stripped. Behind a reverse proxy this is the PROXY's IP, by
-// design — use it as the key for volumetric / lockout rate limits;
-// the upstream proxy is the right place for per-real-client limits
-// (it sees the X-Forwarded-For it inserted).
+// ClientIP returns the key for per-account rate limits (login
+// lockout). It delegates to gin's c.ClientIP(), which honours
+// TRUSTED_PROXIES:
 //
-// Falls back to c.ClientIP() if RemoteAddr is empty or malformed.
-// Empty string is returned as "" so the caller can decide whether
-// to reject (middleware) or pass through (handler — test fixtures
-// don't always set a peer).
+//   - TRUSTED_PROXIES unset (default): the TCP peer is never
+//     treated as a proxy, X-Forwarded-For is ignored entirely, and
+//     the raw RemoteAddr host is returned — an untrusted client
+//     cannot spoof its rate-limit key.
+//   - TRUSTED_PROXIES set (production behind the SPA host's /api
+//     proxy): gin walks X-Forwarded-For from right to left and
+//     returns the first untrusted hop — the real client — so two
+//     different users behind the same proxy IP do NOT share a
+//     lockout bucket.
+//
+// Falls back to the raw RemoteAddr string when gin cannot parse it
+// (test fixtures sometimes use non-IP peers); the caller keys on
+// whatever string comes back.
 func ClientIP(c *gin.Context) string {
 	if c == nil || c.Request == nil {
 		return ""
 	}
-	if host, _, err := net.SplitHostPort(c.Request.RemoteAddr); err == nil && host != "" {
-		return host
+	if ip := c.ClientIP(); ip != "" {
+		return ip
 	}
 	if c.Request.RemoteAddr != "" {
+		if host, _, err := net.SplitHostPort(c.Request.RemoteAddr); err == nil && host != "" {
+			return host
+		}
 		return c.Request.RemoteAddr
 	}
-	return c.ClientIP()
+	return ""
 }
 
 // forbidden writes a 403 Forbidden response and aborts the request.

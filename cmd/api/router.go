@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"log/slog"
 	"math"
-	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -636,14 +635,22 @@ func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
 }
 
 // rateLimitMiddleware is the volumetric defense on auth endpoints.
-// It deliberately keys by RemoteAddr (the TCP peer) and NEVER
-// consults c.ClientIP() — Gin's ClientIP falls back to RemoteAddr
-// when TRUSTED_PROXIES is unset, but trusts X-Forwarded-For when
-// the proxy is in the trusted list. Either way, the upstream proxy
-// (nginx, Caddy, Cloudflare) is the right place for per-real-client
-// limits: it sees the X-Forwarded-For it inserted. This middleware
-// is the LAST line of defense when the upstream is misconfigured or
-// saturated.
+// It keys by the resolved client IP via c.ClientIP(), which honours
+// TRUSTED_PROXIES:
+//
+//   - TRUSTED_PROXIES unset: X-Forwarded-For is ignored and the TCP
+//     peer (RemoteAddr) is the key — spoof-proof, identical to the
+//     old behaviour.
+//   - TRUSTED_PROXIES set (production, behind the SPA host's /api
+//     proxy): the peer is a trusted proxy, so gin walks
+//     X-Forwarded-For and the REAL client IP is the key. Without
+//     this, every proxied request would share the proxy's bucket and
+//     a handful of unrelated users would lock each other out of
+//     /auth/login.
+//
+// A request whose peer address cannot be parsed is refused with 400
+// (invalid_remote_addr) — same as before, but now also covering an
+// empty XFF-derived result.
 //
 // Responses carry the IETF draft-8 headers: Retry-After (seconds),
 // RateLimit-Limit (burst capacity), RateLimit-Remaining (tokens
@@ -651,8 +658,8 @@ func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
 func rateLimitMiddleware(limiter *ipRateLimiter) gin.HandlerFunc {
 	burstStr := strconv.Itoa(limiter.burst)
 	return func(c *gin.Context) {
-		ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
-		if err != nil || ip == "" {
+		ip := c.ClientIP()
+		if ip == "" {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": "invalid_remote_addr",
 			})

@@ -141,7 +141,9 @@ func (dbConfig DBConfig) DSN() string {
 //   DB_PING_TIMEOUT      (30s)
 //   SHUTDOWN_TIMEOUT     (15s)
 //   CORS_ORIGINS                 (REQUIRED in production; permissive in development)
-//   TRUSTED_PROXIES              (none)
+//   TRUSTED_PROXIES              (none; set behind the SPA host's /api
+//                                proxy so rate limits key on the real
+//                                client IP from X-Forwarded-For)
 //   TLS_KEY_FILE                 (none)
 //   TLS_CERT_FILE                (none)
 //   JWT_ACCESS_TTL               (1h)

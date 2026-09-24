@@ -531,7 +531,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/login": {
             "post": {
-                "description": "Authenticates a user with email and password. On success it sets two HttpOnly cookies (access_token SameSite=Lax, refresh_token SameSite=Strict) and returns the user profile with the access TTL. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned. The SPA never sees the raw JWT.",
+                "description": "Authenticates a user with email and password. On success it sets two HttpOnly cookies (access_token, refresh_token — both SameSite=Lax) and returns the user profile with the access TTL. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned. The SPA never sees the raw JWT.",
                 "consumes": [
                     "application/json"
                 ],

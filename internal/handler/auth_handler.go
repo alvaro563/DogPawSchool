@@ -76,12 +76,16 @@ func NewAuthHandler(
 }
 
 // setAuthCookies emits the access + refresh cookies in the response.
-// SameSite=Lax for access so top-level GET navigations work; Strict
-// for refresh because refresh tokens should never travel on a
-// cross-site POST (CSRF-defence). Both are HttpOnly and Path=/ so
-// the SPA's own routes receive them.
+// SameSite=Lax on both: the SPA and the API share one origin (the
+// SPA host proxies /api/* — see render.yaml), so every fetch is
+// same-site and Lax cookies travel on all of them, while cross-site
+// POSTs (CSRF vectors) still get no cookie. HttpOnly + Path=/ so
+// the SPA's own routes receive them and JavaScript never sees the
+// raw JWT. SameSite=None is deliberately NOT used: it requires
+// Secure to be accepted by browsers and only matters for cross-site
+// deployments, which the same-origin proxy makes unnecessary.
 func (h *AuthHandler) setAuthCookies(c *gin.Context, access, refresh string) {
-	c.SetSameSite(http.SameSiteNoneMode)
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(CookieAccess, access, int(h.cookieCfg.AccessTTL.Seconds()), "/", "", h.cookieCfg.Secure, true)
 	c.SetCookie(CookieRefresh, refresh, int(h.cookieCfg.RefreshTTL.Seconds()), "/", "", h.cookieCfg.Secure, true)
 }
@@ -90,7 +94,7 @@ func (h *AuthHandler) setAuthCookies(c *gin.Context, access, refresh string) {
 // deletes the cookie on the next response regardless of the path /
 // domain. Used by Logout.
 func (h *AuthHandler) clearAuthCookies(c *gin.Context) {
-	c.SetSameSite(http.SameSiteNoneMode)
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(CookieAccess, "", -1, "/", "", h.cookieCfg.Secure, true)
 	c.SetCookie(CookieRefresh, "", -1, "/", "", h.cookieCfg.Secure, true)
 }
@@ -162,7 +166,7 @@ func (h *AuthHandler) RegisterWithInvitation(c *gin.Context) {
 
 // Login godoc
 // @Summary      Authenticate user with email and password
-// @Description  Authenticates a user with email and password. On success it sets two HttpOnly cookies (access_token SameSite=Lax, refresh_token SameSite=Strict) and returns the user profile with the access TTL. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned. The SPA never sees the raw JWT.
+// @Description  Authenticates a user with email and password. On success it sets two HttpOnly cookies (access_token, refresh_token — both SameSite=Lax) and returns the user profile with the access TTL. After too many failed attempts the account is temporarily locked — a 429 with Retry-After is returned. The SPA never sees the raw JWT.
 // @Tags         auth
 // @Accept       json
 // @Produce      json

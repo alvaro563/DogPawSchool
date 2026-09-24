@@ -121,6 +121,28 @@ func TestRegisterWithInvitation_Success(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "password", "password must never appear in the response")
 }
 
+// The SPA and the API share one origin in production (the SPA host
+// proxies /api/* — see render.yaml), so both session cookies must be
+// SameSite=Lax: first-party on every fetch, absent on cross-site
+// POST (CSRF vector). SameSite=None would additionally require
+// Secure and exposes the session to third-party-cookie blocking.
+func TestSetAuthCookies_SameSiteLaxAndHttpOnly(t *testing.T) {
+	t.Parallel()
+	h := newTestAuthHandler(nil, nil, nil)
+	c, w := setupCtx(http.MethodPost, "/api/v1/auth/login", "")
+
+	h.setAuthCookies(c, "access-jwt", "refresh-jwt")
+
+	cookies := w.Result().Cookies()
+	require.Len(t, cookies, 2)
+	for _, ck := range cookies {
+		assert.Equal(t, http.SameSiteLaxMode, ck.SameSite,
+			"cookie %s must be SameSite=Lax", ck.Name)
+		assert.True(t, ck.HttpOnly, "cookie %s must be HttpOnly", ck.Name)
+		assert.Equal(t, "/", ck.Path, "cookie %s must be Path=/", ck.Name)
+	}
+}
+
 func TestRegisterWithInvitation_InvalidJSON(t *testing.T) {
 	t.Parallel()
 	h := newTestAuthHandler(&stubUserRegisterer{

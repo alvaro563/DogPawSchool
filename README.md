@@ -148,7 +148,7 @@ on a production box, something is wrong with your deployment.
 - [ ] `DB_PASSWORD` ≥ 12 bytes, from a secret manager
 - [ ] `DB_SSLMODE=require` or `verify-full`
 - [ ] TLS configured (reverse proxy or `TLS_KEY_FILE` / `TLS_CERT_FILE`)
-- [ ] `TRUSTED_PROXIES` set if behind a load balancer (only affects `c.ClientIP()` logged by `requestLogger`; the rate limit middleware uses `RemoteAddr` directly)
+- [ ] `TRUSTED_PROXIES` set if behind a proxy (enables X-Forwarded-For so the IP rate-limit middleware and the login lockout key on the REAL client; unset = XFF ignored and all proxied requests share the proxy IP's buckets)
 - [ ] IP rate limits tuned for expected traffic (`LOGIN_IP_*`, `REGISTER_IP_*`); account lockout defaults (`LOCKOUT_*`) are sane but adjustable
 - [ ] `CORS_ORIGINS` set to the exact frontend origin (REQUIRED in production; LoadConfig fails fast if missing)
 - [ ] `JWT_ACCESS_TTL` (default 1h) and `JWT_REFRESH_TTL` (default 24h) match the desired UX
@@ -163,7 +163,9 @@ on a production box, something is wrong with your deployment.
 The API uses two HttpOnly cookies:
 
 - `access_token` — short-lived (1h default), `SameSite=Lax`, used by every authenticated request.
-- `refresh_token` — longer-lived (24h default), `SameSite=Strict`, used only by `POST /api/v1/auth/refresh`.
+- `refresh_token` — longer-lived (24h default), `SameSite=Lax`, used only by `POST /api/v1/auth/refresh`.
+
+Both cookies are `SameSite=Lax` because the SPA and the API share one origin in production: the Render static site proxies `/api/*` to the backend (see `render.yaml`), so every fetch is same-site. `SameSite=None` (cross-site) is deliberately not used — it requires `Secure`, invites third-party-cookie blocking, and is unnecessary behind the proxy.
 
 The SPA never sees the JWT. The http-client uses `credentials: 'include'` so cookies travel automatically, and a single-flight `tryRefresh()` interceptor handles token renewals transparently.
 
@@ -173,7 +175,47 @@ The SPA never sees the JWT. The http-client uses `credentials: 'include'` so coo
 
 ### CSRF posture
 
-`SameSite=Lax` on access tokens prevents cross-site POST from sending the cookie; `SameSite=Strict` on refresh tokens prevents it even on top-level navigations. There is no explicit CSRF token because the cookie policy already blocks the vectors. If a stricter posture is required later (e.g. a browser that ignores SameSite), add a double-submit cookie for state-changing endpoints.
+`SameSite=Lax` on both cookies blocks the classic cross-site POST: an attacker's form or fetch cannot attach the session cookies, and there is no explicit CSRF token because the cookie policy already covers the vector. The same-origin `/api` proxy means legitimate traffic never needs `SameSite=None`. If a future deploy moves the SPA to a different registrable domain (true cross-site), revisit this: cookies would need `SameSite=None; Secure` — plus `Partitioned` (CHIPS) for browsers that block third-party cookies — or a double-submit CSRF token.
+
+### Deployment on Render (same-origin proxy)
+
+Production topology: **Render static site** (SPA, serves `frontend/dist`) + **Render web service** (Go API at `https://dogpawschool.onrender.com`). The static site rewrites `/api/*` to the API (declared in `render.yaml`, or manually in Dashboard → Static Site → Redirects/Rewrites):
+
+```yaml
+routes:
+  - type: rewrite
+    source: /api/*
+    destination: https://dogpawschool.onrender.com/api/*
+  - type: rewrite
+    source: /*
+    destination: /index.html
+```
+
+The browser then only ever talks to the SPA origin: cookies are first-party, CORS preflights disappear, and third-party-cookie blocking can no longer break the session.
+
+**API environment (dashboard):**
+
+- `ENV=production` — also forces `COOKIE_SECURE=true`.
+- `CORS_ORIGINS=https://<spa-host>` — still required: browsers attach `Origin` to same-origin POSTs, and gin-contrib/cors rejects an unexpected origin with an empty `403` before the handler runs.
+- `TRUSTED_PROXIES=<proxy CIDRs>` — so rate limits and lockout key on the client IP from `X-Forwarded-For` instead of the shared proxy IP.
+- `JWT_SECRET`, `DB_*`, `COOKIE_SECURE` per the production checklist.
+
+**Frontend build:** `frontend/.env.production` pins `VITE_API_BASE_URL=/api/v1`; never bake an absolute backend URL into the production bundle.
+
+**Verify after deploy:**
+
+```sh
+# 1. API direct (cookie-jar round-trip proves server-side auth)
+curl -c jar.txt -X POST https://dogpawschool.onrender.com/api/v1/auth/login \
+  -H 'Content-Type: application/json' -d '{"email":"<email>","password":"<pw>"}'
+curl -b jar.txt https://dogpawschool.onrender.com/api/v1/users/me   # expect 200
+
+# 2. Through the SPA host (proves the proxy rewrite)
+curl -i https://<spa-host>/api/v1/users/me   # expect the API's 401/200 JSON, not index.html
+
+# 3. Browser: login → Application → Cookies → the SPA host holds
+#    access_token (HttpOnly, Secure, SameSite=Lax); /users/me returns 200.
+```
 
 ### Generating secrets
 
