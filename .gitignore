@@ -6,7 +6,7 @@
 *.dylib
 bin/
 out/
-api
+/api
 
 # Herramientas de test y coberturas
 *.out
