@@ -81,7 +81,7 @@ func NewAuthHandler(
 // cross-site POST (CSRF-defence). Both are HttpOnly and Path=/ so
 // the SPA's own routes receive them.
 func (h *AuthHandler) setAuthCookies(c *gin.Context, access, refresh string) {
-	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetSameSite(http.SameSiteNoneMode)
 	c.SetCookie(CookieAccess, access, int(h.cookieCfg.AccessTTL.Seconds()), "/", "", h.cookieCfg.Secure, true)
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(CookieRefresh, refresh, int(h.cookieCfg.RefreshTTL.Seconds()), "/", "", h.cookieCfg.Secure, true)
@@ -91,7 +91,7 @@ func (h *AuthHandler) setAuthCookies(c *gin.Context, access, refresh string) {
 // deletes the cookie on the next response regardless of the path /
 // domain. Used by Logout.
 func (h *AuthHandler) clearAuthCookies(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetSameSite(http.SameSiteNoneMode)
 	c.SetCookie(CookieAccess, "", -1, "/", "", h.cookieCfg.Secure, true)
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(CookieRefresh, "", -1, "/", "", h.cookieCfg.Secure, true)
