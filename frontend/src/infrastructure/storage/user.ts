@@ -21,6 +21,14 @@ class UserStorage {
   }
 
   set(user: User): void {
+    // Never persist a falsy user: JSON.stringify(undefined) returns
+    // undefined (the value), and localStorage would store the literal
+    // string "undefined", which parses back as garbage and poisoned
+    // the reload bootstrap once. Clear instead.
+    if (!user) {
+      this.remove();
+      return;
+    }
     localStorage.setItem(USER_KEY, JSON.stringify(user));
   }
 

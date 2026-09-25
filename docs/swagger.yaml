@@ -495,6 +495,11 @@ definitions:
         example: NO_SHOW
         type: string
     type: object
+  handler.meResponse:
+    properties:
+      user:
+        $ref: '#/definitions/handler.userDTO'
+    type: object
   handler.modifyActivityRequest:
     properties:
       activity_type:
@@ -3807,16 +3812,18 @@ paths:
       - users
   /api/v1/users/me:
     get:
-      description: Returns the public profile of the user identified by the access_token
-        cookie. Used by the SPA on first page load to decide whether to render the
-        authenticated shell or kick the user back to /auth/login.
+      description: 'Returns the public profile of the user identified by the access_token
+        cookie, wrapped in a {"user": ...} envelope — the same shape as /auth/login,
+        /auth/register and /auth/refresh, and the shape the SPA''s AuthRepository.me()
+        expects. Used by the SPA on first page load to decide whether to render the
+        authenticated shell or kick the user back to /auth/login.'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.userDTO'
+            $ref: '#/definitions/handler.meResponse'
         "401":
           description: Missing or invalid access token
           schema:

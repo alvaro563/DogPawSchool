@@ -34,4 +34,9 @@ export interface AuthRepository {
   login(data: LoginInput): Promise<AuthResponse>;
   registerWithInvitation(data: RegisterInput): Promise<AuthResponse>;
   changePassword(data: ChangePasswordInput): Promise<ChangePasswordResponse>;
+  logout(): Promise<void>;
+  // GET /users/me — hydrates the SPA's user state from the HttpOnly
+  // access cookie on first page load. The backend wraps the profile
+  // in { user: ... } (same envelope as login/refresh).
+  me(): Promise<{ user: User }>;
 }

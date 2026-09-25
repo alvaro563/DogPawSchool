@@ -110,10 +110,10 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 
 // GetMe godoc
 // @Summary      Get the authenticated user
-// @Description  Returns the public profile of the user identified by the access_token cookie. Used by the SPA on first page load to decide whether to render the authenticated shell or kick the user back to /auth/login.
+// @Description  Returns the public profile of the user identified by the access_token cookie, wrapped in a {"user": ...} envelope — the same shape as /auth/login, /auth/register and /auth/refresh, and the shape the SPA's AuthRepository.me() expects. Used by the SPA on first page load to decide whether to render the authenticated shell or kick the user back to /auth/login.
 // @Tags         users
 // @Produce      json
-// @Success      200  {object}  userDTO
+// @Success      200  {object}  meResponse
 // @Failure      401  {object}  errorResponse  "Missing or invalid access token"
 // @Failure      404  {object}  errorResponse  "User no longer exists"
 // @Failure      500  {object}  errorResponse  "Internal server error"
@@ -135,7 +135,19 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toUserDTO(output.User))
+	// Envelope, NOT the bare DTO: the SPA destructures `{ user }`
+	// from this response. Returning the flat userDTO made `fresh`
+	// undefined, which flipped `isAuthenticated` (user !== null) to
+	// true with no user — the SPA then rendered the authenticated
+	// shell with an empty header and never redirected to login.
+	c.JSON(http.StatusOK, meResponse{User: toUserDTO(output.User)})
+}
+
+// meResponse is the wire envelope of GET /users/me. It mirrors
+// loginResponse's "user" field so every auth-related endpoint
+// returns the same shape.
+type meResponse struct {
+	User userDTO `json:"user"`
 }
 
 // List godoc

@@ -50,8 +50,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { user: fresh } = await authRepository.me();
         if (!cancelled) {
-          userStorage.set(fresh);
-          setUser(fresh);
+          if (fresh) {
+            userStorage.set(fresh);
+            setUser(fresh);
+          } else {
+            // 200 but no user in the envelope — a shape mismatch or
+            // corrupt payload. Treat as "no session": clearing the
+            // state lets the authenticated-route guard redirect to
+            // /auth/login instead of rendering the shell with an
+            // undefined user (the reload-lockout bug).
+            userStorage.remove();
+            setUser(null);
+          }
         }
       } catch {
         if (!cancelled) {
@@ -95,7 +105,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(() => ({
     user,
-    isAuthenticated: user !== null,
+    // Nullish check, not `!== null`: if state ever holds undefined
+    // (a response-shape bug), `undefined !== null` would be true and
+    // the app would treat a userless session as authenticated —
+    // rendering the shell without a header user and skipping the
+    // login redirect. With `!= null` both null and undefined mean
+    // "not authenticated".
+    isAuthenticated: user != null,
     isAdmin: user?.role === 'ADMIN',
     isLoading,
     login,

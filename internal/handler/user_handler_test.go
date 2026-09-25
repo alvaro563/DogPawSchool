@@ -122,6 +122,43 @@ func TestUserGetByID_Success(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "password", "password must never appear in the response")
 }
 
+// GET /users/me must wrap the profile in {"user": {...}} — the SPA
+// destructures `{ user }` from this response (same envelope as
+// /auth/login). Returning the flat userDTO made `fresh` undefined in
+// the bootstrap, which flipped isAuthenticated (user != null was
+// written as user !== null) to true with no user: the shell rendered
+// with an empty header and the guard never redirected to login —
+// the "reload lockout" bug.
+func TestUserGetMe_ReturnsUserEnvelope(t *testing.T) {
+	t.Parallel()
+	u := newTestUser(7)
+	h := newTestUserHandlerGet(&stubUserGetter{fn: func(_ context.Context, in useruc.GetUserInput) (useruc.GetUserOutput, error) {
+		assert.Equal(t, 7, in.ID())
+		return useruc.GetUserOutput{User: u}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodGet, "/api/v1/users/me", "", withUserID(7))
+
+	h.GetMe(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Assert the raw envelope first so a regression to the flat DTO
+	// fails loudly at the shape level.
+	var envelope map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &envelope))
+	require.Contains(t, envelope, "user",
+		`GET /users/me must return {"user": ...} — the SPA destructures .user`)
+
+	var body userDTO
+	require.NoError(t, json.Unmarshal(envelope["user"], &body))
+	assert.Equal(t, 7, body.ID)
+	assert.Equal(t, "Test User", body.Name)
+	assert.Equal(t, "test@example.com", body.Email)
+	assert.Equal(t, "REGULAR", body.Role)
+	assert.True(t, body.IsActive)
+	assert.NotContains(t, w.Body.String(), "password", "password must never appear in the response")
+}
+
 func TestUserGetByID_InvalidID(t *testing.T) {
 	t.Parallel()
 	h := newTestUserHandlerGet(&stubUserGetter{fn: func(context.Context, useruc.GetUserInput) (useruc.GetUserOutput, error) {

@@ -3102,7 +3102,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the public profile of the user identified by the access_token cookie. Used by the SPA on first page load to decide whether to render the authenticated shell or kick the user back to /auth/login.",
+                "description": "Returns the public profile of the user identified by the access_token cookie, wrapped in a {\"user\": ...} envelope — the same shape as /auth/login, /auth/register and /auth/refresh, and the shape the SPA's AuthRepository.me() expects. Used by the SPA on first page load to decide whether to render the authenticated shell or kick the user back to /auth/login.",
                 "produces": [
                     "application/json"
                 ],
@@ -3114,7 +3114,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.userDTO"
+                            "$ref": "#/definitions/handler.meResponse"
                         }
                     },
                     "401": {
@@ -4760,6 +4760,14 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "example": "NO_SHOW"
+                }
+            }
+        },
+        "handler.meResponse": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "$ref": "#/definitions/handler.userDTO"
                 }
             }
         },
