@@ -75,11 +75,16 @@ function AuthenticatedLayout() {
 }
 
 function GlobalModals() {
-  const { active, close } = useAdminModal();
+  const { active, editingActivity, editingMinCapacity, close } = useAdminModal();
 
   return (
     <>
-      <CreateActivityModal open={active === 'activity'} onOpenChange={(o) => { if (!o) close(); }} />
+      <CreateActivityModal
+        open={active === 'activity'}
+        activity={editingActivity}
+        minCapacity={editingMinCapacity}
+        onOpenChange={(o) => { if (!o) close(); }}
+      />
       <AssignPassModal open={active === 'pass'} onOpenChange={(o) => { if (!o) close(); }} />
       <RegisterDogModal open={active === 'dog'} onOpenChange={(o) => { if (!o) close(); }} />
       <RegisterClientModal open={active === 'client'} onOpenChange={(o) => { if (!o) close(); }} />

@@ -1,8 +1,10 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, MapPin, Users, School, ChevronRight, ArrowRight } from 'lucide-react';
+import { Calendar, MapPin, Users, School, ChevronRight, ArrowRight, Edit3 } from 'lucide-react';
 import { fetchActivities } from '@/infrastructure/repositories/activity-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { useAdminModal } from '@/features/admin/hooks/admin-modal-context';
 
 const TYPE_LABELS: Record<string, string> = {
   SOCIALIZATION_GROUP: 'Grupo socialización',
@@ -18,6 +20,8 @@ const TYPE_LABELS: Record<string, string> = {
 // which list they came from.
 export function ActivitiesManagementPage() {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
+  const { open: openAdminModal } = useAdminModal();
 
   // Hierarchical query key: 'activities' is the root prefix; the
   // mutation invalidates that root to refresh both this list and
@@ -68,56 +72,75 @@ export function ActivitiesManagementPage() {
             const pct = Math.round((booked / a.max_capacity) * 100);
 
             return (
-              <button
+              // Outer container (not a button): the row navigates via
+              // the inner button and the edit icon sits beside it —
+              // a <button> inside a <button> would be invalid HTML.
+              <div
                 key={a.id}
-                onClick={() =>
-                  navigate({
-                    to: '/admin/activities/$id',
-                    params: { id: String(a.id) },
-                  })
-                }
-                className="flex w-full items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/30"
+                className="flex items-center gap-1 rounded-xl border border-border bg-card pr-2 transition-colors hover:bg-muted/30"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{a.name}</p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <School className="h-3 w-3" />
-                      {TYPE_LABELS[a.activity_type] || a.activity_type}
-                    </span>
-                    <span>·</span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(a.date).toLocaleDateString('es-ES', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    <span>·</span>
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {a.location}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="flex items-center gap-1.5">
-                    <div className="h-2 w-16 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full rounded-full ${
-                          pct >= 100 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-sky-500'
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      />
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate({
+                      to: '/admin/activities/$id',
+                      params: { id: String(a.id) },
+                    })
+                  }
+                  className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{a.name}</p>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <School className="h-3 w-3" />
+                        {TYPE_LABELS[a.activity_type] || a.activity_type}
+                      </span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {new Date(a.date).toLocaleDateString('es-ES', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {a.location}
+                      </span>
                     </div>
-                    <span className="text-xs tabular-nums text-muted-foreground">{booked}/{a.max_capacity}</span>
                   </div>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </button>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-2 w-16 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full rounded-full ${
+                            pct >= 100 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-sky-500'
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="text-xs tabular-nums text-muted-foreground">{booked}/{a.max_capacity}</span>
+                    </div>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    title="Editar"
+                    aria-label={`Editar ${a.name}`}
+                    onClick={() => openAdminModal('activity', a, booked)}
+                    className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

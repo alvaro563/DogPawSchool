@@ -26,6 +26,27 @@ export async function fetchActivityByID(id: number): Promise<Activity> {
   return apiClient.get<Activity>(`/activities/${id}`);
 }
 
+// updateActivity patches an open activity. dog_id is intentionally
+// absent from the payload: the backend's modifyActivityRequest has no
+// dog_id field (the target dog of an individual class is fixed at
+// creation time) and size_target follows the backend triple-state
+// (omit = no change, "" = clear, "MINI"|"MEDIUM"|"LARGE" = set).
+export async function updateActivity(
+  activityId: number,
+  payload: {
+    name: string;
+    description: string;
+    location: string;
+    activity_type: string;
+    max_capacity: number;
+    duration_in_hours: number;
+    date: string;
+    size_target?: string;
+  },
+): Promise<Activity> {
+  return apiClient.patch<Activity>(`/activities/${activityId}`, payload);
+}
+
 // bulkCompleteActivity marks every CONFIRMED reservation of the
 // activity as COMPLETED AND closes the activity, in a single
 // transaction. Returns { id, completed, closed } where `completed`

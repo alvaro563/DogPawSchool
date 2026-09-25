@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Calendar, Check, CheckCheck, Dog, MapPin, School, User, X, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, Check, CheckCheck, Dog, Edit3, MapPin, School, User, X, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { fetchActivityRoster } from '@/infrastructure/repositories/reservation-repository.impl';
@@ -8,6 +8,8 @@ import { confirmReservation, rejectReservation } from '@/infrastructure/reposito
 import { bulkCompleteActivity } from '@/infrastructure/repositories/activity-repository.impl';
 import { isActivityPast } from '@/features/calendar/hooks/use-calendar';
 import { useToast } from '@/features/ui/hooks/toast-context';
+import { useAuth } from '@/features/auth/hooks/use-auth';
+import { useAdminModal } from '@/features/admin/hooks/admin-modal-context';
 import { CancelReservationButton } from '@/features/admin/components/cancel-reservation-button';
 import type { ActivityRosterEntry } from '@/domain/entities/reservation';
 
@@ -140,6 +142,8 @@ export function ActivityDetailPage({ id }: { id: number }) {
   // this comment may use early returns freely.
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { isAdmin } = useAuth();
+  const { open: openAdminModal } = useAdminModal();
 
   const { data: roster, isLoading, isError } = useQuery({
     queryKey: ['activity-roster', id],
@@ -297,6 +301,17 @@ export function ActivityDetailPage({ id }: { id: number }) {
                 style={{ width: `${Math.min(100, pct)}%` }}
               />
             </div>
+            {isAdmin && !activity.closed && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 gap-1"
+                onClick={() => openAdminModal('activity', activity, booked)}
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                Editar
+              </Button>
+            )}
           </div>
         </div>
       </div>
