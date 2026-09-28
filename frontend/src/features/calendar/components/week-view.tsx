@@ -49,32 +49,43 @@ export function WeekView({
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* Day headers */}
-      <div className="grid grid-cols-[3rem_repeat(7,1fr)] border-b border-border">
-        <div />
-        {weekDays.map((day) => (
-          <div
-            key={day.toISOString()}
-            className={cn(
-              'px-1 py-2 text-center text-xs font-medium',
-              day.toDateString() === todayStr
-                ? 'text-primary'
-                : 'text-muted-foreground',
-            )}
-          >
-            <div className="hidden sm:block">
-              {day.toLocaleDateString('es-ES', { weekday: 'short' })}
-            </div>
-            <div className="sm:hidden">
-              {day.toLocaleDateString('es-ES', { weekday: 'narrow' })}
-            </div>
-            <div className="text-[10px]">{day.getDate()}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Time grid */}
+      {/* Day headers + time grid share ONE scroll container: both
+          grids must scroll horizontally together and use the same
+          intrinsic width (min-w-[720px]). Previously the header sat
+          OUTSIDE the overflow-auto container with no min-w, so on
+          mobile it shrank to the viewport (~49px columns) while the
+          cells forced 720px (~96px columns) and the columns no longer
+          matched the day titles. On desktop the container is already
+          ≥720px, which is why it only reproduced on mobile. */}
       <div className="relative flex-1 overflow-auto">
+        {/* Day headers: sticky so vertical scrolling keeps them in
+            view (they used to live outside the scroll container and
+            were pinned as a side effect). Opaque background so the
+            activity blocks pass underneath without showing through. */}
+        <div className="sticky top-0 z-10 grid min-w-[720px] grid-cols-[3rem_repeat(7,1fr)] border-b border-border bg-background">
+          <div className="border-r border-border" />
+          {weekDays.map((day) => (
+            <div
+              key={day.toISOString()}
+              className={cn(
+                'border-r border-border px-1 py-2 text-center text-xs font-medium',
+                day.toDateString() === todayStr
+                  ? 'text-primary'
+                  : 'text-muted-foreground',
+              )}
+            >
+              <div className="hidden sm:block">
+                {day.toLocaleDateString('es-ES', { weekday: 'short' })}
+              </div>
+              <div className="sm:hidden">
+                {day.toLocaleDateString('es-ES', { weekday: 'narrow' })}
+              </div>
+              <div className="text-[10px]">{day.getDate()}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Time grid */}
         <div
           className="relative grid min-w-[720px] grid-cols-[3rem_repeat(7,1fr)]"
           style={{ height: HOURS.length * HOUR_HEIGHT }}
