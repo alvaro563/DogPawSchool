@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronUp, ChevronDown } from 'lucide-react';
+import { AlertCircle, ChevronUp, ChevronDown, Clock } from 'lucide-react';
 import apiClient from '@/infrastructure/api/http-client';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
@@ -49,10 +49,46 @@ interface TimePickerProps {
   onChange: (v: string) => void;
 }
 
+// parseTime normalises free-typed input to canonical "HH:MM".
+// Accepts "14:30", "9:30", "1430" and "930"; returns null for
+// anything unparseable or outside 00:00–23:59.
+function parseTime(raw: string): string | null {
+  const s = raw.trim();
+  let hh: number;
+  let mm: number;
+  const withColon = /^(\d{1,2}):(\d{1,2})$/.exec(s);
+  if (withColon) {
+    hh = Number(withColon[1]);
+    mm = Number(withColon[2]);
+  } else if (/^\d{3,4}$/.test(s)) {
+    const padded = s.padStart(4, '0');
+    hh = Number(padded.slice(0, 2));
+    mm = Number(padded.slice(2));
+  } else {
+    return null;
+  }
+  if (hh > 23 || mm > 59) return null;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+// TimePicker: a text input (numeric keypad on mobile, free typing
+// everywhere) combined with the original chevron stepper popover.
+// The typed text lives in local `draft`; the parent's canonical
+// "HH:MM" only changes on blur/Enter when the draft parses, or via
+// the chevrons — so a half-typed "143" is never fed to the submit.
+// Unparseable text snaps back to the last valid value on blur.
 function TimePicker({ value, onChange }: TimePickerProps) {
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLDivElement>(null);
-  const parts = value.split(':');
+
+  // Sync the visible text whenever the parent commits a new value
+  // (chevrons, edit-mode hydration, snap-back).
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const parts = (parseTime(draft) ?? value).split(':');
   const hours = parseInt(parts[0], 10) || 0;
   const minutes = parseInt(parts[1], 10) || 0;
 
@@ -71,38 +107,90 @@ function TimePicker({ value, onChange }: TimePickerProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
+  function commitDraft() {
+    const parsed = parseTime(draft);
+    if (parsed) {
+      setDraft(parsed);
+      if (parsed !== value) onChange(parsed);
+    } else {
+      // Unparseable or empty: snap back to the last valid time.
+      setDraft(value);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return;
+    const parsed = parseTime(draft);
+    if (parsed === null) {
+      e.preventDefault();
+      setDraft(value);
+      return;
+    }
+    if (parsed !== value) {
+      // Commit first and swallow this Enter so the form never
+      // submits with a stale timePart; the next Enter (state now
+      // already valid) goes through.
+      e.preventDefault();
+      setDraft(parsed);
+      onChange(parsed);
+    }
+    // parsed === value → let the native form submit proceed.
+  }
+
+  function step(deltaH: number, deltaM: number) {
+    const [h, m] = (parseTime(draft) ?? value).split(':').map(Number);
+    const next = build(h + deltaH, m + deltaM);
+    setDraft(next);
+    onChange(next);
+  }
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative flex gap-1">
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        maxLength={5}
+        placeholder="HH:MM"
+        aria-label="Hora"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value.replace(/[^0-9:]/g, '').slice(0, 5))}
+        onBlur={commitDraft}
+        onKeyDown={handleKeyDown}
+        className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+      />
       <button
         type="button"
+        aria-label="Ajustar hora con botones"
+        title="Ajustar hora con botones"
         onClick={() => setOpen(!open)}
-        className="flex h-9 w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-input bg-transparent"
       >
-        {value}
+        <Clock className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 rounded-lg border border-border bg-popover p-3 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1 rounded-lg border border-border bg-popover p-3 shadow-lg">
           <div className="flex items-center gap-4">
             <div className="flex flex-col items-center gap-1">
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours + 1, minutes))}>
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => step(1, 0)}>
                 <ChevronUp className="h-4 w-4" />
               </Button>
               <span className="w-10 text-center text-sm font-medium tabular-nums">
                 {String(hours).padStart(2, '0')}
               </span>
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours - 1, minutes))}>
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => step(-1, 0)}>
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </div>
             <span className="self-center text-lg font-bold">:</span>
             <div className="flex flex-col items-center gap-1">
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours, minutes + 1))}>
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => step(0, 1)}>
                 <ChevronUp className="h-4 w-4" />
               </Button>
               <span className="w-10 text-center text-sm font-medium tabular-nums">
                 {String(minutes).padStart(2, '0')}
               </span>
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(build(hours, minutes - 1))}>
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => step(0, -1)}>
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </div>
