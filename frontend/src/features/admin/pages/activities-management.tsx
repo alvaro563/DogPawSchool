@@ -1,10 +1,11 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { Calendar, MapPin, Users, School, ChevronRight, ArrowRight, Edit3 } from 'lucide-react';
-import { fetchActivities } from '@/infrastructure/repositories/activity-repository.impl';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Calendar, MapPin, Users, School, ChevronRight, ArrowRight, Edit3, Trash2 } from 'lucide-react';
+import { fetchActivities, deleteActivity } from '@/infrastructure/repositories/activity-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useAdminModal } from '@/features/admin/hooks/admin-modal-context';
+import { useToast } from '@/features/ui/hooks/toast-context';
 
 const TYPE_LABELS: Record<string, string> = {
   SOCIALIZATION_GROUP: 'Grupo socialización',
@@ -22,6 +23,8 @@ export function ActivitiesManagementPage() {
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const { open: openAdminModal } = useAdminModal();
+  const queryClient = useQueryClient();
+  const toast = useToast();
 
   // Hierarchical query key: 'activities' is the root prefix; the
   // mutation invalidates that root to refresh both this list and
@@ -30,6 +33,38 @@ export function ActivitiesManagementPage() {
     queryKey: ['activities', 'list', { closed: false }],
     queryFn: () => fetchActivities('2000-01-01T00:00:00Z', '2100-01-01T00:00:00Z', false),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (activityId: number) => deleteActivity(activityId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['today-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
+      toast.success('Actividad eliminada', 'La sesión se ha eliminado del calendario.');
+    },
+    onError: (err: unknown) => {
+      const body = (err as { body?: { error?: string } }).body;
+      const msg =
+        body?.error === 'activity_has_reservations'
+          ? 'Tiene reservas confirmadas o pendientes. Cancela primero las reservas.'
+          : body?.error === 'not_found'
+          ? 'Actividad no encontrada.'
+          : 'No se pudo eliminar la actividad.';
+      toast.error('Error al eliminar', msg);
+    },
+  });
+
+  function handleDelete(a: { id: number; name: string }) {
+    if (
+      !window.confirm(
+        `¿Eliminar «${a.name}»? Se borrarán también sus reservas registradas. Esta acción no se puede deshacer.`,
+      )
+    ) {
+      return;
+    }
+    deleteMutation.mutate(a.id);
+  }
 
   if (isLoading) return <div className="flex items-center justify-center py-20"><LoadingSpinner size="lg" /></div>;
 
@@ -138,6 +173,18 @@ export function ActivitiesManagementPage() {
                     className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
                     <Edit3 className="h-4 w-4" />
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    title="Eliminar"
+                    aria-label={`Eliminar ${a.name}`}
+                    onClick={() => handleDelete(a)}
+                    disabled={deleteMutation.isPending && deleteMutation.variables === a.id}
+                    className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 )}
               </div>

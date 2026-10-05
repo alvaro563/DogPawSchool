@@ -42,6 +42,15 @@ var ErrSizeTargetNotApplicable = errors.New("size target only applies to SOCIALI
 // points to an unrecognised SizeBracket (e.g. UNKNOWN).
 var ErrInvalidSizeTarget = errors.New("invalid size target")
 
+// ErrActivityHasReservations is returned by ActivityRepository.Delete
+// when the activity still holds at least one slot-holding reservation
+// (CONFIRMED or PENDING_TO_CONFIRM). Deleting would strand those
+// bookings (and any pass credits behind them) with no refund path.
+// Reservations in terminal non-impact states (cancelled, forgiven,
+// no-show, completed) do not block deletion: they are already settled
+// and are removed by the ON DELETE CASCADE on reservations.activity_id.
+var ErrActivityHasReservations = errors.New("activity has active reservations")
+
 // Activity is a scheduled school session: a class, a route, an
 // individual session, or an extra event. Dogs are booked into Activities
 // via Reservation.

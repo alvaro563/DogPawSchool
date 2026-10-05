@@ -81,7 +81,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a new school activity (class, route, individual session, or extra). Returns the new resource URL in the Location header.",
+                "description": "Creates a new school activity (class, route, individual session, or extra). When the optional `dates` array is present (1-52 strictly increasing RFC3339 timestamps), it materializes one activity row per date inside a single transaction — a weekly recurrence — and the response lists every created id in `ids`. Without `dates` only the top-level `date` session is created (original behaviour). Returns the first resource URL in the Location header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -91,7 +91,7 @@
                 "tags": [
                     "activities"
                 ],
-                "summary": "Register a new activity",
+                "summary": "Register a new activity (single or recurring)",
                 "parameters": [
                     {
                         "description": "Activity to create",
@@ -105,7 +105,7 @@
                 ],
                 "responses": {
                     "201": {
-                        "description": "Activity created",
+                        "description": "Activity created (ids lists every id when dates was supplied)",
                         "schema": {
                             "$ref": "#/definitions/handler.registerActivityResponse"
                         }
@@ -209,6 +209,59 @@
                     },
                     "404": {
                         "description": "Activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes an activity. Its reservations cascade away with the row EXCEPT when it still holds CONFIRMED or PENDING_TO_CONFIRM reservations: those are refused with 409 (cancel them first). Cancelled / forgiven / no-show / completed reservations do not block the delete.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Delete an activity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Activity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Activity deleted"
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Activity not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "activity_has_reservations",
                         "schema": {
                             "$ref": "#/definitions/handler.errorResponse"
                         }
@@ -5074,6 +5127,13 @@
                     "type": "string",
                     "example": "2026-08-01T10:00:00Z"
                 },
+                "dates": {
+                    "description": "Dates materializes a weekly recurrence: one activity row per\nentry (1-52 strictly increasing RFC3339 timestamps), inserted\natomically. When supplied, each session uses its own entry and\nthe top-level `date` is ignored for the per-row timestamp.\nOmitted = single create (original behaviour).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "description": {
                     "type": "string",
                     "example": "Paseo grupal por la ribera del río"
@@ -5112,6 +5172,19 @@
                 "id": {
                     "type": "integer",
                     "example": 42
+                },
+                "ids": {
+                    "description": "IDs lists every created id in dates order when the request\ncarried a batch; omitted for single creates.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        42,
+                        43,
+                        44,
+                        45
+                    ]
                 }
             }
         },

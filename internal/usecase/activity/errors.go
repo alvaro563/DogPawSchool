@@ -7,6 +7,8 @@ package activity
 import (
 	"errors"
 	"fmt"
+
+	"dogpaw/internal/domain"
 )
 
 // ValidationError is returned by use cases when a required field is
@@ -70,4 +72,9 @@ var ErrInvalidDog = errors.New("invalid dog_id")
 // the target dog_id resolves but the dog is currently inactive
 // (archived / deactivated). Maps to 400 inactive_dog.
 var ErrInactiveDogForActivity = errors.New("dog is inactive")
+
+// ErrActivityHasReservations aliases the domain sentinel returned by
+// DeleteActivity when the activity still holds CONFIRMED /
+// PENDING_TO_CONFIRM reservations. Maps to 409 activity_has_reservations.
+var ErrActivityHasReservations = domain.ErrActivityHasReservations
 

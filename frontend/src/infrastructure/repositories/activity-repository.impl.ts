@@ -60,3 +60,13 @@ export async function bulkCompleteActivity(
     `/activities/${activityId}/complete-all`,
   );
 }
+
+// deleteActivity removes an activity (204 on success). Its
+// reservations cascade away with the row EXCEPT while it holds
+// CONFIRMED / PENDING_TO_CONFIRM reservations: the backend refuses
+// those with 409 activity_has_reservations (cancel them first).
+// Cancelled / forgiven / no-show / completed reservations do not
+// block the delete.
+export async function deleteActivity(activityId: number): Promise<void> {
+  await apiClient.delete<unknown>(`/activities/${activityId}`);
+}

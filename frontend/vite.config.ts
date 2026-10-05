@@ -37,7 +37,32 @@ export default defineConfig(({ mode }) => {
       }),
       react(),
       tailwindcss(),
-      VitePWA({ registerType: 'autoUpdate' }),
+      VitePWA({
+        registerType: 'autoUpdate',
+        // Explicit manifest: without it vite-plugin-pwa emits a
+        // default one named after package.json ("frontend") with no
+        // icons — iOS showed an "f" letter tile from that name.
+        manifest: {
+          name: 'Dog Paw by Ana Such',
+          short_name: 'Dog Paw',
+          description: 'El cole de los perros — clases, rutas y socialización',
+          lang: 'es',
+          start_url: '/',
+          display: 'standalone',
+          background_color: '#ffffff',
+          theme_color: '#101014',
+          icons: [
+            { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+            { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+            {
+              src: '/maskable-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
+            },
+          ],
+        },
+      }),
     ],
     resolve: {
       alias: { '@': nodeResolve(import.meta.dirname, 'src') },

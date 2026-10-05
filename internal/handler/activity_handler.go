@@ -16,6 +16,14 @@ type ActivityRegisterer interface {
 	Execute(ctx context.Context, input activityuc.RegisterActivityInput) (activityuc.RegisterActivityOutput, error)
 }
 
+type ActivityBatchRegisterer interface {
+	Execute(ctx context.Context, input activityuc.BatchRegisterActivityInput) (activityuc.BatchRegisterActivityOutput, error)
+}
+
+type ActivityDeleter interface {
+	Execute(ctx context.Context, input activityuc.DeleteActivityInput) (activityuc.DeleteActivityOutput, error)
+}
+
 type ActivityGetter interface {
 	Execute(ctx context.Context, input activityuc.GetActivityInput) (activityuc.GetActivityOutput, error)
 }
@@ -46,8 +54,10 @@ type ActivitySlotCounter interface {
 
 type ActivityHandler struct {
 	register     ActivityRegisterer
+	batch        ActivityBatchRegisterer
 	get          ActivityGetter
 	modify       ActivityModifier
+	delete       ActivityDeleter
 	list         ActivityLister
 	upcoming     ActivityUpcomingLister
 	close        ActivityCloser
@@ -64,11 +74,15 @@ func NewActivityHandler(
 	close ActivityCloser,
 	bulkComplete ActivityBulkCompleter,
 	slotCounter ActivitySlotCounter,
+	batch ActivityBatchRegisterer,
+	deleteActivity ActivityDeleter,
 ) *ActivityHandler {
 	return &ActivityHandler{
 		register:     register,
+		batch:        batch,
 		get:          get,
 		modify:       modify,
+		delete:       deleteActivity,
 		list:         list,
 		upcoming:     upcoming,
 		close:        close,
@@ -78,13 +92,13 @@ func NewActivityHandler(
 }
 
 // Register godoc
-// @Summary      Register a new activity
-// @Description  Creates a new school activity (class, route, individual session, or extra). Returns the new resource URL in the Location header.
+// @Summary      Register a new activity (single or recurring)
+// @Description  Creates a new school activity (class, route, individual session, or extra). When the optional `dates` array is present (1-52 strictly increasing RFC3339 timestamps), it materializes one activity row per date inside a single transaction — a weekly recurrence — and the response lists every created id in `ids`. Without `dates` only the top-level `date` session is created (original behaviour). Returns the first resource URL in the Location header.
 // @Tags         activities
 // @Accept       json
 // @Produce      json
 // @Param        activity  body      registerActivityRequest  true  "Activity to create"
-// @Success      201       {object}  registerActivityResponse  "Activity created"
+// @Success      201       {object}  registerActivityResponse  "Activity created (ids lists every id when dates was supplied)"
 // @Failure      400       {object}  errorResponse             "Invalid request body or missing fields"
 // @Failure      500       {object}  errorResponse             "Internal server error"
 // @Security     BearerAuth
@@ -113,6 +127,26 @@ func (h *ActivityHandler) Register(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+
+	// Recurring create: dates replaces the single date. The batch
+	// use case validates the vector and inserts every row in one
+	// transaction.
+	if len(request.Dates) > 0 {
+		batchIn, err := activityuc.NewBatchRegisterActivityInput(in, request.Dates)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		batchOutput, err := h.batch.Execute(c.Request.Context(), batchIn)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		c.Header("Location", "/api/v1/activities/"+strconv.Itoa(batchOutput.IDs[0]))
+		c.JSON(http.StatusCreated, registerActivityResponse{ID: batchOutput.IDs[0], IDs: batchOutput.IDs})
+		return
+	}
+
 	output, err := h.register.Execute(c.Request.Context(), in)
 	if err != nil {
 		writeError(c, err)
@@ -332,6 +366,37 @@ func (h *ActivityHandler) Modify(c *gin.Context) {
 	c.JSON(http.StatusOK, toActivityDTO(output.Activity, heldSlots[output.Activity.ID()]))
 }
 
+// Delete godoc
+// @Summary      Delete an activity
+// @Description  Removes an activity. Its reservations cascade away with the row EXCEPT when it still holds CONFIRMED or PENDING_TO_CONFIRM reservations: those are refused with 409 (cancel them first). Cancelled / forgiven / no-show / completed reservations do not block the delete.
+// @Tags         activities
+// @Produce      json
+// @Param        id   path  int  true  "Activity ID"
+// @Success      204  "Activity deleted"
+// @Failure      400  {object}  errorResponse  "Invalid id"
+// @Failure      404  {object}  errorResponse  "Activity not found"
+// @Failure      409  {object}  errorResponse  "activity_has_reservations"
+// @Failure      500  {object}  errorResponse  "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/activities/{id} [delete]
+func (h *ActivityHandler) Delete(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "validation", Field: "id"})
+		return
+	}
+	in, err := activityuc.NewDeleteActivityInput(id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if _, err := h.delete.Execute(c.Request.Context(), in); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.AbortWithStatus(http.StatusNoContent)
+}
+
 type registerActivityRequest struct {
 	Name            string    `json:"name" example:"Paseo Río"`
 	Description     string    `json:"description" example:"Paseo grupal por la ribera del río"`
@@ -348,10 +413,19 @@ type registerActivityRequest struct {
 	// (MINI / MEDIUM / LARGE). Only valid for SOCIALIZATION_GROUP and
 	// ROUTE. NULL / omitted means "all sizes welcome".
 	SizeTarget *string `json:"size_target,omitempty" example:"MINI" enum:"MINI,MEDIUM,LARGE"`
+	// Dates materializes a weekly recurrence: one activity row per
+	// entry (1-52 strictly increasing RFC3339 timestamps), inserted
+	// atomically. When supplied, each session uses its own entry and
+	// the top-level `date` is ignored for the per-row timestamp.
+	// Omitted = single create (original behaviour).
+	Dates []time.Time `json:"dates,omitempty"`
 }
 
 type registerActivityResponse struct {
 	ID int `json:"id" example:"42"`
+	// IDs lists every created id in dates order when the request
+	// carried a batch; omitted for single creates.
+	IDs []int `json:"ids,omitempty" example:"42,43,44,45"`
 }
 
 type listActivitiesResponse struct {

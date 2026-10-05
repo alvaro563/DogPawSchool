@@ -44,6 +44,46 @@ const ACTIVITY_TYPES = [
   { value: 'EXTRA', label: 'Evento extra' },
 ];
 
+// Recurring creates materialize one activity row per session; the
+// backend caps a single batch at one year of weekly occurrences.
+const MAX_SESSIONS = 52;
+
+type RecurrenceResult = { dates: Date[] } | { error: string };
+
+// sessionInstant returns the local Date of the weekly occurrence
+// `weeksAhead` weeks after the first session. The +7 lands on the
+// day component of a local (calendar) date, so the same wall-clock
+// time is kept across DST transitions — unlike adding 7*24h.
+function sessionInstant(datePart: string, timePart: string, weeksAhead: number): Date {
+  const [y, m, d] = datePart.split('-').map(Number);
+  const [hh, mm] = timePart.split(':').map(Number);
+  return new Date(y, m - 1, d + 7 * weeksAhead, hh, mm, 0, 0);
+}
+
+// computeRecurringDates turns the recurrence settings into the list
+// of session instants (one per week, `weeks` total), or an
+// admin-facing error message.
+function computeRecurringDates(
+  datePart: string,
+  timePart: string,
+  weeks: number,
+): RecurrenceResult {
+  if (!datePart || !timePart) {
+    return { error: 'Indica fecha y hora de la primera sesión.' };
+  }
+  if (!Number.isFinite(weeks) || weeks < 2) return { error: 'La repetición necesita al menos 2 sesiones.' };
+  if (weeks > MAX_SESSIONS) return { error: `Máximo ${MAX_SESSIONS} sesiones (un año).` };
+  return { dates: Array.from({ length: weeks }, (_, i) => sessionInstant(datePart, timePart, i)) };
+}
+
+// formatSessionDays renders "28 sep · 5 oct · 12 oct · … · 16 nov".
+function formatSessionDays(dates: Date[]): string {
+  const fmt = (d: Date) => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  const head = dates.slice(0, 3).map(fmt);
+  if (dates.length <= 3) return head.join(' · ');
+  return [...head, '…', fmt(dates[dates.length - 1])].join(' · ');
+}
+
 interface TimePickerProps {
   value: string;
   onChange: (v: string) => void;
@@ -149,7 +189,6 @@ function TimePicker({ value, onChange }: TimePickerProps) {
       <input
         type="text"
         inputMode="numeric"
-        pattern="[0-9]*"
         maxLength={5}
         placeholder="HH:MM"
         aria-label="Hora"
@@ -229,7 +268,17 @@ export function CreateActivityModal({ open, onOpenChange, activity, minCapacity 
   const [timePart, setTimePart] = useState('10:00');
   const [dogId, setDogId] = useState<number | null>(null);
   const [sizeTarget, setSizeTarget] = useState<'' | 'MINI' | 'MEDIUM' | 'LARGE'>('');
+  // Recurrence (create mode only): weekly repetition of the first
+  // session, materialized as N independent activities in one POST.
+  const [repeat, setRepeat] = useState(false);
+  const [repeatWeeks, setRepeatWeeks] = useState(4);
   const [error, setError] = useState('');
+
+  // Live preview/validation of the recurrence settings. Only the
+  // controls feed it; in edit mode there is no recurrence block.
+  const recurrence = !isEdit && repeat
+    ? computeRecurringDates(datePart, timePart, repeatWeeks)
+    : null;
 
   // Fetch active dogs only when the modal is open AND the admin picked
   // INDIVIDUAL_CLASS (other types don't need a target dog). Skipped in
@@ -314,12 +363,16 @@ export function CreateActivityModal({ open, onOpenChange, activity, minCapacity 
       setTimePart('10:00');
       setDogId(null);
       setSizeTarget('');
+      setRepeat(false);
+      setRepeatWeeks(4);
       prevTypeRef.current = 'SOCIALIZATION_GROUP';
     }
   }, [open, activity]);
 
   const mutation = useMutation({
-    mutationFn: () => {
+    // `dates` is the recurrence vector (null for a plain create or
+    // any edit). Each entry becomes one session row server-side.
+    mutationFn: (dates: Date[] | null) => {
       const dateISO = new Date(`${datePart}T${timePart}:00`).toISOString();
       if (activity) {
         const payload: {
@@ -349,7 +402,7 @@ export function CreateActivityModal({ open, onOpenChange, activity, minCapacity 
         }
         return updateActivity(activity.id, payload);
       }
-      return apiClient.post('/activities', {
+      const payload: Record<string, unknown> = {
         name,
         description,
         location,
@@ -362,9 +415,13 @@ export function CreateActivityModal({ open, onOpenChange, activity, minCapacity 
           activityType === 'SOCIALIZATION_GROUP' || activityType === 'ROUTE'
             ? sizeTarget || null
             : null,
-      });
+      };
+      if (dates && dates.length > 0) {
+        payload.dates = dates.map((d) => d.toISOString());
+      }
+      return apiClient.post('/activities', payload);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       // ['activities'] is the root prefix: refreshes the open list,
       // the completed list AND the calendar in one call. Today-classes
       // uses its own key, and admin-dashboard aggregates everything.
@@ -391,7 +448,23 @@ export function CreateActivityModal({ open, onOpenChange, activity, minCapacity 
       setTimePart('10:00');
       setDogId(null);
       setSizeTarget('');
+      setRepeat(false);
+      setRepeatWeeks(4);
       setError('');
+
+      // Batch creates answer with { id, ids }; single creates only
+      // with { id }. variables carries the recurrence vector used at
+      // mutate() time, so it can count sessions too.
+      const ids = (_data as { ids?: number[] } | null)?.ids;
+      const count = ids?.length ?? variables?.length ?? 0;
+      if (count > 1) {
+        toast.success(
+          'Actividades creadas',
+          `${count} sesiones semanales de «${name}» creadas — ya aparecen en el calendario.`,
+        );
+        onOpenChange(false);
+        return;
+      }
 
       const activityDate = new Date(`${datePart}T${timePart}:00`);
       const formattedDate = activityDate.toLocaleDateString('es-ES', {
@@ -429,8 +502,17 @@ export function CreateActivityModal({ open, onOpenChange, activity, minCapacity 
       );
       return;
     }
+    let dates: Date[] | null = null;
+    if (!isEdit && repeat) {
+      const r = computeRecurringDates(datePart, timePart, repeatWeeks);
+      if ('error' in r) {
+        setError(r.error);
+        return;
+      }
+      dates = r.dates;
+    }
     setError('');
-    mutation.mutate();
+    mutation.mutate(dates);
   }
 
   return (
@@ -540,6 +622,47 @@ export function CreateActivityModal({ open, onOpenChange, activity, minCapacity 
               <TimePicker value={timePart} onChange={setTimePart} />
             </div>
           </div>
+
+          {!isEdit && (
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+                <input
+                  type="checkbox"
+                  checked={repeat}
+                  onChange={(e) => setRepeat(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                Repetir semanalmente
+              </label>
+              {repeat && (
+                <>
+                  <label className="flex w-fit items-center gap-1.5 text-xs">
+                    Durante
+                    <input
+                      type="number"
+                      min={2}
+                      max={MAX_SESSIONS}
+                      value={repeatWeeks}
+                      onChange={(e) => setRepeatWeeks(+e.target.value)}
+                      className="w-16 rounded-lg border border-input bg-transparent px-2 py-1 text-sm"
+                      aria-label="Número de semanas"
+                    />
+                    semanas
+                  </label>
+                  <p className={`text-xs ${ recurrence && 'error' in recurrence ? 'text-destructive' : 'text-muted-foreground'}`}>
+                    {recurrence && 'error' in recurrence
+                      ? recurrence.error
+                      : recurrence
+                      ? `Se crearán ${recurrence.dates.length} sesiones: ${formatSessionDays(recurrence.dates)}`
+                      : ''}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Cada sesión se puede editar o eliminar individualmente después.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-xs text-destructive">

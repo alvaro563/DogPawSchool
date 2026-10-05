@@ -300,3 +300,67 @@ func TestActivityRepository_RoundTripWithSizeTarget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, got2.SizeTarget(), "size_target must be cleared on Update")
 }
+
+func TestActivityRepository_Delete(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewActivityRepository(db)
+	activity := insertBaseActivity(t, db)
+
+	// Unknown id → domain not-found sentinel.
+	err := repo.Delete(context.Background(), 9999)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	// No reservations → row disappears.
+	require.NoError(t, repo.Delete(context.Background(), activity.ID()))
+	got, err := repo.GetByID(context.Background(), activity.ID(), 0, true)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+	assert.Nil(t, got)
+}
+
+// TestActivityRepository_Delete_ReservationsGuard covers the 409
+// guard: CONFIRMED and PENDING_TO_CONFIRM block the delete, while a
+// cancelled reservation lets it through.
+func TestActivityRepository_Delete_ReservationsGuard(t *testing.T) {
+	db := newTestDB(t)
+	t.Cleanup(func() { cleanTables(t, db) })
+
+	repo := NewActivityRepository(db)
+	user := insertBaseUser(t, db)
+	dog := insertBaseDog(t, db, user.ID())
+	activity := insertBaseActivity(t, db)
+	pass := insertBasePass(t, db, user.ID())
+	resRepo := NewReservationRepository(db)
+
+	res, err := domain.NewReservation(0, activity.ID(), dog.ID(), pass.ID(), time.Now().UTC())
+	require.NoError(t, err)
+	reservationID, err := resRepo.Create(context.Background(), res)
+	require.NoError(t, err)
+
+	// CONFIRMED blocks.
+	err = repo.Delete(context.Background(), activity.ID())
+	assert.ErrorIs(t, err, domain.ErrActivityHasReservations)
+
+	// PENDING_TO_CONFIRM blocks too.
+	_, err = db.ExecContext(context.Background(),
+		`UPDATE reservations SET status = 'PENDING_TO_CONFIRM' WHERE id = $1`, reservationID)
+	require.NoError(t, err)
+	err = repo.Delete(context.Background(), activity.ID())
+	assert.ErrorIs(t, err, domain.ErrActivityHasReservations)
+
+	// Cancelled → no longer holds a slot → delete cascades.
+	_, err = db.ExecContext(context.Background(),
+		`UPDATE reservations SET status = 'CANCELLED_IN_TIME' WHERE id = $1`, reservationID)
+	require.NoError(t, err)
+	require.NoError(t, repo.Delete(context.Background(), activity.ID()))
+
+	got, err := repo.GetByID(context.Background(), activity.ID(), 0, true)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+	assert.Nil(t, got)
+
+	var remaining int
+	require.NoError(t, db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM reservations WHERE activity_id = $1`, activity.ID()).Scan(&remaining))
+	assert.Equal(t, 0, remaining, "reservations cascade with the activity")
+}

@@ -131,17 +131,8 @@ func (uc *RegisterActivityUseCase) Execute(ctx context.Context, input RegisterAc
 	// Verify the target dog exists and is active whenever a dog is
 	// requested. The domain layer also enforces "INDIVIDUAL_CLASS
 	// requires a dog", and the DB CHECK constraint mirrors it.
-	if input.DogID() != nil {
-		dog, err := uc.dogRepo.GetByID(ctx, *input.DogID())
-		if err != nil {
-			if errors.Is(err, domain.ErrNotFound) {
-				return RegisterActivityOutput{}, ErrInvalidDog
-			}
-			return RegisterActivityOutput{}, fmt.Errorf("lookup dog %d: %w", *input.DogID(), err)
-		}
-		if dog == nil || !dog.IsActive() {
-			return RegisterActivityOutput{}, ErrInactiveDogForActivity
-		}
+	if err := verifyTargetDog(ctx, uc.dogRepo, input.DogID()); err != nil {
+		return RegisterActivityOutput{}, err
 	}
 
 	activity, err := domain.NewActivity(
@@ -155,4 +146,24 @@ func (uc *RegisterActivityUseCase) Execute(ctx context.Context, input RegisterAc
 		return RegisterActivityOutput{}, fmt.Errorf("register activity: %w", err)
 	}
 	return RegisterActivityOutput{ID: id}, nil
+}
+
+// verifyTargetDog is shared by the single and batch register use
+// cases: when dogID is non-nil the dog must exist and be active so
+// the activity can be booked.
+func verifyTargetDog(ctx context.Context, dogRepo domain.DogRepository, dogID *int) error {
+	if dogID == nil {
+		return nil
+	}
+	dog, err := dogRepo.GetByID(ctx, *dogID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return ErrInvalidDog
+		}
+		return fmt.Errorf("lookup dog %d: %w", *dogID, err)
+	}
+	if dog == nil || !dog.IsActive() {
+		return ErrInactiveDogForActivity
+	}
+	return nil
 }

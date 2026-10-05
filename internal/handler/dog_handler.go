@@ -1258,6 +1258,10 @@ func writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "pending_to_confirm_exists"})
 		return
 	}
+	if errors.Is(err, activityuc.ErrActivityHasReservations) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "activity_has_reservations"})
+		return
+	}
 	if errors.Is(err, activityuc.ErrReservationNotFound) || errors.Is(err, activityuc.ErrReservationNotInActivity) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_reservation_id"})
 		return

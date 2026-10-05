@@ -250,11 +250,16 @@ func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func()
 	bulkCompleteUC := activityuc.NewBulkCompleteReservationsUseCase(
 		transactor, activityRepo, dogRepo, reservationRepo, completeReservationUC,
 	)
+	batchRegisterActivityUC := activityuc.NewBatchRegisterActivityUseCase(
+		transactor, activityRepo, dogRepo,
+	)
+	deleteActivityUC := activityuc.NewDeleteActivityUseCase(activityRepo)
 
 	activityH := handler.NewActivityHandler(
 		registerActivityUC, getActivityUC, modifyActivityUC,
 		listAllActivityUC, listUpcomingActivityUC,
 		closeActivityUC, bulkCompleteUC, reservationRepo,
+		batchRegisterActivityUC, deleteActivityUC,
 	)
 
 	dogH := handler.NewDogHandler(
@@ -428,6 +433,7 @@ func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func()
 
 			admin.POST("/activities", activityH.Register)
 			admin.PATCH("/activities/:id", activityH.Modify)
+			admin.DELETE("/activities/:id", activityH.Delete)
 			admin.POST("/activities/:id/close", activityH.Close)
 			admin.POST("/activities/:id/complete-all", activityH.BulkCompleteReservations)
 

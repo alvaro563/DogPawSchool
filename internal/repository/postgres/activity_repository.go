@@ -175,11 +175,28 @@ func (repo *ActivityRepository) Update(ctx context.Context, activity *domain.Act
 	return nil
 }
 
-// Delete removes an activity by id. Currently no use case invokes it
-// (DeleteActivityUseCase is deferred until cross-aggregate cancellation
-// and refund logic is designed). It is implemented here so the
-// interface assertion compiles and the method is ready for use.
+// Delete removes an activity by id. It refuses with
+// domain.ErrActivityHasReservations while the activity still holds at
+// least one slot-holding reservation (CONFIRMED or PENDING_TO_CONFIRM):
+// deleting those would strand bookings and any pass credits behind
+// them. Reservations in terminal states (cancelled, forgiven, no-show,
+// completed) do not block — they cascade away with the row. Runs
+// inside the caller's transaction when one is attached to ctx.
 func (repo *ActivityRepository) Delete(ctx context.Context, id int) error {
+	const guardQuery = `
+		SELECT COUNT(*) FROM reservations
+		WHERE activity_id = $1
+		  AND status IN ($2::reservation_status, $3::reservation_status)`
+	var active int
+	err := runner(ctx, repo.db).QueryRowContext(ctx, guardQuery,
+		id, domain.StatusConfirmed, domain.StatusPendingToConfirm,
+	).Scan(&active)
+	if err != nil {
+		return fmt.Errorf("delete activity: count active reservations: %w", err)
+	}
+	if active > 0 {
+		return domain.ErrActivityHasReservations
+	}
 	const query = `DELETE FROM activities WHERE id = $1`
 	queryResult, err := runner(ctx, repo.db).ExecContext(ctx, query, id)
 	if err != nil {

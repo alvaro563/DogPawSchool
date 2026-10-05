@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Calendar, Check, CheckCheck, Dog, Edit3, MapPin, School, User, X, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, Check, CheckCheck, Dog, Edit3, MapPin, School, Trash2, User, X, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { fetchActivityRoster } from '@/infrastructure/repositories/reservation-repository.impl';
 import { confirmReservation, rejectReservation } from '@/infrastructure/repositories/reservation-repository.impl';
-import { bulkCompleteActivity } from '@/infrastructure/repositories/activity-repository.impl';
+import { bulkCompleteActivity, deleteActivity } from '@/infrastructure/repositories/activity-repository.impl';
 import { isActivityPast } from '@/features/calendar/hooks/use-calendar';
 import { useToast } from '@/features/ui/hooks/toast-context';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -191,6 +191,32 @@ export function ActivityDetailPage({ id }: { id: number }) {
     },
   });
 
+  // Delete: allowed for admins on any activity; the backend answers
+  // 409 while the activity holds CONFIRMED/PENDING_TO_CONFIRM
+  // reservations (the roster above shows exactly those).
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteActivity(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-roster'] });
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['today-classes'] });
+      queryClient.invalidateQueries({ queryKey: ['reservations'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
+      toast.success('Actividad eliminada', 'La sesión se ha eliminado del calendario.');
+      window.history.back();
+    },
+    onError: (err: unknown) => {
+      const body = (err as { body?: { error?: string } }).body;
+      const msg =
+        body?.error === 'activity_has_reservations'
+          ? 'Tiene reservas confirmadas o pendientes. Cancela primero las reservas.'
+          : body?.error === 'not_found'
+          ? 'Actividad no encontrada.'
+          : parseError(err, 'No se pudo eliminar la actividad.');
+      toast.error('Error al eliminar', msg);
+    },
+  });
+
   function handleInvalidate() {
     queryClient.invalidateQueries({ queryKey: ['activity-roster', id] });
   }
@@ -253,6 +279,20 @@ export function ActivityDetailPage({ id }: { id: number }) {
     ? 'Todas las reservas confirmadas ya han sido completadas'
     : `Completar ${confirmed.length} ${confirmed.length === 1 ? 'reserva' : 'reservas'}`;
 
+  // Native confirm: deleting also cascades the activity's settled
+  // reservations (cancelled / no-show / completed history), which
+  // cannot be undone.
+  function handleDelete() {
+    if (
+      !window.confirm(
+        `¿Eliminar «${activity.name}»? Se borrarán también sus reservas registradas. Esta acción no se puede deshacer.`,
+      )
+    ) {
+      return;
+    }
+    deleteMutation.mutate();
+  }
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <Button
@@ -310,6 +350,22 @@ export function ActivityDetailPage({ id }: { id: number }) {
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 Editar
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="mt-2 gap-1"
+                onClick={handleDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <LoadingSpinner size="sm" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                Eliminar
               </Button>
             )}
           </div>

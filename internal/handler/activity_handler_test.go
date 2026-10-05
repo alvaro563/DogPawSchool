@@ -72,6 +72,22 @@ func (s *stubActivityBulkCompleter) Execute(ctx context.Context, in activityuc.B
 	return s.fn(ctx, in)
 }
 
+type stubActivityBatchRegisterer struct {
+	fn func(ctx context.Context, in activityuc.BatchRegisterActivityInput) (activityuc.BatchRegisterActivityOutput, error)
+}
+
+func (s *stubActivityBatchRegisterer) Execute(ctx context.Context, in activityuc.BatchRegisterActivityInput) (activityuc.BatchRegisterActivityOutput, error) {
+	return s.fn(ctx, in)
+}
+
+type stubActivityDeleter struct {
+	fn func(ctx context.Context, in activityuc.DeleteActivityInput) (activityuc.DeleteActivityOutput, error)
+}
+
+func (s *stubActivityDeleter) Execute(ctx context.Context, in activityuc.DeleteActivityInput) (activityuc.DeleteActivityOutput, error) {
+	return s.fn(ctx, in)
+}
+
 func newActivityHandler(
 	reg ActivityRegisterer,
 	get ActivityGetter,
@@ -80,36 +96,42 @@ func newActivityHandler(
 	upcoming ActivityUpcomingLister,
 	close ActivityCloser,
 	bulkComplete ActivityBulkCompleter,
+	batch ActivityBatchRegisterer,
+	del ActivityDeleter,
 ) *ActivityHandler {
-	return NewActivityHandler(reg, get, mod, lst, upcoming, close, bulkComplete, nil)
+	return NewActivityHandler(reg, get, mod, lst, upcoming, close, bulkComplete, nil, batch, del)
 }
 
 func newActivityHandlerReg(reg ActivityRegisterer) *ActivityHandler {
-	return newActivityHandler(reg, nil, nil, nil, nil, nil, nil)
+	return newActivityHandler(reg, nil, nil, nil, nil, nil, nil, nil, nil)
+}
+
+func newActivityHandlerDel(del ActivityDeleter) *ActivityHandler {
+	return newActivityHandler(nil, nil, nil, nil, nil, nil, nil, nil, del)
 }
 
 func newActivityHandlerGet(get ActivityGetter) *ActivityHandler {
-	return newActivityHandler(nil, get, nil, nil, nil, nil, nil)
+	return newActivityHandler(nil, get, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newActivityHandlerMod(mod ActivityModifier) *ActivityHandler {
-	return newActivityHandler(nil, nil, mod, nil, nil, nil, nil)
+	return newActivityHandler(nil, nil, mod, nil, nil, nil, nil, nil, nil)
 }
 
 func newActivityHandlerLst(lst ActivityLister) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, lst, nil, nil, nil)
+	return newActivityHandler(nil, nil, nil, lst, nil, nil, nil, nil, nil)
 }
 
 func newActivityHandlerUp(up ActivityUpcomingLister) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, nil, up, nil, nil)
+	return newActivityHandler(nil, nil, nil, nil, up, nil, nil, nil, nil)
 }
 
 func newActivityHandlerClose(close ActivityCloser) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, nil, nil, close, nil)
+	return newActivityHandler(nil, nil, nil, nil, nil, close, nil, nil, nil)
 }
 
 func newActivityHandlerBulkComplete(bulkComplete ActivityBulkCompleter) *ActivityHandler {
-	return newActivityHandler(nil, nil, nil, nil, nil, nil, bulkComplete)
+	return newActivityHandler(nil, nil, nil, nil, nil, nil, bulkComplete, nil, nil)
 }
 
 func validRegisterActivityBody() string {
@@ -712,4 +734,137 @@ func TestActivityBulkComplete_InternalError(t *testing.T) {
 	c.Params = gin.Params{{Key: "id", Value: "5"}}
 	h.BulkCompleteReservations(c)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func validRecurringActivityBody() string {
+	return validRegisterActivityBody()[:len(validRegisterActivityBody())-1] +
+		`,"dates":["2026-09-28T17:00:00Z","2026-10-05T17:00:00Z","2026-10-12T17:00:00Z","2026-10-19T17:00:00Z"]}`
+}
+
+// TestActivityRegister_DatesBatch_Success verifies that supplying
+// `dates` routes to the batch use case (the single register must not
+// run) and echoes every created id in `ids` plus the first in Location.
+func TestActivityRegister_DatesBatch_Success(t *testing.T) {
+	t.Parallel()
+	batch := &stubActivityBatchRegisterer{fn: func(_ context.Context, in activityuc.BatchRegisterActivityInput) (activityuc.BatchRegisterActivityOutput, error) {
+		require.Len(t, in.Dates(), 4)
+		assert.Equal(t, 2026, in.Dates()[0].Year())
+		assert.Equal(t, time.September, in.Dates()[0].Month())
+		assert.Equal(t, 28, in.Dates()[0].Day())
+		assert.Equal(t, 17, in.Dates()[0].Hour())
+		return activityuc.BatchRegisterActivityOutput{IDs: []int{41, 42, 43, 44}}, nil
+	}}
+	reg := &stubActivityRegisterer{fn: func(context.Context, activityuc.RegisterActivityInput) (activityuc.RegisterActivityOutput, error) {
+		t.Fatal("single-register use case must not run when dates is present")
+		return activityuc.RegisterActivityOutput{}, nil
+	}}
+	h := newActivityHandler(reg, nil, nil, nil, nil, nil, nil, batch, nil)
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities", validRecurringActivityBody())
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Equal(t, "/api/v1/activities/41", w.Header().Get("Location"))
+	var body registerActivityResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 41, body.ID)
+	assert.Equal(t, []int{41, 42, 43, 44}, body.IDs)
+}
+
+// TestActivityRegister_DatesBatch_InvalidDates verifies that a
+// duplicated / out-of-order dates vector is rejected with 400 before
+// any use case runs.
+func TestActivityRegister_DatesBatch_InvalidDates(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandler(nil, nil, nil, nil, nil, nil, nil, &stubActivityBatchRegisterer{fn: func(context.Context, activityuc.BatchRegisterActivityInput) (activityuc.BatchRegisterActivityOutput, error) {
+		t.Fatal("batch use case must not run for invalid dates")
+		return activityuc.BatchRegisterActivityOutput{}, nil
+	}}, nil)
+	body := validRegisterActivityBody()[:len(validRegisterActivityBody())-1] +
+		`,"dates":["2026-10-05T17:00:00Z","2026-10-05T17:00:00Z"]}`
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities", body)
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"dates"`)
+}
+
+// TestActivityRegister_DatesBatch_InternalError verifies batch errors
+// flow through writeError.
+func TestActivityRegister_DatesBatch_InternalError(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandler(nil, nil, nil, nil, nil, nil, nil, &stubActivityBatchRegisterer{fn: func(context.Context, activityuc.BatchRegisterActivityInput) (activityuc.BatchRegisterActivityOutput, error) {
+		return activityuc.BatchRegisterActivityOutput{}, errors.New("db down")
+	}}, nil)
+	c, w := setupCtx(http.MethodPost, "/api/v1/activities", validRecurringActivityBody())
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// TestActivityDelete_Success verifies the happy path returns 204 with
+// the parsed id forwarded to the use case.
+func TestActivityDelete_Success(t *testing.T) {
+	t.Parallel()
+	var gotID int
+	h := newActivityHandlerDel(&stubActivityDeleter{fn: func(_ context.Context, in activityuc.DeleteActivityInput) (activityuc.DeleteActivityOutput, error) {
+		gotID = in.ID()
+		return activityuc.DeleteActivityOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodDelete, "/api/v1/activities/7", "")
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+
+	h.Delete(c)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, 7, gotID)
+}
+
+// TestActivityDelete_InvalidID verifies bad ids are rejected with 400
+// before the use case runs.
+func TestActivityDelete_InvalidID(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerDel(&stubActivityDeleter{fn: func(context.Context, activityuc.DeleteActivityInput) (activityuc.DeleteActivityOutput, error) {
+		t.Fatal("use case must not run for invalid id")
+		return activityuc.DeleteActivityOutput{}, nil
+	}})
+	for _, bad := range []string{"abc", "0", "-5"} {
+		c, w := setupCtx(http.MethodDelete, "/api/v1/activities/"+bad, "")
+		c.Params = gin.Params{{Key: "id", Value: bad}}
+		h.Delete(c)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	}
+}
+
+// TestActivityDelete_NotFound maps the use case sentinel to 404.
+func TestActivityDelete_NotFound(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerDel(&stubActivityDeleter{fn: func(context.Context, activityuc.DeleteActivityInput) (activityuc.DeleteActivityOutput, error) {
+		return activityuc.DeleteActivityOutput{}, activityuc.ErrNotFound
+	}})
+	c, w := setupCtx(http.MethodDelete, "/api/v1/activities/999", "")
+	c.Params = gin.Params{{Key: "id", Value: "999"}}
+
+	h.Delete(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
+}
+
+// TestActivityDelete_HasReservations maps the guard sentinel to 409
+// activity_has_reservations.
+func TestActivityDelete_HasReservations(t *testing.T) {
+	t.Parallel()
+	h := newActivityHandlerDel(&stubActivityDeleter{fn: func(context.Context, activityuc.DeleteActivityInput) (activityuc.DeleteActivityOutput, error) {
+		return activityuc.DeleteActivityOutput{}, activityuc.ErrActivityHasReservations
+	}})
+	c, w := setupCtx(http.MethodDelete, "/api/v1/activities/3", "")
+	c.Params = gin.Params{{Key: "id", Value: "3"}}
+
+	h.Delete(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"activity_has_reservations"`)
 }

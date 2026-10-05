@@ -218,6 +218,8 @@ func buildAuthTestRouter(db *sql.DB) *gin.Engine {
 		registerActivityUC, getActivityUC, modifyActivityUC,
 		listAllActivityUC, listUpcomingActivityUC,
 		closeActivityUC, bulkCompleteUC, reservationRepo,
+		activityuc.NewBatchRegisterActivityUseCase(transactor, activityRepo, dogRepo),
+		activityuc.NewDeleteActivityUseCase(activityRepo),
 	)
 
 	registerPassUC := passuc.NewRegisterPassUseCase(passRepo)
