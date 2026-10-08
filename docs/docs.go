@@ -3189,6 +3189,73 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Self-service variant of PATCH /users/{user_id}: the target id comes from the access_token session, never from the request, so a user can only edit their own name/email. Only the fields present in the request body are modified; omitted fields are preserved. An empty body is a no-op. The password and role are never writable through this endpoint.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Patch the authenticated user's profile (name and/or email)",
+                "parameters": [
+                    {
+                        "description": "Fields to patch (only the fields you want to change)",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.updateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile patched (or no-op if body was empty)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.updateUserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or validation error (e.g. empty name, malformed email)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid access token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User no longer exists",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Email already in use",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.errorResponse"
+                        }
+                    }
+                }
             }
         },
         "/api/v1/users/{user_id}": {

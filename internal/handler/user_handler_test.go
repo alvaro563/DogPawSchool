@@ -485,6 +485,126 @@ func TestUserUpdate_InternalError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// UpdateMe
+// ---------------------------------------------------------------------------
+
+func TestUserUpdateMe_Success_TargetFromSession(t *testing.T) {
+	t.Parallel()
+	var captured useruc.UpdateUserInput
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		captured = in
+		return useruc.UpdateUserOutput{ID: 7}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodPatch, "/api/v1/users/me", `{"name":"Ana Such","email":"ana@dogpaw.es"}`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body updateUserResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, 7, body.ID)
+	assert.Equal(t, 7, captured.ID(), "target id must come from the session, never from the path")
+	require.NotNil(t, captured.Patch().Name)
+	assert.Equal(t, "Ana Such", *captured.Patch().Name)
+	require.NotNil(t, captured.Patch().Email)
+	assert.Equal(t, "ana@dogpaw.es", *captured.Patch().Email)
+}
+
+func TestUserUpdateMe_EmptyBody_Noop(t *testing.T) {
+	t.Parallel()
+	var capturedPatch domain.UserPatch
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		capturedPatch = in.Patch()
+		return useruc.UpdateUserOutput{ID: 7}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodPatch, "/api/v1/users/me", `{}`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, capturedPatch.IsEmpty(), "empty body must produce an empty patch; use case short-circuits without a DB write")
+}
+
+func TestUserUpdateMe_NoSession_401(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(context.Context, useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		t.Fatal("use case should not be called without a session")
+		return useruc.UpdateUserOutput{}, nil
+	}})
+	c, w := setupCtx(http.MethodPatch, "/api/v1/users/me", `{"name":"X"}`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"invalid_credentials"`)
+}
+
+func TestUserUpdateMe_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(context.Context, useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		t.Fatal("use case should not be called")
+		return useruc.UpdateUserOutput{}, nil
+	}})
+	c, w := setupAuthCtx(http.MethodPatch, "/api/v1/users/me", `not json`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"invalid_request"`)
+}
+
+func TestUserUpdateMe_UseCaseValidation(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		return useruc.UpdateUserOutput{}, &useruc.ValidationError{Field: "email"}
+	}})
+	c, w := setupAuthCtx(http.MethodPatch, "/api/v1/users/me", `{"email":"not-an-email"}`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), `"field":"email"`)
+}
+
+func TestUserUpdateMe_NotFound(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		return useruc.UpdateUserOutput{}, useruc.ErrNotFound
+	}})
+	c, w := setupAuthCtx(http.MethodPatch, "/api/v1/users/me", `{"name":"X"}`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"not_found"`)
+}
+
+func TestUserUpdateMe_DuplicateEmail(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		return useruc.UpdateUserOutput{}, domain.ErrDuplicateEmail
+	}})
+	c, w := setupAuthCtx(http.MethodPatch, "/api/v1/users/me", `{"email":"taken@example.com"}`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"duplicate_email"`)
+}
+
+func TestUserUpdateMe_InternalError(t *testing.T) {
+	t.Parallel()
+	h := newTestUserHandlerUpdate(&stubUserUpdater{fn: func(_ context.Context, in useruc.UpdateUserInput) (useruc.UpdateUserOutput, error) {
+		return useruc.UpdateUserOutput{}, errors.New("db down")
+	}})
+	c, w := setupAuthCtx(http.MethodPatch, "/api/v1/users/me", `{"name":"X"}`)
+
+	h.UpdateMe(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ---------------------------------------------------------------------------
 // Deactivate
 // ---------------------------------------------------------------------------
 

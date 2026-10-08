@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, X } from 'lucide-react';
 import { fetchAllUsers } from '@/infrastructure/repositories/user-repository.impl';
 import { createPass } from '@/infrastructure/repositories/pass-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
@@ -114,7 +114,26 @@ export function AssignPassModal({ open, onOpenChange }: AssignPassModalProps) {
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Fecha de expiración (opcional)</label>
-            <input className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+            {/* The native date input has no way to clear itself once
+                filled (no × button, Backspace does nothing), so an
+                explicit reset button is the only affordance to go
+                back to "no expiration". type="button" keeps it from
+                submitting the form. */}
+            <div className="flex items-center gap-2">
+              <input className="flex-1 min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm" type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+              {expiresAt && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-muted-foreground"
+                  onClick={() => setExpiresAt('')}
+                  aria-label="Quitar fecha de expiración"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
 
           {error && (

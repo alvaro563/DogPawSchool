@@ -371,6 +371,13 @@ func newRouter(ctx context.Context, db *sql.DB, cfg Config) (*gin.Engine, func()
 			// or kick back to /auth/login.
 			anyUser.GET("/users/me", userH.GetMe)
 
+			// PATCH /users/me is the self-service profile edit
+			// (name/email). Same identity rule as GET: the target
+			// id comes from the session, so a client can only edit
+			// themselves. Admins keep PATCH /users/:user_id below
+			// for editing others.
+			anyUser.PATCH("/users/me", userH.UpdateMe)
+
 			anyUser.GET("/users/:user_id", userH.GetByID)
 
 			anyUser.GET("/users/:user_id/passes", passH.ListByUser)

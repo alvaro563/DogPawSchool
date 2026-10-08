@@ -254,6 +254,57 @@ func (h *UserHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, updateUserResponse{ID: output.ID})
 }
 
+// UpdateMe godoc
+// @Summary      Patch the authenticated user's profile (name and/or email)
+// @Description  Self-service variant of PATCH /users/{user_id}: the target id comes from the access_token session, never from the request, so a user can only edit their own name/email. Only the fields present in the request body are modified; omitted fields are preserved. An empty body is a no-op. The password and role are never writable through this endpoint.
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Param        user  body  updateUserRequest  true  "Fields to patch (only the fields you want to change)"
+// @Success      200  {object}  updateUserResponse "Profile patched (or no-op if body was empty)"
+// @Failure      400  {object}  errorResponse      "Invalid request body or validation error (e.g. empty name, malformed email)"
+// @Failure      401  {object}  errorResponse      "Missing or invalid access token"
+// @Failure      404  {object}  errorResponse      "User no longer exists"
+// @Failure      409  {object}  errorResponse      "Email already in use"
+// @Failure      500  {object}  errorResponse      "Internal server error"
+// @Security     BearerAuth
+// @Router       /api/v1/users/me [patch]
+func (h *UserHandler) UpdateMe(c *gin.Context) {
+	id := CurrentUserID(c)
+	if id == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+		return
+	}
+
+	var request updateUserRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{
+			Error:   "invalid_request",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	patch := domain.UserPatch{
+		Name:  request.Name,
+		Email: request.Email,
+	}
+
+	in, err := useruc.NewUpdateUserInput(id, patch)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	output, err := h.update.Execute(c.Request.Context(), in)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, updateUserResponse{ID: output.ID})
+}
+
 // Deactivate godoc
 // @Summary      Deactivate a user (soft delete)
 // @Description  Flips the user's is_active flag to false. Idempotent: deactivating an already-inactive user is a no-op and returns 200. The user's data is preserved. Use this for off-boarding instead of hard delete.

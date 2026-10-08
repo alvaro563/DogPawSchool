@@ -19,6 +19,7 @@ interface AuthState {
   isLoading: boolean;
   login: (input: LoginInput) => Promise<User>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -103,6 +104,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  // refreshUser re-reads the profile from GET /users/me after a
+  // self-service edit (name/email) so the sidebar header and the
+  // localStorage bootstrap copy agree with the server without a
+  // full reload. Failure handling mirrors the bootstrap: no fresh
+  // identity means no session.
+  const refreshUser = useCallback(async () => {
+    try {
+      const { user: fresh } = await authRepository.me();
+      if (fresh) {
+        userStorage.set(fresh);
+        setUser(fresh);
+      } else {
+        userStorage.remove();
+        setUser(null);
+      }
+    } catch {
+      userStorage.remove();
+      setUser(null);
+    }
+  }, []);
+
   const value = useMemo<AuthState>(() => ({
     user,
     // Nullish check, not `!== null`: if state ever holds undefined
@@ -116,7 +138,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login,
     logout,
-  }), [user, isLoading, login, logout]);
+    refreshUser,
+  }), [user, isLoading, login, logout, refreshUser]);
 
   return (
     <AuthContext.Provider value={value}>

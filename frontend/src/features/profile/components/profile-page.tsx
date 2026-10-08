@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { User, Edit3, Save, X, AlertCircle, KeyRound } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { fetchUserByID, updateUser } from '@/infrastructure/repositories/user-repository.impl';
+import { fetchUserByID, updateMe } from '@/infrastructure/repositories/user-repository.impl';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -15,12 +15,15 @@ function parseError(err: unknown, fallback: string): string {
   if (b?.error === 'validation' && b?.field) {
     return `Error en ${b.field}: ${b.details || 'valor inválido'}`;
   }
+  if (b?.error === 'duplicate_email') {
+    return 'Ese correo ya está en uso.';
+  }
   if (b?.details) return b.details;
   return fallback;
 }
 
 export function ProfilePage() {
-  const { user, isAdmin } = useAuth();
+  const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -35,9 +38,13 @@ export function ProfilePage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => updateUser(user!.id, { name, email }),
-    onSuccess: () => {
+    mutationFn: () => updateMe({ name, email }),
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['user', user?.id] });
+      // The auth context (sidebar header) and its localStorage
+      // copy hold the pre-edit name/email; refresh them from the
+      // server so the whole shell updates without a reload.
+      await refreshUser();
       setEditing(false);
       setError('');
     },
@@ -70,10 +77,10 @@ export function ProfilePage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Perfil</h1>
         <div className="flex items-center gap-2">
-          {/* Password-change is available for every role (clients AND
-              admins). Edit (name/email) stays admin-only because it
-              modifies more sensitive data and was the original
-              behaviour of this page. */}
+          {/* Password-change and profile edit (name/email) are both
+              self-service: the backend PATCH /users/me takes the
+              target id from the session, so every role can edit
+              exactly their own data. */}
           {!changePasswordOpen && !editing && (
             <Button
               size="sm"
@@ -83,7 +90,7 @@ export function ProfilePage() {
               <KeyRound className="h-3.5 w-3.5" /> Cambiar contraseña
             </Button>
           )}
-          {isAdmin && !editing && !changePasswordOpen && (
+          {!editing && !changePasswordOpen && (
             <Button size="sm" variant="outline" onClick={handleEdit}>
               <Edit3 className="h-3.5 w-3.5" /> Editar
             </Button>
